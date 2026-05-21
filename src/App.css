@@ -180,3 +180,28 @@ select {
 .graph-title {
   font-size: 13px;
 }
+
+.small-button {
+  padding: 8px 10px;
+  font-size: 14px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.manual-wind-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.manual-wind-controls button {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .manual-wind-controls {
+    grid-template-columns: 1fr;
+  }
+}

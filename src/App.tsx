@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import "./App.css";
 
 type TaskMode = "time" | "distance" | "speed";
+type WindSource = "manual" | "mark-schulze" | "windy";
 
 type WindLayer = {
   altitudeM: number;
@@ -81,11 +82,9 @@ function leastFavorableWindAhead(index: number, tailwindsKt: number[]): number {
 
 function grWindCorrection(effectiveWindAheadKt: number): number {
   if (effectiveWindAheadKt >= 0) {
-    // Tailwind: +0.1 GR per 10 kt
     return effectiveWindAheadKt / 100;
   }
 
-  // Headwind: -0.2 GR per 10 kt
   return effectiveWindAheadKt / 50;
 }
 
@@ -94,9 +93,6 @@ function blendedTimeWindCorrectionKph(
   crosswindKt: number
 ): number {
   const crosswindCorrectionKph = Math.abs(crosswindKt) * 0.5;
-
-  // Prevents quartering winds from double-counting tailwind + crosswind.
-  // Crosswind only adds extra when it is larger than the along-track effect.
   return tailwindKt + Math.max(0, crosswindCorrectionKph - Math.abs(tailwindKt));
 }
 
@@ -107,11 +103,6 @@ function distanceWindCorrectionKph(
   const tailwindCorrectionKph = Math.max(tailwindKt, 0);
   const crosswindCorrectionKph = Math.abs(crosswindKt) * 0.5;
 
-  // Prevents quartering tailwinds from adding both full tailwind and full crosswind correction.
-  // Direct tailwind: uses tailwind.
-  // Pure crosswind: uses crosswind correction.
-  // Quartering tailwind: uses whichever correction is larger.
-  // Headwind: does not reduce Distance target below zero-wind target.
   return Math.max(tailwindCorrectionKph, crosswindCorrectionKph);
 }
 
@@ -225,9 +216,7 @@ function TargetGraph({
   });
 
   const linePoints = points.map((point) => `${point.x},${point.y}`).join(" ");
-
   const valueLabel = taskMode === "speed" ? "Target GR" : "Target speed km/h";
-
   const yTicks = [chartMin, (chartMin + chartMax) / 2, chartMax];
 
   return (
@@ -352,10 +341,13 @@ function TargetGraph({
 
 export default function App() {
   const [taskMode, setTaskMode] = useState<TaskMode>("distance");
+  const [windSource, setWindSource] = useState<WindSource>("manual");
   const [zeroWindSpeedKph, setZeroWindSpeedKph] = useState(185);
   const [startGR, setStartGR] = useState(1.1);
   const [endGR, setEndGR] = useState(1.7);
   const [runHeadingDeg, setRunHeadingDeg] = useState(90);
+  const [globalWindFromDeg, setGlobalWindFromDeg] = useState(270);
+  const [globalWindSpeedKt, setGlobalWindSpeedKt] = useState(20);
   const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
 
   function updateWind(
@@ -370,11 +362,12 @@ export default function App() {
     );
   }
 
-  function applyWindToAll(field: "directionFromDeg" | "speedKt", value: number) {
+  function applyGlobalWindToAll() {
     setWinds((currentWinds) =>
       currentWinds.map((wind) => ({
         ...wind,
-        [field]: value,
+        directionFromDeg: globalWindFromDeg,
+        speedKt: globalWindSpeedKt,
       }))
     );
   }
@@ -461,20 +454,69 @@ export default function App() {
       </section>
 
       <section className="card">
+        <h2>Wind Source</h2>
+
+        <label>
+          Source
+          <select
+            value={windSource}
+            onChange={(e) => setWindSource(e.target.value as WindSource)}
+          >
+            <option value="manual">Manual</option>
+            <option value="mark-schulze">Mark Schulze</option>
+            <option value="windy">Windy</option>
+          </select>
+        </label>
+
+        {windSource === "manual" && (
+          <p className="subtitle">
+            Manual mode uses the wind table below. Automated wind import can be
+            added once the wind source data format is confirmed.
+          </p>
+        )}
+
+        {windSource === "mark-schulze" && (
+          <p className="subtitle">
+            Mark Schulze import is planned. For now, enter the winds manually
+            below.
+          </p>
+        )}
+
+        {windSource === "windy" && (
+          <p className="subtitle">
+            Windy verification is planned. For now, enter the winds manually
+            below.
+          </p>
+        )}
+      </section>
+
+      <section className="card">
         <h2>Wind Profile</h2>
         <p className="subtitle">
           Enter aviation wind direction as the direction the wind is coming from.
         </p>
 
-        <div className="quick-row">
-          <button
-            type="button"
-            onClick={() => applyWindToAll("directionFromDeg", 270)}
-          >
-            Set all wind from 270°
-          </button>
-          <button type="button" onClick={() => applyWindToAll("speedKt", 20)}>
-            Set all wind 20 kt
+        <div className="manual-wind-controls">
+          <label>
+            Set all wind from, degrees
+            <input
+              type="number"
+              value={globalWindFromDeg}
+              onChange={(e) => setGlobalWindFromDeg(Number(e.target.value))}
+            />
+          </label>
+
+          <label>
+            Set all wind speed, kt
+            <input
+              type="number"
+              value={globalWindSpeedKt}
+              onChange={(e) => setGlobalWindSpeedKt(Number(e.target.value))}
+            />
+          </label>
+
+          <button type="button" onClick={applyGlobalWindToAll}>
+            Apply to all altitudes
           </button>
         </div>
 
