@@ -175,6 +175,181 @@ function calculateTargets(
   });
 }
 
+function TargetGraph({
+  taskMode,
+  results,
+}: {
+  taskMode: TaskMode;
+  results: ResultRow[];
+}) {
+  const values = results.map((row) =>
+    taskMode === "speed" ? row.targetGR ?? 0 : row.targetSpeedKph ?? 0
+  );
+
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+
+  const padding = taskMode === "speed" ? 0.1 : 5;
+  const chartMin = minValue - padding;
+  const chartMax = maxValue + padding;
+  const range = chartMax - chartMin || 1;
+
+  const width = 620;
+  const height = 360;
+  const leftPad = 58;
+  const rightPad = 24;
+  const topPad = 28;
+  const bottomPad = 48;
+  const plotWidth = width - leftPad - rightPad;
+  const plotHeight = height - topPad - bottomPad;
+
+  function xFromAltitude(altitudeM: number): number {
+    const progress = (2500 - altitudeM) / 1000;
+    return leftPad + progress * plotWidth;
+  }
+
+  function yFromValue(value: number): number {
+    return topPad + (1 - (value - chartMin) / range) * plotHeight;
+  }
+
+  const points = results.map((row) => {
+    const value =
+      taskMode === "speed" ? row.targetGR ?? 0 : row.targetSpeedKph ?? 0;
+
+    return {
+      x: xFromAltitude(row.altitudeM),
+      y: yFromValue(value),
+      value,
+      altitudeM: row.altitudeM,
+    };
+  });
+
+  const linePoints = points.map((point) => `${point.x},${point.y}`).join(" ");
+
+  const valueLabel = taskMode === "speed" ? "Target GR" : "Target speed km/h";
+
+  const yTicks = [chartMin, (chartMin + chartMax) / 2, chartMax];
+
+  return (
+    <section className="card">
+      <h2>Window Graph</h2>
+      <p className="subtitle">
+        Altitude runs left to right from 2500 m to 1500 m.
+      </p>
+
+      <div className="graph-wrap">
+        <svg
+          className="target-graph"
+          viewBox={`0 0 ${width} ${height}`}
+          role="img"
+          aria-label="Target graph"
+        >
+          <line
+            x1={leftPad}
+            y1={topPad}
+            x2={leftPad}
+            y2={topPad + plotHeight}
+            className="axis"
+          />
+
+          <line
+            x1={leftPad}
+            y1={topPad + plotHeight}
+            x2={leftPad + plotWidth}
+            y2={topPad + plotHeight}
+            className="axis"
+          />
+
+          {[2500, 2000, 1500].map((altitude) => {
+            const x = xFromAltitude(altitude);
+
+            return (
+              <g key={altitude}>
+                <line
+                  x1={x}
+                  y1={topPad}
+                  x2={x}
+                  y2={topPad + plotHeight}
+                  className="grid"
+                />
+                <text
+                  x={x}
+                  y={height - 18}
+                  textAnchor="middle"
+                  className="graph-label"
+                >
+                  {altitude} m
+                </text>
+              </g>
+            );
+          })}
+
+          {yTicks.map((tick, index) => {
+            const y = yFromValue(tick);
+
+            return (
+              <g key={index}>
+                <line
+                  x1={leftPad}
+                  y1={y}
+                  x2={leftPad + plotWidth}
+                  y2={y}
+                  className="grid"
+                />
+                <text
+                  x={leftPad - 8}
+                  y={y + 4}
+                  textAnchor="end"
+                  className="graph-label"
+                >
+                  {taskMode === "speed" ? tick.toFixed(1) : Math.round(tick)}
+                </text>
+              </g>
+            );
+          })}
+
+          <polyline points={linePoints} className="target-line" />
+
+          {points.map((point) => (
+            <g key={point.altitudeM}>
+              <circle cx={point.x} cy={point.y} r={4} className="target-dot" />
+              <text
+                x={point.x}
+                y={point.y - 8}
+                textAnchor="middle"
+                className="point-label"
+              >
+                {taskMode === "speed"
+                  ? point.value.toFixed(1)
+                  : Math.round(point.value)}
+              </text>
+            </g>
+          ))}
+
+          <text
+            x={leftPad + plotWidth / 2}
+            y={height - 4}
+            textAnchor="middle"
+            className="graph-title"
+          >
+            Altitude
+          </text>
+
+          <text
+            x={18}
+            y={topPad + plotHeight / 2}
+            textAnchor="middle"
+            className="graph-title"
+            transform={`rotate(-90 18 ${topPad + plotHeight / 2})`}
+          >
+            {valueLabel}
+          </text>
+        </svg>
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const [taskMode, setTaskMode] = useState<TaskMode>("distance");
   const [zeroWindSpeedKph, setZeroWindSpeedKph] = useState(185);
@@ -379,6 +554,8 @@ export default function App() {
           </tbody>
         </table>
       </section>
+
+      <TargetGraph taskMode={taskMode} results={results} />
     </main>
   );
 }
