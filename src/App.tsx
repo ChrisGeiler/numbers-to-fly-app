@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import "./App.css";
 
+type TaskMode = "time" | "distance" | "speed";
+
 type WindLayer = {
   altitudeM: number;
   directionFromDeg: number;
@@ -10,7 +12,8 @@ type WindLayer = {
 type ResultRow = {
   altitudeM: number;
   tailwindKt: number;
-  targetSpeedKph: number;
+  targetSpeedKph?: number;
+  targetGR?: number;
 };
 
 const altitudes = [
@@ -53,8 +56,20 @@ function delayedPerformanceDropKph(altitudeM: number): number {
   return Math.min(Math.max(drop, 0), 20);
 }
 
+function baseGRAtAltitude(
+  altitudeM: number,
+  startGR: number,
+  endGR: number
+): number {
+  const progress = (2500 - altitudeM) / 1000;
+  return startGR + (endGR - startGR) * progress;
+}
+
 function calculateTargets(
+  taskMode: TaskMode,
   zeroWindSpeedKph: number,
+  startGR: number,
+  endGR: number,
   runHeadingDeg: number,
   winds: WindLayer[]
 ): ResultRow[] {
@@ -64,6 +79,17 @@ function calculateTargets(
       wind.directionFromDeg,
       wind.speedKt
     );
+
+    if (taskMode === "speed") {
+      const baseGR = baseGRAtAltitude(wind.altitudeM, startGR, endGR);
+      const windGRCorrection = tailwindKt / 100;
+
+      return {
+        altitudeM: wind.altitudeM,
+        tailwindKt: Math.round(tailwindKt),
+        targetGR: Number((baseGR + windGRCorrection).toFixed(1)),
+      };
+    }
 
     const targetSpeedKph =
       zeroWindSpeedKph + tailwindKt - delayedPerformanceDropKph(wind.altitudeM);
@@ -77,7 +103,10 @@ function calculateTargets(
 }
 
 export default function App() {
+  const [taskMode, setTaskMode] = useState<TaskMode>("distance");
   const [zeroWindSpeedKph, setZeroWindSpeedKph] = useState(185);
+  const [startGR, setStartGR] = useState(1.1);
+  const [endGR, setEndGR] = useState(1.7);
   const [runHeadingDeg, setRunHeadingDeg] = useState(90);
   const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
 
@@ -103,8 +132,16 @@ export default function App() {
   }
 
   const results = useMemo(
-    () => calculateTargets(zeroWindSpeedKph, runHeadingDeg, winds),
-    [zeroWindSpeedKph, runHeadingDeg, winds]
+    () =>
+      calculateTargets(
+        taskMode,
+        zeroWindSpeedKph,
+        startGR,
+        endGR,
+        runHeadingDeg,
+        winds
+      ),
+    [taskMode, zeroWindSpeedKph, startGR, endGR, runHeadingDeg, winds]
   );
 
   return (
@@ -121,13 +158,49 @@ export default function App() {
         <h2>Setup</h2>
 
         <label>
-          Zero-wind target speed, km/h
-          <input
-            type="number"
-            value={zeroWindSpeedKph}
-            onChange={(e) => setZeroWindSpeedKph(Number(e.target.value))}
-          />
+          Task
+          <select
+            value={taskMode}
+            onChange={(e) => setTaskMode(e.target.value as TaskMode)}
+          >
+            <option value="time">Time</option>
+            <option value="distance">Distance</option>
+            <option value="speed">Speed</option>
+          </select>
         </label>
+
+        {taskMode === "speed" ? (
+          <>
+            <label>
+              Start GR at 2500 m
+              <input
+                type="number"
+                step="0.1"
+                value={startGR}
+                onChange={(e) => setStartGR(Number(e.target.value))}
+              />
+            </label>
+
+            <label>
+              End GR at 1500 m
+              <input
+                type="number"
+                step="0.1"
+                value={endGR}
+                onChange={(e) => setEndGR(Number(e.target.value))}
+              />
+            </label>
+          </>
+        ) : (
+          <label>
+            Zero-wind target speed, km/h
+            <input
+              type="number"
+              value={zeroWindSpeedKph}
+              onChange={(e) => setZeroWindSpeedKph(Number(e.target.value))}
+            />
+          </label>
+        )}
 
         <label>
           Run heading, degrees
@@ -205,7 +278,7 @@ export default function App() {
             <tr>
               <th>Altitude</th>
               <th>Tailwind</th>
-              <th>Target</th>
+              <th>{taskMode === "speed" ? "Target GR" : "Target speed"}</th>
             </tr>
           </thead>
 
@@ -214,7 +287,11 @@ export default function App() {
               <tr key={row.altitudeM}>
                 <td>{row.altitudeM} m</td>
                 <td>{row.tailwindKt} kt</td>
-                <td>{row.targetSpeedKph} km/h</td>
+                <td>
+                  {taskMode === "speed"
+                    ? `${row.targetGR?.toFixed(1)} : 1`
+                    : `${row.targetSpeedKph} km/h`}
+                </td>
               </tr>
             ))}
           </tbody>

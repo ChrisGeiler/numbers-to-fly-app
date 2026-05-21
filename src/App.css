@@ -112,3 +112,15 @@ button:hover {
   font-size: 16px;
   min-width: 80px;
 }
+
+select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  padding: 12px;
+  font-size: 18px;
+  border-radius: 10px;
+  border: 1px solid #9ca3af;
+  background: white;
+}
