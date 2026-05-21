@@ -17,6 +17,12 @@ const altitudes = [
   2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600, 1500,
 ];
 
+const defaultWinds: WindLayer[] = altitudes.map((altitudeM) => ({
+  altitudeM,
+  directionFromDeg: 270,
+  speedKt: 20,
+}));
+
 function degToRad(deg: number): number {
   return (deg * Math.PI) / 180;
 }
@@ -73,18 +79,28 @@ function calculateTargets(
 export default function App() {
   const [zeroWindSpeedKph, setZeroWindSpeedKph] = useState(185);
   const [runHeadingDeg, setRunHeadingDeg] = useState(90);
-  const [windFromDeg, setWindFromDeg] = useState(270);
-  const [windSpeedKt, setWindSpeedKt] = useState(20);
+  const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
 
-  const winds = useMemo(
-    () =>
-      altitudes.map((altitudeM) => ({
-        altitudeM,
-        directionFromDeg: windFromDeg,
-        speedKt: windSpeedKt,
-      })),
-    [windFromDeg, windSpeedKt]
-  );
+  function updateWind(
+    altitudeM: number,
+    field: "directionFromDeg" | "speedKt",
+    value: number
+  ) {
+    setWinds((currentWinds) =>
+      currentWinds.map((wind) =>
+        wind.altitudeM === altitudeM ? { ...wind, [field]: value } : wind
+      )
+    );
+  }
+
+  function applyWindToAll(field: "directionFromDeg" | "speedKt", value: number) {
+    setWinds((currentWinds) =>
+      currentWinds.map((wind) => ({
+        ...wind,
+        [field]: value,
+      }))
+    );
+  }
 
   const results = useMemo(
     () => calculateTargets(zeroWindSpeedKph, runHeadingDeg, winds),
@@ -121,24 +137,64 @@ export default function App() {
             onChange={(e) => setRunHeadingDeg(Number(e.target.value))}
           />
         </label>
+      </section>
 
-        <label>
-          Wind from, degrees
-          <input
-            type="number"
-            value={windFromDeg}
-            onChange={(e) => setWindFromDeg(Number(e.target.value))}
-          />
-        </label>
+      <section className="card">
+        <h2>Wind Profile</h2>
+        <p className="subtitle">
+          Enter aviation wind direction as the direction the wind is coming from.
+        </p>
 
-        <label>
-          Wind speed, kt
-          <input
-            type="number"
-            value={windSpeedKt}
-            onChange={(e) => setWindSpeedKt(Number(e.target.value))}
-          />
-        </label>
+        <div className="quick-row">
+          <button type="button" onClick={() => applyWindToAll("directionFromDeg", 270)}>
+            Set all wind from 270°
+          </button>
+          <button type="button" onClick={() => applyWindToAll("speedKt", 20)}>
+            Set all wind 20 kt
+          </button>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Altitude</th>
+              <th>Wind from</th>
+              <th>Speed</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {winds.map((wind) => (
+              <tr key={wind.altitudeM}>
+                <td>{wind.altitudeM} m</td>
+                <td>
+                  <input
+                    className="table-input"
+                    type="number"
+                    value={wind.directionFromDeg}
+                    onChange={(e) =>
+                      updateWind(
+                        wind.altitudeM,
+                        "directionFromDeg",
+                        Number(e.target.value)
+                      )
+                    }
+                  />
+                </td>
+                <td>
+                  <input
+                    className="table-input"
+                    type="number"
+                    value={wind.speedKt}
+                    onChange={(e) =>
+                      updateWind(wind.altitudeM, "speedKt", Number(e.target.value))
+                    }
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
 
       <section className="card">
