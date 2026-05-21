@@ -62,8 +62,8 @@ function windComponents(
 function delayedPerformanceDropKph(altitudeM: number): number {
   if (altitudeM >= 2000) return 0;
 
-  const drop = ((2000 - altitudeM) / 500) * 20;
-  return Math.min(Math.max(drop, 0), 20);
+  const drop = ((2000 - altitudeM) / 500) * 30;
+  return Math.min(Math.max(drop, 0), 30);
 }
 
 function baseGRAtAltitude(
