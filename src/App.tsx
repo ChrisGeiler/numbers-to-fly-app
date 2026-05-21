@@ -9,9 +9,16 @@ type WindLayer = {
   speedKt: number;
 };
 
+type WindComponents = {
+  tailwindKt: number;
+  crosswindKt: number;
+};
+
 type ResultRow = {
   altitudeM: number;
   tailwindKt: number;
+  crosswindKt: number;
+  effectiveWindAheadKt?: number;
   targetSpeedKph?: number;
   targetGR?: number;
 };
@@ -34,19 +41,22 @@ function normalizeDeg(deg: number): number {
   return ((deg % 360) + 360) % 360;
 }
 
-function smallestAngleDeg(a: number, b: number): number {
-  const diff = Math.abs(normalizeDeg(a - b));
-  return diff > 180 ? 360 - diff : diff;
+function signedAngleDeg(fromDeg: number, toDeg: number): number {
+  return ((toDeg - fromDeg + 540) % 360) - 180;
 }
 
-function tailwindComponentKt(
+function windComponents(
   runHeadingDeg: number,
   windFromDeg: number,
   windSpeedKt: number
-): number {
+): WindComponents {
   const windTowardDeg = normalizeDeg(windFromDeg + 180);
-  const angle = smallestAngleDeg(runHeadingDeg, windTowardDeg);
-  return windSpeedKt * Math.cos(degToRad(angle));
+  const angle = signedAngleDeg(runHeadingDeg, windTowardDeg);
+
+  return {
+    tailwindKt: windSpeedKt * Math.cos(degToRad(angle)),
+    crosswindKt: windSpeedKt * Math.sin(degToRad(angle)),
+  };
 }
 
 function delayedPerformanceDropKph(altitudeM: number): number {
@@ -65,6 +75,46 @@ function baseGRAtAltitude(
   return startGR + (endGR - startGR) * progress;
 }
 
+function leastFavorableWindAhead(index: number, tailwindsKt: number[]): number {
+  return Math.min(...tailwindsKt.slice(index));
+}
+
+function grWindCorrection(effectiveWindAheadKt: number): number {
+  if (effectiveWindAheadKt >= 0) {
+    // Tailwind: +0.1 GR per 10 kt
+    return effectiveWindAheadKt / 100;
+  }
+
+  // Headwind: -0.2 GR per 10 kt
+  return effectiveWindAheadKt / 50;
+}
+
+function blendedTimeWindCorrectionKph(
+  tailwindKt: number,
+  crosswindKt: number
+): number {
+  const crosswindCorrectionKph = Math.abs(crosswindKt) * 0.5;
+
+  // Prevents quartering winds from double-counting tailwind + crosswind.
+  // Crosswind only adds extra when it is larger than the along-track effect.
+  return tailwindKt + Math.max(0, crosswindCorrectionKph - Math.abs(tailwindKt));
+}
+
+function distanceWindCorrectionKph(
+  tailwindKt: number,
+  crosswindKt: number
+): number {
+  const tailwindCorrectionKph = Math.max(tailwindKt, 0);
+  const crosswindCorrectionKph = Math.abs(crosswindKt) * 0.5;
+
+  // Prevents quartering tailwinds from adding both full tailwind and full crosswind correction.
+  // Direct tailwind: uses tailwind.
+  // Pure crosswind: uses crosswind correction.
+  // Quartering tailwind: uses whichever correction is larger.
+  // Headwind: does not reduce Distance target below zero-wind target.
+  return Math.max(tailwindCorrectionKph, crosswindCorrectionKph);
+}
+
 function calculateTargets(
   taskMode: TaskMode,
   zeroWindSpeedKph: number,
@@ -73,30 +123,53 @@ function calculateTargets(
   runHeadingDeg: number,
   winds: WindLayer[]
 ): ResultRow[] {
-  return winds.map((wind) => {
-    const tailwindKt = tailwindComponentKt(
-      runHeadingDeg,
-      wind.directionFromDeg,
-      wind.speedKt
-    );
+  const components = winds.map((wind) =>
+    windComponents(runHeadingDeg, wind.directionFromDeg, wind.speedKt)
+  );
+
+  const tailwindsKt = components.map((component) => component.tailwindKt);
+
+  return winds.map((wind, index) => {
+    const tailwindKt = components[index].tailwindKt;
+    const crosswindKt = components[index].crosswindKt;
 
     if (taskMode === "speed") {
+      const effectiveWindAheadKt = leastFavorableWindAhead(index, tailwindsKt);
       const baseGR = baseGRAtAltitude(wind.altitudeM, startGR, endGR);
-      const windGRCorrection = tailwindKt / 100;
+      const targetGR = baseGR + grWindCorrection(effectiveWindAheadKt);
 
       return {
         altitudeM: wind.altitudeM,
         tailwindKt: Math.round(tailwindKt),
-        targetGR: Number((baseGR + windGRCorrection).toFixed(1)),
+        crosswindKt: Math.round(crosswindKt),
+        effectiveWindAheadKt: Math.round(effectiveWindAheadKt),
+        targetGR: Number(targetGR.toFixed(1)),
+      };
+    }
+
+    if (taskMode === "time") {
+      const targetSpeedKph =
+        zeroWindSpeedKph +
+        blendedTimeWindCorrectionKph(tailwindKt, crosswindKt) -
+        delayedPerformanceDropKph(wind.altitudeM);
+
+      return {
+        altitudeM: wind.altitudeM,
+        tailwindKt: Math.round(tailwindKt),
+        crosswindKt: Math.round(crosswindKt),
+        targetSpeedKph: Math.round(targetSpeedKph),
       };
     }
 
     const targetSpeedKph =
-      zeroWindSpeedKph + tailwindKt - delayedPerformanceDropKph(wind.altitudeM);
+      zeroWindSpeedKph +
+      distanceWindCorrectionKph(tailwindKt, crosswindKt) -
+      delayedPerformanceDropKph(wind.altitudeM);
 
     return {
       altitudeM: wind.altitudeM,
       tailwindKt: Math.round(tailwindKt),
+      crosswindKt: Math.round(crosswindKt),
       targetSpeedKph: Math.round(targetSpeedKph),
     };
   });
@@ -219,7 +292,10 @@ export default function App() {
         </p>
 
         <div className="quick-row">
-          <button type="button" onClick={() => applyWindToAll("directionFromDeg", 270)}>
+          <button
+            type="button"
+            onClick={() => applyWindToAll("directionFromDeg", 270)}
+          >
             Set all wind from 270°
           </button>
           <button type="button" onClick={() => applyWindToAll("speedKt", 20)}>
@@ -277,7 +353,9 @@ export default function App() {
           <thead>
             <tr>
               <th>Altitude</th>
-              <th>Tailwind</th>
+              <th>Along</th>
+              <th>Cross</th>
+              {taskMode === "speed" && <th>Effective</th>}
               <th>{taskMode === "speed" ? "Target GR" : "Target speed"}</th>
             </tr>
           </thead>
@@ -287,6 +365,10 @@ export default function App() {
               <tr key={row.altitudeM}>
                 <td>{row.altitudeM} m</td>
                 <td>{row.tailwindKt} kt</td>
+                <td>{row.crosswindKt} kt</td>
+                {taskMode === "speed" && (
+                  <td>{row.effectiveWindAheadKt} kt</td>
+                )}
                 <td>
                   {taskMode === "speed"
                     ? `${row.targetGR?.toFixed(1)} : 1`
