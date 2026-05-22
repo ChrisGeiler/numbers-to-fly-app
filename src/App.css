@@ -132,7 +132,8 @@ select {
 
 .target-graph {
   width: 100%;
-  max-width: 420px;
+  max-width: none;
+  min-height: 340px;
   display: block;
   margin: 0 auto;
   background: #f9fafb;
@@ -204,4 +205,13 @@ select {
   .manual-wind-controls {
     grid-template-columns: 1fr;
   }
+}
+
+.graph-wrap {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.graph-wrap svg {
+  width: 100%;
 }

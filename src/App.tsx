@@ -74,9 +74,9 @@ function windComponents(
 }
 
 function delayedPerformanceDropKph(altitudeM: number): number {
-  if (altitudeM >= 2000) return 0;
+  if (altitudeM >= 2200) return 0;
 
-  const drop = ((2000 - altitudeM) / 500) * 30;
+  const drop = ((2200 - altitudeM) / 700) * 30;
   return Math.min(Math.max(drop, 0), 30);
 }
 
@@ -106,6 +106,7 @@ function blendedTimeWindCorrectionKph(
   crosswindKt: number
 ): number {
   const crosswindCorrectionKph = Math.abs(crosswindKt) * 0.5;
+
   return tailwindKt + Math.max(0, crosswindCorrectionKph - Math.abs(tailwindKt));
 }
 
@@ -147,7 +148,7 @@ function calculateTargets(
         tailwindKt: Math.round(tailwindKt),
         crosswindKt: Math.round(crosswindKt),
         effectiveWindAheadKt: Math.round(effectiveWindAheadKt),
-        targetGR: Number(targetGR.toFixed(1)),
+        targetGR: Number(targetGR.toFixed(2)),
       };
     }
 
@@ -193,9 +194,12 @@ function TargetGraph({
   const minValue = Math.min(...values);
   const maxValue = Math.max(...values);
 
-  const padding = taskMode === "speed" ? 0.1 : 5;
-  const chartMin = minValue - padding;
-  const chartMax = maxValue + padding;
+  const chartMin =
+    taskMode === "speed" ? Math.floor(minValue * 2) / 2 : minValue - 5;
+
+  const chartMax =
+    taskMode === "speed" ? Math.ceil(maxValue * 2) / 2 : maxValue + 5;
+
   const range = chartMax - chartMin || 1;
 
   const width = 620;
@@ -216,6 +220,24 @@ function TargetGraph({
     return topPad + (1 - (value - chartMin) / range) * plotHeight;
   }
 
+  function smoothPath(points: { x: number; y: number }[]): string {
+    if (points.length < 2) return "";
+
+    const commands = [`M ${points[0].x} ${points[0].y}`];
+
+    for (let i = 1; i < points.length; i++) {
+      const previous = points[i - 1];
+      const current = points[i];
+      const midX = (previous.x + current.x) / 2;
+
+      commands.push(
+        `C ${midX} ${previous.y}, ${midX} ${current.y}, ${current.x} ${current.y}`
+      );
+    }
+
+    return commands.join(" ");
+  }
+
   const points = results.map((row) => {
     const value =
       taskMode === "speed" ? row.targetGR ?? 0 : row.targetSpeedKph ?? 0;
@@ -228,9 +250,15 @@ function TargetGraph({
     };
   });
 
-  const linePoints = points.map((point) => `${point.x},${point.y}`).join(" ");
   const valueLabel = taskMode === "speed" ? "Target GR" : "Target speed km/h";
-  const yTicks = [chartMin, (chartMin + chartMax) / 2, chartMax];
+
+  const yTicks =
+    taskMode === "speed"
+      ? Array.from(
+          { length: Math.round((chartMax - chartMin) / 0.5) + 1 },
+          (_, index) => Number((chartMin + index * 0.5).toFixed(1))
+        )
+      : [chartMin, (chartMin + chartMax) / 2, chartMax];
 
   return (
     <section className="card">
@@ -310,7 +338,7 @@ function TargetGraph({
             );
           })}
 
-          <polyline points={linePoints} className="target-line" />
+          <path d={smoothPath(points)} className="target-line" />
 
           {points.map((point) => (
             <g key={point.altitudeM}>
@@ -322,7 +350,7 @@ function TargetGraph({
                 className="point-label"
               >
                 {taskMode === "speed"
-                  ? point.value.toFixed(1)
+                  ? point.value.toFixed(2)
                   : Math.round(point.value)}
               </text>
             </g>
@@ -429,7 +457,7 @@ export default function App() {
               Start GR at 2500 m
               <input
                 type="number"
-                step="0.1"
+                step="0.05"
                 value={startGR}
                 onChange={(e) => setStartGR(Number(e.target.value))}
               />
@@ -439,7 +467,7 @@ export default function App() {
               End GR at 1500 m
               <input
                 type="number"
-                step="0.1"
+                step="0.05"
                 value={endGR}
                 onChange={(e) => setEndGR(Number(e.target.value))}
               />
@@ -603,7 +631,7 @@ export default function App() {
                 )}
                 <td>
                   {taskMode === "speed"
-                    ? `${row.targetGR?.toFixed(1)} : 1`
+                    ? row.targetGR?.toFixed(2)
                     : `${row.targetSpeedKph} km/h`}
                 </td>
               </tr>
