@@ -24,6 +24,13 @@ type ResultRow = {
   targetGR?: number;
 };
 
+type MarkSchulzeResponse = {
+  altSI?: number[];
+  directionSI?: Record<string, number>;
+  speedSI?: Record<string, number>;
+  model?: string;
+};
+
 const altitudes = [
   2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600, 1500,
 ];
@@ -35,6 +42,8 @@ const defaultWinds: WindLayer[] = altitudes.map((altitudeM) => ({
 }));
 
 const tailHeadDeadbandKt = 2;
+const markSchulzeProxyUrl =
+  "https://numbers-to-fly-winds.flywithcruza.workers.dev";
 
 function degToRad(deg: number): number {
   return (deg * Math.PI) / 180;
@@ -46,6 +55,10 @@ function normalizeDeg(deg: number): number {
 
 function signedAngleDeg(fromDeg: number, toDeg: number): number {
   return ((toDeg - fromDeg + 540) % 360) - 180;
+}
+
+function kmhToKt(speedKmh: number): number {
+  return speedKmh / 1.852;
 }
 
 function applyTailHeadDeadband(tailwindKt: number): number {
@@ -118,6 +131,115 @@ function distanceWindCorrectionKph(
   const crosswindCorrectionKph = Math.abs(crosswindKt) * 0.5;
 
   return Math.max(tailwindCorrectionKph, crosswindCorrectionKph);
+}
+
+function interpolateNumber(
+  altitudeM: number,
+  altitudeLevels: number[],
+  valuesByAltitude: Record<string, number>
+): number {
+  const sortedAltitudes = [...altitudeLevels].sort((a, b) => a - b);
+
+  const exactValue = valuesByAltitude[String(altitudeM)];
+  if (exactValue !== undefined) return exactValue;
+
+  const lowerAltitudes = sortedAltitudes.filter((alt) => alt <= altitudeM);
+  const upperAltitudes = sortedAltitudes.filter((alt) => alt >= altitudeM);
+
+  const lowerAltitude = lowerAltitudes[lowerAltitudes.length - 1];
+  const upperAltitude = upperAltitudes[0];
+
+  if (lowerAltitude === undefined && upperAltitude === undefined) {
+    throw new Error("No altitude data available.");
+  }
+
+  if (lowerAltitude === undefined) {
+    return valuesByAltitude[String(upperAltitude)];
+  }
+
+  if (upperAltitude === undefined) {
+    return valuesByAltitude[String(lowerAltitude)];
+  }
+
+  if (lowerAltitude === upperAltitude) {
+    return valuesByAltitude[String(lowerAltitude)];
+  }
+
+  const lowerValue = valuesByAltitude[String(lowerAltitude)];
+  const upperValue = valuesByAltitude[String(upperAltitude)];
+
+  const progress = (altitudeM - lowerAltitude) / (upperAltitude - lowerAltitude);
+
+  return lowerValue + (upperValue - lowerValue) * progress;
+}
+
+function interpolateDirection(
+  altitudeM: number,
+  altitudeLevels: number[],
+  directionsByAltitude: Record<string, number>
+): number {
+  const sortedAltitudes = [...altitudeLevels].sort((a, b) => a - b);
+
+  const exactValue = directionsByAltitude[String(altitudeM)];
+  if (exactValue !== undefined) return normalizeDeg(exactValue);
+
+  const lowerAltitudes = sortedAltitudes.filter((alt) => alt <= altitudeM);
+  const upperAltitudes = sortedAltitudes.filter((alt) => alt >= altitudeM);
+
+  const lowerAltitude = lowerAltitudes[lowerAltitudes.length - 1];
+  const upperAltitude = upperAltitudes[0];
+
+  if (lowerAltitude === undefined && upperAltitude === undefined) {
+    throw new Error("No altitude data available.");
+  }
+
+  if (lowerAltitude === undefined) {
+    return normalizeDeg(directionsByAltitude[String(upperAltitude)]);
+  }
+
+  if (upperAltitude === undefined) {
+    return normalizeDeg(directionsByAltitude[String(lowerAltitude)]);
+  }
+
+  if (lowerAltitude === upperAltitude) {
+    return normalizeDeg(directionsByAltitude[String(lowerAltitude)]);
+  }
+
+  const lowerDirection = directionsByAltitude[String(lowerAltitude)];
+  const upperDirection = directionsByAltitude[String(upperAltitude)];
+
+  const progress = (altitudeM - lowerAltitude) / (upperAltitude - lowerAltitude);
+  const shortestDifference = signedAngleDeg(lowerDirection, upperDirection);
+
+  return normalizeDeg(lowerDirection + shortestDifference * progress);
+}
+
+function mapMarkSchulzeToWindLayers(data: MarkSchulzeResponse): WindLayer[] {
+  if (!data.altSI || !data.directionSI || !data.speedSI) {
+    throw new Error(
+      "Mark Schulze response did not include altSI, directionSI, and speedSI."
+    );
+  }
+
+  return altitudes.map((altitudeM) => {
+    const directionFromDeg = interpolateDirection(
+      altitudeM,
+      data.altSI ?? [],
+      data.directionSI ?? {}
+    );
+
+    const speedKmh = interpolateNumber(
+      altitudeM,
+      data.altSI ?? [],
+      data.speedSI ?? {}
+    );
+
+    return {
+      altitudeM,
+      directionFromDeg: Math.round(directionFromDeg),
+      speedKt: Math.round(kmhToKt(speedKmh)),
+    };
+  });
 }
 
 function calculateTargets(
@@ -389,6 +511,10 @@ export default function App() {
   const [runHeadingDeg, setRunHeadingDeg] = useState(90);
   const [globalWindFromDeg, setGlobalWindFromDeg] = useState(270);
   const [globalWindSpeedKt, setGlobalWindSpeedKt] = useState(20);
+  const [markLat, setMarkLat] = useState(-28.514026);
+  const [markLon, setMarkLon] = useState(153.55162333056234);
+  const [markHourOffset, setMarkHourOffset] = useState(0);
+  const [fetchStatus, setFetchStatus] = useState("");
   const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
 
   function updateWind(
@@ -411,6 +537,41 @@ export default function App() {
         speedKt: globalWindSpeedKt,
       }))
     );
+  }
+
+  async function fetchMarkSchulzeWinds() {
+    setFetchStatus("Fetching Mark Schulze winds...");
+
+    const url = `${markSchulzeProxyUrl}/?lat=${encodeURIComponent(
+      markLat
+    )}&lon=${encodeURIComponent(markLon)}&hourOffset=${encodeURIComponent(
+      markHourOffset
+    )}`;
+
+    try {
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const data = (await response.json()) as MarkSchulzeResponse;
+      const importedWinds = mapMarkSchulzeToWindLayers(data);
+
+      setWinds(importedWinds);
+      setFetchStatus(
+        `Loaded ${data.model ?? "forecast"} winds for ${markLat}, ${markLon}.`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unknown error while fetching winds.";
+
+      setFetchStatus(
+        `Could not fetch Mark Schulze winds. ${message}.`
+      );
+    }
   }
 
   const results = useMemo(
@@ -510,23 +671,58 @@ export default function App() {
         </label>
 
         {windSource === "manual" && (
-          <p className="subtitle">
-            Manual mode uses the wind table below. Automated wind import can be
-            added once the wind source data format is confirmed.
-          </p>
+          <p className="subtitle">Manual mode uses the wind table below.</p>
         )}
 
         {windSource === "mark-schulze" && (
-          <p className="subtitle">
-            Mark Schulze import is planned. For now, enter the winds manually
-            below.
-          </p>
+          <>
+            <p className="subtitle">
+              Fetches Mark Schulze Open-Meteo winds and fills the 2500 m to
+              1500 m table.
+            </p>
+
+            <div className="manual-wind-controls">
+              <label>
+                Latitude
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={markLat}
+                  onChange={(e) => setMarkLat(Number(e.target.value))}
+                />
+              </label>
+
+              <label>
+                Longitude
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={markLon}
+                  onChange={(e) => setMarkLon(Number(e.target.value))}
+                />
+              </label>
+
+              <label>
+                Hour offset
+                <input
+                  type="number"
+                  value={markHourOffset}
+                  onChange={(e) => setMarkHourOffset(Number(e.target.value))}
+                />
+              </label>
+
+              <button type="button" onClick={fetchMarkSchulzeWinds}>
+                Fetch Mark Schulze winds
+              </button>
+            </div>
+
+            {fetchStatus && <p className="subtitle">{fetchStatus}</p>}
+          </>
         )}
 
         {windSource === "windy" && (
           <p className="subtitle">
-            Windy verification is planned. For now, enter the winds manually
-            below.
+            Windy verification is planned. For now, use Manual or Mark Schulze.
           </p>
         )}
       </section>
@@ -596,7 +792,11 @@ export default function App() {
                     type="number"
                     value={wind.speedKt}
                     onChange={(e) =>
-                      updateWind(wind.altitudeM, "speedKt", Number(e.target.value))
+                      updateWind(
+                        wind.altitudeM,
+                        "speedKt",
+                        Number(e.target.value)
+                      )
                     }
                   />
                 </td>
