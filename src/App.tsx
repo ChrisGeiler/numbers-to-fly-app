@@ -6,8 +6,8 @@ type WindSource = "manual" | "mark-schulze" | "windy";
 
 type WindLayer = {
   altitudeM: number;
-  directionFromDeg: number;
-  speedKt: number;
+  directionFromDeg: string;
+  speedKt: string;
 };
 
 type WindComponents = {
@@ -37,13 +37,25 @@ const altitudes = [
 
 const defaultWinds: WindLayer[] = altitudes.map((altitudeM) => ({
   altitudeM,
-  directionFromDeg: 270,
-  speedKt: 20,
+  directionFromDeg: "",
+  speedKt: "",
 }));
 
 const tailHeadDeadbandKt = 2;
 const markSchulzeProxyUrl =
   "https://numbers-to-fly-winds.flywithcruza.workers.dev";
+
+function numberFromInput(value: string, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function optionalNumberFromInput(value: string): number | null {
+  if (value.trim() === "") return null;
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 function degToRad(deg: number): number {
   return (deg * Math.PI) / 180;
@@ -236,10 +248,14 @@ function mapMarkSchulzeToWindLayers(data: MarkSchulzeResponse): WindLayer[] {
 
     return {
       altitudeM,
-      directionFromDeg: Math.round(directionFromDeg),
-      speedKt: Math.round(kmhToKt(speedKmh)),
+      directionFromDeg: String(Math.round(directionFromDeg)),
+      speedKt: String(Math.round(kmhToKt(speedKmh))),
     };
   });
+}
+
+function buildWindyUrl(lat: number, lon: number): string {
+  return `https://www.windy.com/?wind,${lat.toFixed(4)},${lon.toFixed(4)},10`;
 }
 
 function calculateTargets(
@@ -251,7 +267,11 @@ function calculateTargets(
   winds: WindLayer[]
 ): ResultRow[] {
   const components = winds.map((wind) =>
-    windComponents(runHeadingDeg, wind.directionFromDeg, wind.speedKt)
+    windComponents(
+      runHeadingDeg,
+      numberFromInput(wind.directionFromDeg, 0),
+      numberFromInput(wind.speedKt, 0)
+    )
   );
 
   const tailwindsKt = components.map((component) => component.tailwindKt);
@@ -505,22 +525,26 @@ function TargetGraph({
 export default function App() {
   const [taskMode, setTaskMode] = useState<TaskMode>("distance");
   const [windSource, setWindSource] = useState<WindSource>("manual");
-  const [zeroWindSpeedKph, setZeroWindSpeedKph] = useState(185);
-  const [startGR, setStartGR] = useState(1.1);
-  const [endGR, setEndGR] = useState(1.7);
-  const [runHeadingDeg, setRunHeadingDeg] = useState(90);
-  const [globalWindFromDeg, setGlobalWindFromDeg] = useState(270);
-  const [globalWindSpeedKt, setGlobalWindSpeedKt] = useState(20);
-  const [markLat, setMarkLat] = useState(-28.514026);
-  const [markLon, setMarkLon] = useState(153.55162333056234);
-  const [markHourOffset, setMarkHourOffset] = useState(0);
+
+  const [zeroWindSpeedKph, setZeroWindSpeedKph] = useState("");
+  const [startGR, setStartGR] = useState("");
+  const [endGR, setEndGR] = useState("");
+  const [runHeadingDeg, setRunHeadingDeg] = useState("");
+
+  const [globalWindFromDeg, setGlobalWindFromDeg] = useState("");
+  const [globalWindSpeedKt, setGlobalWindSpeedKt] = useState("");
+
+  const [markLat, setMarkLat] = useState("");
+  const [markLon, setMarkLon] = useState("");
+  const [markHourOffset, setMarkHourOffset] = useState("");
+
   const [fetchStatus, setFetchStatus] = useState("");
   const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
 
   function updateWind(
     altitudeM: number,
     field: "directionFromDeg" | "speedKt",
-    value: number
+    value: string
   ) {
     setWinds((currentWinds) =>
       currentWinds.map((wind) =>
@@ -540,12 +564,21 @@ export default function App() {
   }
 
   async function fetchMarkSchulzeWinds() {
+    const lat = optionalNumberFromInput(markLat);
+    const lon = optionalNumberFromInput(markLon);
+    const hourOffset = numberFromInput(markHourOffset, 0);
+
+    if (lat === null || lon === null) {
+      setFetchStatus("Enter latitude and longitude before fetching winds.");
+      return;
+    }
+
     setFetchStatus("Fetching Mark Schulze winds...");
 
     const url = `${markSchulzeProxyUrl}/?lat=${encodeURIComponent(
-      markLat
-    )}&lon=${encodeURIComponent(markLon)}&hourOffset=${encodeURIComponent(
-      markHourOffset
+      lat
+    )}&lon=${encodeURIComponent(lon)}&hourOffset=${encodeURIComponent(
+      hourOffset
     )}`;
 
     try {
@@ -560,7 +593,7 @@ export default function App() {
 
       setWinds(importedWinds);
       setFetchStatus(
-        `Loaded ${data.model ?? "forecast"} winds for ${markLat}, ${markLon}.`
+        `Loaded ${data.model ?? "forecast"} winds for ${lat}, ${lon}.`
       );
     } catch (error) {
       const message =
@@ -568,23 +601,40 @@ export default function App() {
           ? error.message
           : "Unknown error while fetching winds.";
 
-      setFetchStatus(
-        `Could not fetch Mark Schulze winds. ${message}.`
-      );
+      setFetchStatus(`Could not fetch Mark Schulze winds. ${message}.`);
     }
+  }
+
+  function openWindyVisualCheck() {
+    const lat = optionalNumberFromInput(markLat);
+    const lon = optionalNumberFromInput(markLon);
+
+    if (lat === null || lon === null) {
+      window.alert("Enter latitude and longitude before opening Windy.");
+      return;
+    }
+
+    window.open(buildWindyUrl(lat, lon), "_blank", "noopener,noreferrer");
   }
 
   const results = useMemo(
     () =>
       calculateTargets(
         taskMode,
-        zeroWindSpeedKph,
-        startGR,
-        endGR,
-        runHeadingDeg,
+        numberFromInput(zeroWindSpeedKph, 0),
+        numberFromInput(startGR, 0),
+        numberFromInput(endGR, 0),
+        numberFromInput(runHeadingDeg, 0),
         winds
       ),
-    [taskMode, zeroWindSpeedKph, startGR, endGR, runHeadingDeg, winds]
+    [
+      taskMode,
+      zeroWindSpeedKph,
+      startGR,
+      endGR,
+      runHeadingDeg,
+      winds,
+    ]
   );
 
   return (
@@ -620,7 +670,8 @@ export default function App() {
                 type="number"
                 step="0.05"
                 value={startGR}
-                onChange={(e) => setStartGR(Number(e.target.value))}
+                placeholder="Example 1.10"
+                onChange={(e) => setStartGR(e.target.value)}
               />
             </label>
 
@@ -630,7 +681,8 @@ export default function App() {
                 type="number"
                 step="0.05"
                 value={endGR}
-                onChange={(e) => setEndGR(Number(e.target.value))}
+                placeholder="Example 1.70"
+                onChange={(e) => setEndGR(e.target.value)}
               />
             </label>
           </>
@@ -640,7 +692,8 @@ export default function App() {
             <input
               type="number"
               value={zeroWindSpeedKph}
-              onChange={(e) => setZeroWindSpeedKph(Number(e.target.value))}
+              placeholder="Example 185"
+              onChange={(e) => setZeroWindSpeedKph(e.target.value)}
             />
           </label>
         )}
@@ -650,7 +703,8 @@ export default function App() {
           <input
             type="number"
             value={runHeadingDeg}
-            onChange={(e) => setRunHeadingDeg(Number(e.target.value))}
+            placeholder="Example 90"
+            onChange={(e) => setRunHeadingDeg(e.target.value)}
           />
         </label>
       </section>
@@ -666,7 +720,7 @@ export default function App() {
           >
             <option value="manual">Manual</option>
             <option value="mark-schulze">Mark Schulze</option>
-            <option value="windy">Windy</option>
+            <option value="windy">Windy visual check</option>
           </select>
         </label>
 
@@ -688,7 +742,8 @@ export default function App() {
                   type="number"
                   step="0.000001"
                   value={markLat}
-                  onChange={(e) => setMarkLat(Number(e.target.value))}
+                  placeholder="Example -28.514026"
+                  onChange={(e) => setMarkLat(e.target.value)}
                 />
               </label>
 
@@ -698,7 +753,8 @@ export default function App() {
                   type="number"
                   step="0.000001"
                   value={markLon}
-                  onChange={(e) => setMarkLon(Number(e.target.value))}
+                  placeholder="Example 153.551623"
+                  onChange={(e) => setMarkLon(e.target.value)}
                 />
               </label>
 
@@ -707,7 +763,8 @@ export default function App() {
                 <input
                   type="number"
                   value={markHourOffset}
-                  onChange={(e) => setMarkHourOffset(Number(e.target.value))}
+                  placeholder="Example 0"
+                  onChange={(e) => setMarkHourOffset(e.target.value)}
                 />
               </label>
 
@@ -721,9 +778,40 @@ export default function App() {
         )}
 
         {windSource === "windy" && (
-          <p className="subtitle">
-            Windy verification is planned. For now, use Manual or Mark Schulze.
-          </p>
+          <>
+            <p className="subtitle">
+              Opens Windy at the same location for visual verification. Use Mark
+              Schulze or Manual to fill the wind table.
+            </p>
+
+            <div className="manual-wind-controls">
+              <label>
+                Latitude
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={markLat}
+                  placeholder="Example -28.514026"
+                  onChange={(e) => setMarkLat(e.target.value)}
+                />
+              </label>
+
+              <label>
+                Longitude
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={markLon}
+                  placeholder="Example 153.551623"
+                  onChange={(e) => setMarkLon(e.target.value)}
+                />
+              </label>
+
+              <button type="button" onClick={openWindyVisualCheck}>
+                Open Windy visual check
+              </button>
+            </div>
+          </>
         )}
       </section>
 
@@ -741,7 +829,8 @@ export default function App() {
             <input
               type="number"
               value={globalWindFromDeg}
-              onChange={(e) => setGlobalWindFromDeg(Number(e.target.value))}
+              placeholder="Example 270"
+              onChange={(e) => setGlobalWindFromDeg(e.target.value)}
             />
           </label>
 
@@ -750,7 +839,8 @@ export default function App() {
             <input
               type="number"
               value={globalWindSpeedKt}
-              onChange={(e) => setGlobalWindSpeedKt(Number(e.target.value))}
+              placeholder="Example 20"
+              onChange={(e) => setGlobalWindSpeedKt(e.target.value)}
             />
           </label>
 
@@ -777,11 +867,12 @@ export default function App() {
                     className="table-input"
                     type="number"
                     value={wind.directionFromDeg}
+                    placeholder="270"
                     onChange={(e) =>
                       updateWind(
                         wind.altitudeM,
                         "directionFromDeg",
-                        Number(e.target.value)
+                        e.target.value
                       )
                     }
                   />
@@ -791,12 +882,9 @@ export default function App() {
                     className="table-input"
                     type="number"
                     value={wind.speedKt}
+                    placeholder="20"
                     onChange={(e) =>
-                      updateWind(
-                        wind.altitudeM,
-                        "speedKt",
-                        Number(e.target.value)
-                      )
+                      updateWind(wind.altitudeM, "speedKt", e.target.value)
                     }
                   />
                 </td>
