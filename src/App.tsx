@@ -34,6 +34,8 @@ const defaultWinds: WindLayer[] = altitudes.map((altitudeM) => ({
   speedKt: 20,
 }));
 
+const tailHeadDeadbandKt = 2;
+
 function degToRad(deg: number): number {
   return (deg * Math.PI) / 180;
 }
@@ -46,6 +48,14 @@ function signedAngleDeg(fromDeg: number, toDeg: number): number {
   return ((toDeg - fromDeg + 540) % 360) - 180;
 }
 
+function applyTailHeadDeadband(tailwindKt: number): number {
+  if (Math.abs(tailwindKt) <= tailHeadDeadbandKt) {
+    return 0;
+  }
+
+  return tailwindKt;
+}
+
 function windComponents(
   runHeadingDeg: number,
   windFromDeg: number,
@@ -54,9 +64,12 @@ function windComponents(
   const windTowardDeg = normalizeDeg(windFromDeg + 180);
   const angle = signedAngleDeg(runHeadingDeg, windTowardDeg);
 
+  const rawTailwindKt = windSpeedKt * Math.cos(degToRad(angle));
+  const crosswindKt = windSpeedKt * Math.sin(degToRad(angle));
+
   return {
-    tailwindKt: windSpeedKt * Math.cos(degToRad(angle)),
-    crosswindKt: windSpeedKt * Math.sin(degToRad(angle)),
+    tailwindKt: applyTailHeadDeadband(rawTailwindKt),
+    crosswindKt,
   };
 }
 
@@ -494,6 +507,8 @@ export default function App() {
         <h2>Wind Profile</h2>
         <p className="subtitle">
           Enter aviation wind direction as the direction the wind is coming from.
+          Tail/head values within ±{tailHeadDeadbandKt} kt are treated as pure
+          crosswind.
         </p>
 
         <div className="manual-wind-controls">
@@ -570,8 +585,8 @@ export default function App() {
           <thead>
             <tr>
               <th>Altitude</th>
-              <th>Along</th>
-              <th>Cross</th>
+              <th>Tail/Head</th>
+              <th>Crosswind</th>
               {taskMode === "speed" && <th>Effective</th>}
               <th>{taskMode === "speed" ? "Target GR" : "Target speed"}</th>
             </tr>
