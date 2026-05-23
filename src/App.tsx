@@ -693,12 +693,17 @@ export default function App() {
 
   return (
     <main className="app">
-      <header>
-        <h1>Numbers to Fly</h1>
-        <p className="subtitle">
-          Wingsuit target calculator for the 2500 m to 1500 m window.
-        </p>
-      </header>
+      <header className="app-header">
+  <img
+    className="app-logo"
+    src={`${import.meta.env.BASE_URL}numbers-to-fly-logo.png`}
+    alt="Numbers to Fly logo"
+  />
+
+  <p className="subtitle">
+    Wingsuit target calculator for the 2500 m to 1500 m window.
+  </p>
+</header>
 
       <section className="card">
         <h2>Setup</h2>

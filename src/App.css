@@ -445,3 +445,23 @@ tr:last-child td {
     min-width: 52px;
   }
 }
+
+.app-header {
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.app-logo {
+  display: block;
+  width: min(360px, 92%);
+  height: auto;
+  margin: 0 auto 10px;
+  filter: drop-shadow(0 0 18px rgba(34, 211, 238, 0.28));
+}
+
+@media (max-width: 640px) {
+  .app-logo {
+    width: min(300px, 96%);
+    margin-bottom: 8px;
+  }
+}
