@@ -31,6 +31,12 @@ type MarkSchulzeResponse = {
   model?: string;
 };
 
+type Coordinates = {
+  lat: number;
+  lon: number;
+  accuracyM: number;
+};
+
 const altitudes = [
   2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600, 1500,
 ];
@@ -52,7 +58,6 @@ function numberFromInput(value: string, fallback = 0): number {
 
 function optionalNumberFromInput(value: string): number | null {
   if (value.trim() === "") return null;
-
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -74,10 +79,7 @@ function kmhToKt(speedKmh: number): number {
 }
 
 function applyTailHeadDeadband(tailwindKt: number): number {
-  if (Math.abs(tailwindKt) <= tailHeadDeadbandKt) {
-    return 0;
-  }
-
+  if (Math.abs(tailwindKt) <= tailHeadDeadbandKt) return 0;
   return tailwindKt;
 }
 
@@ -119,10 +121,7 @@ function leastFavorableWindAhead(index: number, tailwindsKt: number[]): number {
 }
 
 function grWindCorrection(effectiveWindAheadKt: number): number {
-  if (effectiveWindAheadKt >= 0) {
-    return effectiveWindAheadKt / 100;
-  }
-
+  if (effectiveWindAheadKt >= 0) return effectiveWindAheadKt / 100;
   return effectiveWindAheadKt / 50;
 }
 
@@ -131,7 +130,6 @@ function blendedTimeWindCorrectionKph(
   crosswindKt: number
 ): number {
   const crosswindCorrectionKph = Math.abs(crosswindKt) * 0.5;
-
   return tailwindKt + Math.max(0, crosswindCorrectionKph - Math.abs(tailwindKt));
 }
 
@@ -165,21 +163,13 @@ function interpolateNumber(
     throw new Error("No altitude data available.");
   }
 
-  if (lowerAltitude === undefined) {
-    return valuesByAltitude[String(upperAltitude)];
-  }
-
-  if (upperAltitude === undefined) {
+  if (lowerAltitude === undefined) return valuesByAltitude[String(upperAltitude)];
+  if (upperAltitude === undefined) return valuesByAltitude[String(lowerAltitude)];
+  if (lowerAltitude === upperAltitude)
     return valuesByAltitude[String(lowerAltitude)];
-  }
-
-  if (lowerAltitude === upperAltitude) {
-    return valuesByAltitude[String(lowerAltitude)];
-  }
 
   const lowerValue = valuesByAltitude[String(lowerAltitude)];
   const upperValue = valuesByAltitude[String(upperAltitude)];
-
   const progress = (altitudeM - lowerAltitude) / (upperAltitude - lowerAltitude);
 
   return lowerValue + (upperValue - lowerValue) * progress;
@@ -219,7 +209,6 @@ function interpolateDirection(
 
   const lowerDirection = directionsByAltitude[String(lowerAltitude)];
   const upperDirection = directionsByAltitude[String(upperAltitude)];
-
   const progress = (altitudeM - lowerAltitude) / (upperAltitude - lowerAltitude);
   const shortestDifference = signedAngleDeg(lowerDirection, upperDirection);
 
@@ -405,9 +394,6 @@ function TargetGraph({
   return (
     <section className="card">
       <h2>Window Graph</h2>
-      <p className="subtitle">
-        Altitude runs left to right from 2500 m to 1500 m.
-      </p>
 
       <div className="graph-wrap">
         <svg
@@ -536,10 +522,11 @@ export default function App() {
 
   const [markLat, setMarkLat] = useState("");
   const [markLon, setMarkLon] = useState("");
-  const [markHourOffset, setMarkHourOffset] = useState("");
 
   const [fetchStatus, setFetchStatus] = useState("");
   const [locationStatus, setLocationStatus] = useState("");
+  const [showCoordinateEntry, setShowCoordinateEntry] = useState(false);
+  const [showRawWinds, setShowRawWinds] = useState(false);
   const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
 
   function updateWind(
@@ -564,51 +551,39 @@ export default function App() {
     );
   }
 
-  function useCurrentLocation() {
-    if (!navigator.geolocation) {
-      setLocationStatus("Location is not supported by this browser.");
-      return;
-    }
-
-    setLocationStatus("Getting current location...");
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude.toFixed(6);
-        const lon = position.coords.longitude.toFixed(6);
-
-        setMarkLat(lat);
-        setMarkLon(lon);
-        setLocationStatus(`Location set to ${lat}, ${lon}.`);
-      },
-      (error) => {
-        setLocationStatus(`Could not get location. ${error.message}`);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 60000,
+  function requestCurrentLocation(): Promise<Coordinates> {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error("Location is not supported by this browser."));
+        return;
       }
-    );
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+            accuracyM: position.coords.accuracy,
+          });
+        },
+        (error) => {
+          reject(new Error(error.message));
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 60000,
+        }
+      );
+    });
   }
 
-  async function fetchMarkSchulzeWinds() {
-    const lat = optionalNumberFromInput(markLat);
-    const lon = optionalNumberFromInput(markLon);
-    const hourOffset = numberFromInput(markHourOffset, 0);
-
-    if (lat === null || lon === null) {
-      setFetchStatus("Enter latitude and longitude before fetching winds.");
-      return;
-    }
-
+  async function fetchMarkSchulzeWindsForLocation(lat: number, lon: number) {
     setFetchStatus("Fetching Mark Schulze winds...");
 
     const url = `${markSchulzeProxyUrl}/?lat=${encodeURIComponent(
       lat
-    )}&lon=${encodeURIComponent(lon)}&hourOffset=${encodeURIComponent(
-      hourOffset
-    )}`;
+    )}&lon=${encodeURIComponent(lon)}&hourOffset=0`;
 
     try {
       const response = await fetch(url);
@@ -621,9 +596,7 @@ export default function App() {
       const importedWinds = mapMarkSchulzeToWindLayers(data);
 
       setWinds(importedWinds);
-      setFetchStatus(
-        `Loaded ${data.model ?? "forecast"} winds for ${lat}, ${lon}.`
-      );
+      setFetchStatus(`Loaded ${data.model ?? "forecast"} winds.`);
     } catch (error) {
       const message =
         error instanceof Error
@@ -634,12 +607,71 @@ export default function App() {
     }
   }
 
+  async function useCurrentLocation() {
+    setShowCoordinateEntry(false);
+    setLocationStatus("Requesting location...");
+    setFetchStatus("");
+
+    try {
+      const coords = await requestCurrentLocation();
+      const lat = coords.lat.toFixed(6);
+      const lon = coords.lon.toFixed(6);
+      const accuracyText = Math.round(coords.accuracyM);
+
+      setMarkLat(lat);
+      setMarkLon(lon);
+      setLocationStatus(
+        `Location set to ${lat}, ${lon}. Accuracy about ${accuracyText} m.`
+      );
+
+      if (windSource === "mark-schulze") {
+        await fetchMarkSchulzeWindsForLocation(coords.lat, coords.lon);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not get location.";
+
+      setShowCoordinateEntry(true);
+      setLocationStatus(
+        `Location unavailable. Enter latitude and longitude manually. ${message}`
+      );
+    }
+  }
+
+  async function fetchUsingManualCoordinates() {
+    const lat = optionalNumberFromInput(markLat);
+    const lon = optionalNumberFromInput(markLon);
+
+    if (lat === null || lon === null) {
+      setFetchStatus("Enter latitude and longitude first.");
+      return;
+    }
+
+    await fetchMarkSchulzeWindsForLocation(lat, lon);
+  }
+
+  function handleWindSourceChange(source: WindSource) {
+    setWindSource(source);
+    setFetchStatus("");
+    setLocationStatus("");
+
+    if (source === "manual") {
+      setShowRawWinds(true);
+      setShowCoordinateEntry(false);
+      return;
+    }
+
+    setShowRawWinds(false);
+    setShowCoordinateEntry(false);
+  }
+
   function openWindyVisualCheck() {
     const lat = optionalNumberFromInput(markLat);
     const lon = optionalNumberFromInput(markLon);
 
     if (lat === null || lon === null) {
-      window.alert("Enter latitude and longitude before opening Windy.");
+      setShowCoordinateEntry(true);
+      setLocationStatus("Enter latitude and longitude before opening Windy.");
       return;
     }
 
@@ -664,8 +696,7 @@ export default function App() {
       <header>
         <h1>Numbers to Fly</h1>
         <p className="subtitle">
-          Wingsuit competition target calculator for the 2500 m to 1500 m
-          performance window.
+          Wingsuit target calculator for the 2500 m to 1500 m window.
         </p>
       </header>
 
@@ -732,13 +763,13 @@ export default function App() {
       </section>
 
       <section className="card">
-        <h2>Wind Source</h2>
+        <h2>Wind</h2>
 
         <label>
           Source
           <select
             value={windSource}
-            onChange={(e) => setWindSource(e.target.value as WindSource)}
+            onChange={(e) => handleWindSourceChange(e.target.value as WindSource)}
           >
             <option value="manual">Manual</option>
             <option value="mark-schulze">Mark Schulze</option>
@@ -746,185 +777,149 @@ export default function App() {
           </select>
         </label>
 
-        {windSource === "manual" && (
-          <p className="subtitle">Manual mode uses the wind table below.</p>
-        )}
-
-        {windSource === "mark-schulze" && (
-          <>
-            <p className="subtitle">
-              Fetches Mark Schulze Open-Meteo winds and fills the 2500 m to
-              1500 m table.
-            </p>
-
-            <div className="manual-wind-controls">
-              <label>
-                Latitude
-                <input
-                  type="number"
-                  step="0.000001"
-                  value={markLat}
-                  placeholder="Use current location or enter latitude"
-                  onChange={(e) => setMarkLat(e.target.value)}
-                />
-              </label>
-
-              <label>
-                Longitude
-                <input
-                  type="number"
-                  step="0.000001"
-                  value={markLon}
-                  placeholder="Use current location or enter longitude"
-                  onChange={(e) => setMarkLon(e.target.value)}
-                />
-              </label>
-
-              <label>
-                Hour offset
-                <input
-                  type="number"
-                  value={markHourOffset}
-                  placeholder="Example 0"
-                  onChange={(e) => setMarkHourOffset(e.target.value)}
-                />
-              </label>
-
-              <button type="button" onClick={useCurrentLocation}>
-                Use my current location
-              </button>
-
-              <button type="button" onClick={fetchMarkSchulzeWinds}>
-                Fetch Mark Schulze winds
-              </button>
-            </div>
-
-            {locationStatus && <p className="subtitle">{locationStatus}</p>}
-            {fetchStatus && <p className="subtitle">{fetchStatus}</p>}
-          </>
+        {windSource !== "manual" && (
+          <button type="button" onClick={useCurrentLocation}>
+            Use my current location
+          </button>
         )}
 
         {windSource === "windy" && (
+          <button type="button" onClick={openWindyVisualCheck}>
+            Open Windy visual check
+          </button>
+        )}
+
+        {windSource !== "manual" && (
+          <button
+            type="button"
+            onClick={() => setShowCoordinateEntry((current) => !current)}
+          >
+            {showCoordinateEntry
+              ? "Hide coordinate entry"
+              : "Enter coordinates manually"}
+          </button>
+        )}
+
+        {locationStatus && <p className="subtitle">{locationStatus}</p>}
+        {fetchStatus && <p className="subtitle">{fetchStatus}</p>}
+
+        {showCoordinateEntry && (
+          <div className="manual-wind-controls">
+            <label>
+              Latitude
+              <input
+                type="number"
+                step="0.000001"
+                value={markLat}
+                placeholder="Example -28.514026"
+                onChange={(e) => setMarkLat(e.target.value)}
+              />
+            </label>
+
+            <label>
+              Longitude
+              <input
+                type="number"
+                step="0.000001"
+                value={markLon}
+                placeholder="Example 153.551623"
+                onChange={(e) => setMarkLon(e.target.value)}
+              />
+            </label>
+
+            {windSource === "mark-schulze" && (
+              <button type="button" onClick={fetchUsingManualCoordinates}>
+                Load winds from entered coordinates
+              </button>
+            )}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowRawWinds((current) => !current)}
+        >
+          {showRawWinds ? "Hide raw winds" : "Show raw winds"}
+        </button>
+
+        {showRawWinds && (
           <>
             <p className="subtitle">
-              Opens Windy at the same location for visual verification. Use Mark
-              Schulze or Manual to fill the wind table.
+              Raw winds used by the calculator. You can edit these manually if
+              needed.
             </p>
 
             <div className="manual-wind-controls">
               <label>
-                Latitude
+                Set all wind from, degrees
                 <input
                   type="number"
-                  step="0.000001"
-                  value={markLat}
-                  placeholder="Use current location or enter latitude"
-                  onChange={(e) => setMarkLat(e.target.value)}
+                  value={globalWindFromDeg}
+                  placeholder="Example 270"
+                  onChange={(e) => setGlobalWindFromDeg(e.target.value)}
                 />
               </label>
 
               <label>
-                Longitude
+                Set all wind speed, kt
                 <input
                   type="number"
-                  step="0.000001"
-                  value={markLon}
-                  placeholder="Use current location or enter longitude"
-                  onChange={(e) => setMarkLon(e.target.value)}
+                  value={globalWindSpeedKt}
+                  placeholder="Example 20"
+                  onChange={(e) => setGlobalWindSpeedKt(e.target.value)}
                 />
               </label>
 
-              <button type="button" onClick={useCurrentLocation}>
-                Use my current location
-              </button>
-
-              <button type="button" onClick={openWindyVisualCheck}>
-                Open Windy visual check
+              <button type="button" onClick={applyGlobalWindToAll}>
+                Apply to all altitudes
               </button>
             </div>
 
-            {locationStatus && <p className="subtitle">{locationStatus}</p>}
+            <table>
+              <thead>
+                <tr>
+                  <th>Altitude</th>
+                  <th>Wind from</th>
+                  <th>Speed</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {winds.map((wind) => (
+                  <tr key={wind.altitudeM}>
+                    <td>{wind.altitudeM} m</td>
+                    <td>
+                      <input
+                        className="table-input"
+                        type="number"
+                        value={wind.directionFromDeg}
+                        placeholder="270"
+                        onChange={(e) =>
+                          updateWind(
+                            wind.altitudeM,
+                            "directionFromDeg",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="table-input"
+                        type="number"
+                        value={wind.speedKt}
+                        placeholder="20"
+                        onChange={(e) =>
+                          updateWind(wind.altitudeM, "speedKt", e.target.value)
+                        }
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </>
         )}
-      </section>
-
-      <section className="card">
-        <h2>Wind Profile</h2>
-        <p className="subtitle">
-          Enter aviation wind direction as the direction the wind is coming from.
-          Tail/head values within ±{tailHeadDeadbandKt} kt are treated as pure
-          crosswind.
-        </p>
-
-        <div className="manual-wind-controls">
-          <label>
-            Set all wind from, degrees
-            <input
-              type="number"
-              value={globalWindFromDeg}
-              placeholder="Example 270"
-              onChange={(e) => setGlobalWindFromDeg(e.target.value)}
-            />
-          </label>
-
-          <label>
-            Set all wind speed, kt
-            <input
-              type="number"
-              value={globalWindSpeedKt}
-              placeholder="Example 20"
-              onChange={(e) => setGlobalWindSpeedKt(e.target.value)}
-            />
-          </label>
-
-          <button type="button" onClick={applyGlobalWindToAll}>
-            Apply to all altitudes
-          </button>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>Altitude</th>
-              <th>Wind from</th>
-              <th>Speed</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {winds.map((wind) => (
-              <tr key={wind.altitudeM}>
-                <td>{wind.altitudeM} m</td>
-                <td>
-                  <input
-                    className="table-input"
-                    type="number"
-                    value={wind.directionFromDeg}
-                    placeholder="270"
-                    onChange={(e) =>
-                      updateWind(
-                        wind.altitudeM,
-                        "directionFromDeg",
-                        e.target.value
-                      )
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    className="table-input"
-                    type="number"
-                    value={wind.speedKt}
-                    placeholder="20"
-                    onChange={(e) =>
-                      updateWind(wind.altitudeM, "speedKt", e.target.value)
-                    }
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </section>
 
       <section className="card">
@@ -947,9 +942,7 @@ export default function App() {
                 <td>{row.altitudeM} m</td>
                 <td>{row.tailwindKt} kt</td>
                 <td>{row.crosswindKt} kt</td>
-                {taskMode === "speed" && (
-                  <td>{row.effectiveWindAheadKt} kt</td>
-                )}
+                {taskMode === "speed" && <td>{row.effectiveWindAheadKt} kt</td>}
                 <td>
                   {taskMode === "speed"
                     ? row.targetGR?.toFixed(2)
