@@ -303,3 +303,54 @@ tr:last-child td {
 .manual-wind-controls button {
   margin-top: 10px;
 }
+
+/* Responsive action button row */
+.card button {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+}
+
+/* Desktop/tablet: buttons can sit horizontally and wrap neatly */
+@media (min-width: 760px) {
+  .card button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    min-width: 170px;
+    margin-top: 14px;
+    margin-right: 12px;
+    vertical-align: top;
+  }
+
+  .card button + button {
+    margin-top: 14px;
+  }
+
+  .manual-wind-controls button {
+    display: flex;
+    width: 100%;
+    margin-right: 0;
+  }
+}
+
+/* Phone: keep buttons stacked full-width */
+@media (max-width: 759px) {
+  .card button {
+    display: block;
+    width: 100%;
+    margin-top: 16px;
+    margin-right: 0;
+  }
+
+  .card button + button {
+    margin-top: 16px;
+  }
+}
+
+@media (min-width: 760px) {
+  .app {
+    width: min(900px, calc(100% - 32px));
+  }
+}
