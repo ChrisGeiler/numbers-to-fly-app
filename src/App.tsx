@@ -701,8 +701,8 @@ export default function App() {
   />
 
   <p className="subtitle">
-    Wingsuit target calculator for the 2500 m to 1500 m window.
-  </p>
+  Know your numbers in the window.
+</p>
 </header>
 
       <section className="card">

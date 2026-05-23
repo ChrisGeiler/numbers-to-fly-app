@@ -465,3 +465,12 @@ tr:last-child td {
     margin-bottom: 8px;
   }
 }
+
+.subtitle {
+  margin: 8px auto 18px;
+  max-width: 520px;
+  text-align: center;
+  color: #b6f3ff;
+  font-size: 1.1rem;
+  line-height: 1.35;
+}
