@@ -40,12 +40,6 @@ type MarkSchulzeResponse = {
   model?: string;
 };
 
-type Coordinates = {
-  lat: number;
-  lon: number;
-  accuracyM: number;
-};
-
 type LatLon = {
   lat: number;
   lon: number;
@@ -102,6 +96,10 @@ function normalizeDeg(deg: number): number {
   return ((deg % 360) + 360) % 360;
 }
 
+function normalizeLongitude(lonDeg: number): number {
+  return ((lonDeg + 540) % 360) - 180;
+}
+
 function signedAngleDeg(fromDeg: number, toDeg: number): number {
   return ((toDeg - fromDeg + 540) % 360) - 180;
 }
@@ -147,10 +145,6 @@ function destinationPoint(
   };
 }
 
-function normalizeLongitude(lonDeg: number): number {
-  return ((lonDeg + 540) % 360) - 180;
-}
-
 function calculateDropPoint(
   referenceLat: number,
   referenceLon: number,
@@ -158,6 +152,7 @@ function calculateDropPoint(
   dropDistanceNm: number
 ): LatLon {
   const backBearing = normalizeDeg(runHeadingDeg + 180);
+
   return destinationPoint(
     referenceLat,
     referenceLon,
@@ -339,9 +334,7 @@ function preventSpeedIncreasesThroughWindow(rows: ResultRow[]): ResultRow[] {
   let previousSpeed: number | null = null;
 
   return rows.map((row) => {
-    if (row.targetSpeedKph === undefined) {
-      return row;
-    }
+    if (row.targetSpeedKph === undefined) return row;
 
     if (previousSpeed === null) {
       previousSpeed = row.targetSpeedKph;
@@ -421,12 +414,11 @@ function calculateTargets(
     };
   });
 
-  if (taskMode === "speed") {
-    return rawRows;
-  }
+  if (taskMode === "speed") return rawRows;
 
   return preventSpeedIncreasesThroughWindow(rawRows);
 }
+
 function MapClickPicker({
   referenceLat,
   referenceLon,
@@ -466,9 +458,9 @@ function MapClickPicker({
     <div className="map-picker">
       <MapContainer center={center} zoom={12} scrollWheelZoom={true}>
         <TileLayer
-          attribution="&copy; OpenStreetMap"
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+  attribution="Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+  url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+/>
 
         <ClickHandler />
 
@@ -713,7 +705,6 @@ export default function App() {
   const [referenceLon, setReferenceLon] = useState("");
 
   const [fetchStatus, setFetchStatus] = useState("");
-  const [locationStatus, setLocationStatus] = useState("");
   const [referenceStatus, setReferenceStatus] = useState("");
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [showRawWinds, setShowRawWinds] = useState(false);
@@ -760,33 +751,6 @@ export default function App() {
     );
   }
 
-  function requestCurrentLocation(): Promise<Coordinates> {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error("Location is not supported by this browser."));
-        return;
-      }
-
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          resolve({
-            lat: position.coords.latitude,
-            lon: position.coords.longitude,
-            accuracyM: position.coords.accuracy,
-          });
-        },
-        (error) => {
-          reject(new Error(error.message));
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 60000,
-        }
-      );
-    });
-  }
-
   async function fetchMarkSchulzeWindsForLocation(lat: number, lon: number) {
     setFetchStatus("Fetching Mark Schulze winds...");
 
@@ -828,24 +792,6 @@ export default function App() {
 
     if (windSource === "mark-schulze") {
       await fetchMarkSchulzeWindsForLocation(lat, lon);
-    }
-  }
-
-  async function useCurrentLocationAsReference() {
-    setLocationStatus("Requesting location...");
-    setFetchStatus("");
-
-    try {
-      const coords = await requestCurrentLocation();
-      const accuracyText = Math.round(coords.accuracyM);
-
-      setLocationStatus(`Location accepted. Accuracy about ${accuracyText} m.`);
-      await setReferencePoint(coords.lat, coords.lon, "current location");
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Could not get location.";
-
-      setLocationStatus(`Location unavailable. ${message}`);
     }
   }
 
@@ -982,9 +928,33 @@ export default function App() {
         <h2>Reference Point</h2>
 
         <p className="subtitle">
-          Enter the competition reference point, use your current position, or
-          tap it on the map.
+          Choose the competition reference point on the map, or enter its
+          coordinates manually.
         </p>
+
+        <button
+          type="button"
+          className="primary-action-button"
+          onClick={() => setShowMapPicker((current) => !current)}
+        >
+          {showMapPicker ? "Hide map" : "Choose reference point"}
+        </button>
+
+        {showMapPicker && (
+          <>
+            <p className="subtitle">
+              Tap the map to set the reference point. The flight line is drawn
+              from the calculated drop/start point to the reference point.
+            </p>
+
+            <MapClickPicker
+              referenceLat={referenceLat}
+              referenceLon={referenceLon}
+              dropPoint={calculatedDropPoint}
+              onPick={pickReferenceFromMap}
+            />
+          </>
+        )}
 
         <div className="manual-wind-controls">
           <label>
@@ -1021,19 +991,8 @@ export default function App() {
           />
         </label>
 
-        <button type="button" onClick={useCurrentLocationAsReference}>
-          Use my current location
-        </button>
-
         <button type="button" onClick={loadWindsFromEnteredReference}>
-          Load winds from reference point
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setShowMapPicker((current) => !current)}
-        >
-          {showMapPicker ? "Hide map" : "Choose reference point on map"}
+          Load winds from entered coordinates
         </button>
 
         {calculatedDropPoint && (
@@ -1043,22 +1002,6 @@ export default function App() {
           </p>
         )}
 
-        {showMapPicker && (
-          <>
-            <p className="subtitle">
-              Tap the map to set the reference point. The flight line is drawn
-              from the calculated drop/start point to the reference point.
-            </p>
-            <MapClickPicker
-              referenceLat={referenceLat}
-              referenceLon={referenceLon}
-              dropPoint={calculatedDropPoint}
-              onPick={pickReferenceFromMap}
-            />
-          </>
-        )}
-
-        {locationStatus && <p className="subtitle">{locationStatus}</p>}
         {referenceStatus && <p className="subtitle">{referenceStatus}</p>}
       </section>
 
