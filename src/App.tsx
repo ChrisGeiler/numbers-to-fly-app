@@ -539,6 +539,7 @@ export default function App() {
   const [markHourOffset, setMarkHourOffset] = useState("");
 
   const [fetchStatus, setFetchStatus] = useState("");
+  const [locationStatus, setLocationStatus] = useState("");
   const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
 
   function updateWind(
@@ -560,6 +561,34 @@ export default function App() {
         directionFromDeg: globalWindFromDeg,
         speedKt: globalWindSpeedKt,
       }))
+    );
+  }
+
+  function useCurrentLocation() {
+    if (!navigator.geolocation) {
+      setLocationStatus("Location is not supported by this browser.");
+      return;
+    }
+
+    setLocationStatus("Getting current location...");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude.toFixed(6);
+        const lon = position.coords.longitude.toFixed(6);
+
+        setMarkLat(lat);
+        setMarkLon(lon);
+        setLocationStatus(`Location set to ${lat}, ${lon}.`);
+      },
+      (error) => {
+        setLocationStatus(`Could not get location. ${error.message}`);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      }
     );
   }
 
@@ -627,14 +656,7 @@ export default function App() {
         numberFromInput(runHeadingDeg, 0),
         winds
       ),
-    [
-      taskMode,
-      zeroWindSpeedKph,
-      startGR,
-      endGR,
-      runHeadingDeg,
-      winds,
-    ]
+    [taskMode, zeroWindSpeedKph, startGR, endGR, runHeadingDeg, winds]
   );
 
   return (
@@ -742,7 +764,7 @@ export default function App() {
                   type="number"
                   step="0.000001"
                   value={markLat}
-                  placeholder="Example -28.514026"
+                  placeholder="Use current location or enter latitude"
                   onChange={(e) => setMarkLat(e.target.value)}
                 />
               </label>
@@ -753,7 +775,7 @@ export default function App() {
                   type="number"
                   step="0.000001"
                   value={markLon}
-                  placeholder="Example 153.551623"
+                  placeholder="Use current location or enter longitude"
                   onChange={(e) => setMarkLon(e.target.value)}
                 />
               </label>
@@ -768,11 +790,16 @@ export default function App() {
                 />
               </label>
 
+              <button type="button" onClick={useCurrentLocation}>
+                Use my current location
+              </button>
+
               <button type="button" onClick={fetchMarkSchulzeWinds}>
                 Fetch Mark Schulze winds
               </button>
             </div>
 
+            {locationStatus && <p className="subtitle">{locationStatus}</p>}
             {fetchStatus && <p className="subtitle">{fetchStatus}</p>}
           </>
         )}
@@ -791,7 +818,7 @@ export default function App() {
                   type="number"
                   step="0.000001"
                   value={markLat}
-                  placeholder="Example -28.514026"
+                  placeholder="Use current location or enter latitude"
                   onChange={(e) => setMarkLat(e.target.value)}
                 />
               </label>
@@ -802,15 +829,21 @@ export default function App() {
                   type="number"
                   step="0.000001"
                   value={markLon}
-                  placeholder="Example 153.551623"
+                  placeholder="Use current location or enter longitude"
                   onChange={(e) => setMarkLon(e.target.value)}
                 />
               </label>
+
+              <button type="button" onClick={useCurrentLocation}>
+                Use my current location
+              </button>
 
               <button type="button" onClick={openWindyVisualCheck}>
                 Open Windy visual check
               </button>
             </div>
+
+            {locationStatus && <p className="subtitle">{locationStatus}</p>}
           </>
         )}
       </section>
