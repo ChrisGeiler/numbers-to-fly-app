@@ -1,4 +1,13 @@
 import { useMemo, useState } from "react";
+import {
+  MapContainer,
+  Marker,
+  Polyline,
+  TileLayer,
+  useMapEvents,
+} from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import "./App.css";
 
 type TaskMode = "time" | "distance" | "speed";
@@ -37,6 +46,11 @@ type Coordinates = {
   accuracyM: number;
 };
 
+type LatLon = {
+  lat: number;
+  lon: number;
+};
+
 const altitudes = [
   2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600, 1500,
 ];
@@ -50,6 +64,20 @@ const defaultWinds: WindLayer[] = altitudes.map((altitudeM) => ({
 const tailHeadDeadbandKt = 2;
 const markSchulzeProxyUrl =
   "https://numbers-to-fly-winds.flywithcruza.workers.dev";
+
+const referencePointIcon = L.divIcon({
+  className: "reference-point-marker",
+  html: "<div></div>",
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+});
+
+const dropPointIcon = L.divIcon({
+  className: "drop-point-marker",
+  html: "<div></div>",
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+});
 
 function numberFromInput(value: string, fallback = 0): number {
   const parsed = Number(value);
@@ -66,6 +94,10 @@ function degToRad(deg: number): number {
   return (deg * Math.PI) / 180;
 }
 
+function radToDeg(rad: number): number {
+  return (rad * 180) / Math.PI;
+}
+
 function normalizeDeg(deg: number): number {
   return ((deg % 360) + 360) % 360;
 }
@@ -76,6 +108,62 @@ function signedAngleDeg(fromDeg: number, toDeg: number): number {
 
 function kmhToKt(speedKmh: number): number {
   return speedKmh / 1.852;
+}
+
+function nmToMetres(distanceNm: number): number {
+  return distanceNm * 1852;
+}
+
+function destinationPoint(
+  startLatDeg: number,
+  startLonDeg: number,
+  bearingDeg: number,
+  distanceM: number
+): LatLon {
+  const earthRadiusM = 6371000;
+  const angularDistance = distanceM / earthRadiusM;
+
+  const bearingRad = degToRad(bearingDeg);
+  const startLatRad = degToRad(startLatDeg);
+  const startLonRad = degToRad(startLonDeg);
+
+  const endLatRad = Math.asin(
+    Math.sin(startLatRad) * Math.cos(angularDistance) +
+      Math.cos(startLatRad) * Math.sin(angularDistance) * Math.cos(bearingRad)
+  );
+
+  const endLonRad =
+    startLonRad +
+    Math.atan2(
+      Math.sin(bearingRad) *
+        Math.sin(angularDistance) *
+        Math.cos(startLatRad),
+      Math.cos(angularDistance) - Math.sin(startLatRad) * Math.sin(endLatRad)
+    );
+
+  return {
+    lat: radToDeg(endLatRad),
+    lon: normalizeLongitude(radToDeg(endLonRad)),
+  };
+}
+
+function normalizeLongitude(lonDeg: number): number {
+  return ((lonDeg + 540) % 360) - 180;
+}
+
+function calculateDropPoint(
+  referenceLat: number,
+  referenceLon: number,
+  runHeadingDeg: number,
+  dropDistanceNm: number
+): LatLon {
+  const backBearing = normalizeDeg(runHeadingDeg + 180);
+  return destinationPoint(
+    referenceLat,
+    referenceLon,
+    backBearing,
+    nmToMetres(dropDistanceNm)
+  );
 }
 
 function applyTailHeadDeadband(tailwindKt: number): number {
@@ -247,6 +335,29 @@ function buildWindyUrl(lat: number, lon: number): string {
   return `https://www.windy.com/?wind,${lat.toFixed(4)},${lon.toFixed(4)},10`;
 }
 
+function preventSpeedIncreasesThroughWindow(rows: ResultRow[]): ResultRow[] {
+  let previousSpeed: number | null = null;
+
+  return rows.map((row) => {
+    if (row.targetSpeedKph === undefined) {
+      return row;
+    }
+
+    if (previousSpeed === null) {
+      previousSpeed = row.targetSpeedKph;
+      return row;
+    }
+
+    const cappedSpeed = Math.min(row.targetSpeedKph, previousSpeed);
+    previousSpeed = cappedSpeed;
+
+    return {
+      ...row,
+      targetSpeedKph: cappedSpeed,
+    };
+  });
+}
+
 function calculateTargets(
   taskMode: TaskMode,
   zeroWindSpeedKph: number,
@@ -265,7 +376,7 @@ function calculateTargets(
 
   const tailwindsKt = components.map((component) => component.tailwindKt);
 
-  return winds.map((wind, index) => {
+  const rawRows = winds.map((wind, index) => {
     const tailwindKt = components[index].tailwindKt;
     const crosswindKt = components[index].crosswindKt;
 
@@ -309,6 +420,82 @@ function calculateTargets(
       targetSpeedKph: Math.round(targetSpeedKph),
     };
   });
+
+  if (taskMode === "speed") {
+    return rawRows;
+  }
+
+  return preventSpeedIncreasesThroughWindow(rawRows);
+}
+function MapClickPicker({
+  referenceLat,
+  referenceLon,
+  dropPoint,
+  onPick,
+}: {
+  referenceLat: string;
+  referenceLon: string;
+  dropPoint: LatLon | null;
+  onPick: (lat: number, lon: number) => void;
+}) {
+  const lat = optionalNumberFromInput(referenceLat);
+  const lon = optionalNumberFromInput(referenceLon);
+
+  const center: [number, number] =
+    lat !== null && lon !== null ? [lat, lon] : [-28.6474, 153.602];
+
+  function ClickHandler() {
+    useMapEvents({
+      click(event) {
+        onPick(event.latlng.lat, event.latlng.lng);
+      },
+    });
+
+    return null;
+  }
+
+  const linePositions =
+    lat !== null && lon !== null && dropPoint !== null
+      ? [
+          [dropPoint.lat, dropPoint.lon] as [number, number],
+          [lat, lon] as [number, number],
+        ]
+      : [];
+
+  return (
+    <div className="map-picker">
+      <MapContainer center={center} zoom={12} scrollWheelZoom={true}>
+        <TileLayer
+          attribution="&copy; OpenStreetMap"
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+
+        <ClickHandler />
+
+        {dropPoint !== null && (
+          <Marker
+            position={[dropPoint.lat, dropPoint.lon]}
+            icon={dropPointIcon}
+          />
+        )}
+
+        {lat !== null && lon !== null && (
+          <Marker position={[lat, lon]} icon={referencePointIcon} />
+        )}
+
+        {linePositions.length === 2 && (
+          <Polyline
+            positions={linePositions}
+            pathOptions={{
+              color: "#22d3ee",
+              weight: 4,
+              opacity: 0.9,
+            }}
+          />
+        )}
+      </MapContainer>
+    </div>
+  );
 }
 
 function TargetGraph({
@@ -510,24 +697,46 @@ function TargetGraph({
 
 export default function App() {
   const [taskMode, setTaskMode] = useState<TaskMode>("distance");
-  const [windSource, setWindSource] = useState<WindSource>("manual");
+  const [windSource, setWindSource] = useState<WindSource>("mark-schulze");
 
   const [zeroWindSpeedKph, setZeroWindSpeedKph] = useState("");
   const [startGR, setStartGR] = useState("");
   const [endGR, setEndGR] = useState("");
   const [runHeadingDeg, setRunHeadingDeg] = useState("");
 
+  const [dropDistanceNm, setDropDistanceNm] = useState("");
+
   const [globalWindFromDeg, setGlobalWindFromDeg] = useState("");
   const [globalWindSpeedKt, setGlobalWindSpeedKt] = useState("");
 
-  const [markLat, setMarkLat] = useState("");
-  const [markLon, setMarkLon] = useState("");
+  const [referenceLat, setReferenceLat] = useState("");
+  const [referenceLon, setReferenceLon] = useState("");
 
   const [fetchStatus, setFetchStatus] = useState("");
   const [locationStatus, setLocationStatus] = useState("");
-  const [showCoordinateEntry, setShowCoordinateEntry] = useState(false);
+  const [referenceStatus, setReferenceStatus] = useState("");
+  const [showMapPicker, setShowMapPicker] = useState(false);
   const [showRawWinds, setShowRawWinds] = useState(false);
   const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
+
+  const calculatedDropPoint = useMemo(() => {
+    const lat = optionalNumberFromInput(referenceLat);
+    const lon = optionalNumberFromInput(referenceLon);
+    const heading = optionalNumberFromInput(runHeadingDeg);
+    const distanceNm = optionalNumberFromInput(dropDistanceNm);
+
+    if (
+      lat === null ||
+      lon === null ||
+      heading === null ||
+      distanceNm === null ||
+      distanceNm <= 0
+    ) {
+      return null;
+    }
+
+    return calculateDropPoint(lat, lon, heading, distanceNm);
+  }, [referenceLat, referenceLon, runHeadingDeg, dropDistanceNm]);
 
   function updateWind(
     altitudeM: number,
@@ -607,71 +816,77 @@ export default function App() {
     }
   }
 
-  async function useCurrentLocation() {
-    setShowCoordinateEntry(false);
+  async function setReferencePoint(lat: number, lon: number, sourceLabel: string) {
+    const nextLat = lat.toFixed(6);
+    const nextLon = lon.toFixed(6);
+
+    setReferenceLat(nextLat);
+    setReferenceLon(nextLon);
+    setReferenceStatus(
+      `Reference point set from ${sourceLabel}: ${nextLat}, ${nextLon}.`
+    );
+
+    if (windSource === "mark-schulze") {
+      await fetchMarkSchulzeWindsForLocation(lat, lon);
+    }
+  }
+
+  async function useCurrentLocationAsReference() {
     setLocationStatus("Requesting location...");
     setFetchStatus("");
 
     try {
       const coords = await requestCurrentLocation();
-      const lat = coords.lat.toFixed(6);
-      const lon = coords.lon.toFixed(6);
       const accuracyText = Math.round(coords.accuracyM);
 
-      setMarkLat(lat);
-      setMarkLon(lon);
-      setLocationStatus(
-        `Location set to ${lat}, ${lon}. Accuracy about ${accuracyText} m.`
-      );
-
-      if (windSource === "mark-schulze") {
-        await fetchMarkSchulzeWindsForLocation(coords.lat, coords.lon);
-      }
+      setLocationStatus(`Location accepted. Accuracy about ${accuracyText} m.`);
+      await setReferencePoint(coords.lat, coords.lon, "current location");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Could not get location.";
 
-      setShowCoordinateEntry(true);
-      setLocationStatus(
-        `Location unavailable. Enter latitude and longitude manually. ${message}`
-      );
+      setLocationStatus(`Location unavailable. ${message}`);
     }
   }
 
-  async function fetchUsingManualCoordinates() {
-    const lat = optionalNumberFromInput(markLat);
-    const lon = optionalNumberFromInput(markLon);
+  async function loadWindsFromEnteredReference() {
+    const lat = optionalNumberFromInput(referenceLat);
+    const lon = optionalNumberFromInput(referenceLon);
 
     if (lat === null || lon === null) {
-      setFetchStatus("Enter latitude and longitude first.");
+      setFetchStatus("Enter reference latitude and longitude first.");
       return;
     }
 
-    await fetchMarkSchulzeWindsForLocation(lat, lon);
+    setReferenceStatus(`Reference point set manually: ${lat}, ${lon}.`);
+
+    if (windSource === "mark-schulze") {
+      await fetchMarkSchulzeWindsForLocation(lat, lon);
+    }
+  }
+
+  async function pickReferenceFromMap(lat: number, lon: number) {
+    await setReferencePoint(lat, lon, "map");
   }
 
   function handleWindSourceChange(source: WindSource) {
     setWindSource(source);
     setFetchStatus("");
-    setLocationStatus("");
 
     if (source === "manual") {
       setShowRawWinds(true);
-      setShowCoordinateEntry(false);
       return;
     }
 
     setShowRawWinds(false);
-    setShowCoordinateEntry(false);
   }
 
   function openWindyVisualCheck() {
-    const lat = optionalNumberFromInput(markLat);
-    const lon = optionalNumberFromInput(markLon);
+    const lat = optionalNumberFromInput(referenceLat);
+    const lon = optionalNumberFromInput(referenceLon);
 
     if (lat === null || lon === null) {
-      setShowCoordinateEntry(true);
-      setLocationStatus("Enter latitude and longitude before opening Windy.");
+      setReferenceStatus("Set the reference point before opening Windy.");
       return;
     }
 
@@ -694,16 +909,14 @@ export default function App() {
   return (
     <main className="app">
       <header className="app-header">
-  <img
-    className="app-logo"
-    src={`${import.meta.env.BASE_URL}numbers-to-fly-logo.png`}
-    alt="Numbers to Fly logo"
-  />
+        <img
+          className="app-logo"
+          src={`${import.meta.env.BASE_URL}numbers-to-fly-logo.png`}
+          alt="Numbers to Fly logo"
+        />
 
-  <p className="subtitle">
-    Know your numbers in the window.
-  </p>
-</header>
+        <p className="subtitle">Know your numbers in the window.</p>
+      </header>
 
       <section className="card">
         <h2>Setup</h2>
@@ -765,6 +978,88 @@ export default function App() {
             onChange={(e) => setRunHeadingDeg(e.target.value)}
           />
         </label>
+
+        <h2>Reference Point</h2>
+
+        <p className="subtitle">
+          Enter the competition reference point, use your current position, or
+          tap it on the map.
+        </p>
+
+        <div className="manual-wind-controls">
+          <label>
+            Latitude
+            <input
+              type="number"
+              step="0.000001"
+              value={referenceLat}
+              placeholder="Example -28.514026"
+              onChange={(e) => setReferenceLat(e.target.value)}
+            />
+          </label>
+
+          <label>
+            Longitude
+            <input
+              type="number"
+              step="0.000001"
+              value={referenceLon}
+              placeholder="Example 153.551623"
+              onChange={(e) => setReferenceLon(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <label>
+          Drop distance from reference point, NM
+          <input
+            type="number"
+            step="0.1"
+            value={dropDistanceNm}
+            placeholder="Example 3.0"
+            onChange={(e) => setDropDistanceNm(e.target.value)}
+          />
+        </label>
+
+        <button type="button" onClick={useCurrentLocationAsReference}>
+          Use my current location
+        </button>
+
+        <button type="button" onClick={loadWindsFromEnteredReference}>
+          Load winds from reference point
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowMapPicker((current) => !current)}
+        >
+          {showMapPicker ? "Hide map" : "Choose reference point on map"}
+        </button>
+
+        {calculatedDropPoint && (
+          <p className="subtitle">
+            Drop/start point: {calculatedDropPoint.lat.toFixed(6)},{" "}
+            {calculatedDropPoint.lon.toFixed(6)}
+          </p>
+        )}
+
+        {showMapPicker && (
+          <>
+            <p className="subtitle">
+              Tap the map to set the reference point. The flight line is drawn
+              from the calculated drop/start point to the reference point.
+            </p>
+            <MapClickPicker
+              referenceLat={referenceLat}
+              referenceLon={referenceLon}
+              dropPoint={calculatedDropPoint}
+              onPick={pickReferenceFromMap}
+            />
+          </>
+        )}
+
+        {locationStatus && <p className="subtitle">{locationStatus}</p>}
+        {referenceStatus && <p className="subtitle">{referenceStatus}</p>}
       </section>
 
       <section className="card">
@@ -776,17 +1071,11 @@ export default function App() {
             value={windSource}
             onChange={(e) => handleWindSourceChange(e.target.value as WindSource)}
           >
-            <option value="manual">Manual</option>
             <option value="mark-schulze">Mark Schulze</option>
+            <option value="manual">Manual</option>
             <option value="windy">Windy visual check</option>
           </select>
         </label>
-
-        {windSource !== "manual" && (
-          <button type="button" onClick={useCurrentLocation}>
-            Use my current location
-          </button>
-        )}
 
         {windSource === "windy" && (
           <button type="button" onClick={openWindyVisualCheck}>
@@ -794,51 +1083,7 @@ export default function App() {
           </button>
         )}
 
-        {windSource !== "manual" && (
-          <button
-            type="button"
-            onClick={() => setShowCoordinateEntry((current) => !current)}
-          >
-            {showCoordinateEntry
-              ? "Hide coordinate entry"
-              : "Enter coordinates manually"}
-          </button>
-        )}
-
-        {locationStatus && <p className="subtitle">{locationStatus}</p>}
         {fetchStatus && <p className="subtitle">{fetchStatus}</p>}
-
-        {showCoordinateEntry && (
-          <div className="manual-wind-controls">
-            <label>
-              Latitude
-              <input
-                type="number"
-                step="0.000001"
-                value={markLat}
-                placeholder="Example -28.514026"
-                onChange={(e) => setMarkLat(e.target.value)}
-              />
-            </label>
-
-            <label>
-              Longitude
-              <input
-                type="number"
-                step="0.000001"
-                value={markLon}
-                placeholder="Example 153.551623"
-                onChange={(e) => setMarkLon(e.target.value)}
-              />
-            </label>
-
-            {windSource === "mark-schulze" && (
-              <button type="button" onClick={fetchUsingManualCoordinates}>
-                Load winds from entered coordinates
-              </button>
-            )}
-          </div>
-        )}
 
         <button
           type="button"
