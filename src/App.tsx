@@ -701,8 +701,8 @@ export default function App() {
   />
 
   <p className="subtitle">
-  Know your numbers in the window.
-</p>
+    Know your numbers in the window.
+  </p>
 </header>
 
       <section className="card">
