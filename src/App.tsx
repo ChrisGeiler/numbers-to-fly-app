@@ -915,15 +915,28 @@ export default function App() {
           </label>
         )}
 
-        <label>
-          Run heading, degrees
-          <input
-            type="number"
-            value={runHeadingDeg}
-            placeholder="Example 90"
-            onChange={(e) => setRunHeadingDeg(e.target.value)}
-          />
-        </label>
+       <label>
+  Run heading, degrees
+  <input
+    type="number"
+    value={runHeadingDeg}
+    placeholder="Example 90"
+    onChange={(e) => setRunHeadingDeg(e.target.value)}
+  />
+</label>
+
+<label>
+  Drop distance from reference point, NM
+  <input
+    type="number"
+    step="0.1"
+    value={dropDistanceNm}
+    placeholder="Example 3.0"
+    onChange={(e) => setDropDistanceNm(e.target.value)}
+  />
+</label>
+
+<h2>Reference Point</h2>
 
         <h2>Reference Point</h2>
 
@@ -979,17 +992,6 @@ export default function App() {
             />
           </label>
         </div>
-
-        <label>
-          Drop distance from reference point, NM
-          <input
-            type="number"
-            step="0.1"
-            value={dropDistanceNm}
-            placeholder="Example 3.0"
-            onChange={(e) => setDropDistanceNm(e.target.value)}
-          />
-        </label>
 
         <button type="button" onClick={loadWindsFromEnteredReference}>
           Load winds from entered coordinates
