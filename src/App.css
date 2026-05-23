@@ -354,3 +354,94 @@ tr:last-child td {
     width: min(900px, calc(100% - 32px));
   }
 }
+
+/* Clean up wide result tables on phone */
+.card {
+  overflow: hidden;
+}
+
+.card table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.card table th,
+.card table td {
+  font-size: 0.95rem;
+  padding: 12px 8px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.card table th:first-child,
+.card table td:first-child {
+  text-align: left;
+}
+
+/* Make the Numbers to Fly table fit better on mobile */
+@media (max-width: 640px) {
+  .card {
+    padding: 14px;
+  }
+
+  .card table {
+    table-layout: auto;
+  }
+
+  .card table th,
+  .card table td {
+    font-size: 0.88rem;
+    padding: 10px 6px;
+  }
+
+  .card table th {
+    line-height: 1.15;
+  }
+
+  .card table th:first-child,
+  .card table td:first-child {
+    min-width: 76px;
+  }
+
+  .card table th:nth-child(2),
+  .card table td:nth-child(2),
+  .card table th:nth-child(3),
+  .card table td:nth-child(3),
+  .card table th:nth-child(4),
+  .card table td:nth-child(4) {
+    min-width: 70px;
+  }
+
+  .card table th:last-child,
+  .card table td:last-child {
+    min-width: 64px;
+  }
+}
+
+/* Extra small phones */
+@media (max-width: 420px) {
+  .card table th,
+  .card table td {
+    font-size: 0.8rem;
+    padding: 9px 4px;
+  }
+
+  .card table th:first-child,
+  .card table td:first-child {
+    min-width: 68px;
+  }
+
+  .card table th:nth-child(2),
+  .card table td:nth-child(2),
+  .card table th:nth-child(3),
+  .card table td:nth-child(3),
+  .card table th:nth-child(4),
+  .card table td:nth-child(4) {
+    min-width: 58px;
+  }
+
+  .card table th:last-child,
+  .card table td:last-child {
+    min-width: 52px;
+  }
+}

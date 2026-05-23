@@ -928,11 +928,11 @@ export default function App() {
         <table>
           <thead>
             <tr>
-              <th>Altitude</th>
-              <th>Tail/Head</th>
-              <th>Crosswind</th>
-              {taskMode === "speed" && <th>Effective</th>}
-              <th>{taskMode === "speed" ? "Target GR" : "Target speed"}</th>
+              <th>Alt</th>
+              <th>T/H</th>
+              <th>Xwind</th>
+              {taskMode === "speed" && <th>Eff</th>}
+              <th>{taskMode === "speed" ? "GR" : "Speed"}</th>
             </tr>
           </thead>
 
