@@ -10,8 +10,12 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
 
+type AppPage = "landing" | "find" | "fly";
 type TaskMode = "time" | "distance" | "speed";
 type WindSource = "manual" | "mark-schulze" | "windy";
+type SuitSetup = "crplus-no-wingtips" | "crplus-wingtips" | "other";
+type PilotProfile = "light-low-power" | "average" | "strong-heavy";
+type UnitSystem = "metric" | "imperial";
 
 type WindLayer = {
   altitudeM: number;
@@ -91,6 +95,144 @@ function optionalNumberFromInput(value: string): number | null {
   if (value.trim() === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function lbToKg(weightLb: number): number {
+  return weightLb / 2.20462;
+}
+
+function kgToLb(weightKg: number): number {
+  return weightKg * 2.20462;
+}
+
+function cmToInches(heightCm: number): number {
+  return heightCm / 2.54;
+}
+
+function inchesToCm(heightInches: number): number {
+  return heightInches * 2.54;
+}
+
+function feetAndInchesToTotalInches(feet: string, inches: string): number {
+  return numberFromInput(feet, 0) * 12 + numberFromInput(inches, 0);
+}
+
+function splitInchesToFeetAndInches(totalInches: number): {
+  feet: number;
+  inches: number;
+} {
+  const rounded = Math.round(totalInches);
+  return {
+    feet: Math.floor(rounded / 12),
+    inches: rounded % 12,
+  };
+}
+
+function calculateFindYourNumbers({
+  weight,
+  unitSystem,
+  heightCm,
+  heightFeet,
+  heightInches,
+  suitSetup,
+  pilotProfile,
+}: {
+  weight: string;
+  unitSystem: UnitSystem;
+  heightCm: string;
+  heightFeet: string;
+  heightInches: string;
+  suitSetup: SuitSetup;
+  pilotProfile: PilotProfile;
+}) {
+  const referenceWeightLb = 175;
+  const referenceHeightIn = 71;
+
+  const weightNumber = optionalNumberFromInput(weight);
+
+  const weightLb =
+    weightNumber === null
+      ? referenceWeightLb
+      : unitSystem === "metric"
+        ? kgToLb(weightNumber)
+        : weightNumber;
+
+  const hasMetricHeight = heightCm.trim() !== "";
+  const hasImperialHeight =
+    heightFeet.trim() !== "" || heightInches.trim() !== "";
+
+  const pilotHeightIn =
+    unitSystem === "metric"
+      ? hasMetricHeight
+        ? cmToInches(numberFromInput(heightCm, 0))
+        : referenceHeightIn
+      : hasImperialHeight
+        ? feetAndInchesToTotalInches(heightFeet, heightInches)
+        : referenceHeightIn;
+
+  const weightAdjustmentKph = ((weightLb - referenceWeightLb) / 10) * 4.5;
+
+  const heightAdjustmentKph = Math.min(
+    Math.max(pilotHeightIn - referenceHeightIn, -5),
+    5
+  );
+
+  const suitDistanceAdjustmentKph =
+    suitSetup === "crplus-wingtips" ? -10 : 0;
+
+  const suitTimeAdjustmentKph = suitSetup === "crplus-wingtips" ? -10 : 0;
+
+  const profileAdjustmentKph =
+    pilotProfile === "light-low-power"
+      ? -5
+      : pilotProfile === "strong-heavy"
+        ? 5
+        : 0;
+
+  const distanceSpeedKph = Math.round(
+    185 +
+      weightAdjustmentKph +
+      heightAdjustmentKph +
+      suitDistanceAdjustmentKph +
+      profileAdjustmentKph
+  );
+
+  const timeSpeedKph = Math.round(
+    150 +
+      weightAdjustmentKph +
+      heightAdjustmentKph +
+      suitTimeAdjustmentKph +
+      profileAdjustmentKph
+  );
+
+  let speedStartGR = 1.0;
+  let speedEndGR = 1.7;
+  let distanceGRGuidance =
+    "Aim around 1.5–1.7 GR and refine with FlySight data.";
+
+  if (pilotProfile === "light-low-power" || weightLb < 150) {
+    speedStartGR = 1.0;
+    speedEndGR = 1.5;
+    distanceGRGuidance =
+      "Avoid flying too flat. A GR around 1.3 may be ideal, and no higher than about 1.5 as a starting point.";
+  }
+
+  if (pilotProfile === "strong-heavy" || weightLb > 205) {
+    speedStartGR = 1.0;
+    speedEndGR = 1.8;
+    distanceGRGuidance =
+      "You may be able to carry energy at a flatter GR, but expect the best results to need higher airspeed.";
+  }
+
+  return {
+    weightLb,
+    weightKg: lbToKg(weightLb),
+    distanceSpeedKph,
+    timeSpeedKph,
+    speedStartGR,
+    speedEndGR,
+    distanceGRGuidance,
+  };
 }
 
 function degToRad(deg: number): number {
@@ -222,14 +364,8 @@ function flightLineColourFromHeadingDifference(
     signedAngleDeg(selectedHeadingDeg, bestHeadingDeg)
   );
 
-  if (difference <= 7.5) {
-    return "#00ff5a";
-  }
-
-  if (difference <= 15) {
-    return "#f97316";
-  }
-
+  if (difference <= 7.5) return "#00ff5a";
+  if (difference <= 15) return "#f97316";
   return "#ef4444";
 }
 
@@ -837,12 +973,28 @@ function TargetGraph({
 }
 
 export default function App() {
+  const [activePage, setActivePage] = useState<AppPage>("landing");
+
+  const [findUnitSystem, setFindUnitSystem] = useState<UnitSystem>("metric");
+  const [findWeight, setFindWeight] = useState("");
+  const [findHeightCm, setFindHeightCm] = useState("");
+  const [findHeightFeet, setFindHeightFeet] = useState("");
+  const [findHeightInches, setFindHeightInches] = useState("");
+  const [findSuitSetup, setFindSuitSetup] =
+    useState<SuitSetup>("crplus-no-wingtips");
+  const [findPilotProfile, setFindPilotProfile] =
+    useState<PilotProfile>("average");
+
   const [taskMode, setTaskMode] = useState<TaskMode>("distance");
   const [windSource, setWindSource] = useState<WindSource>("mark-schulze");
 
   const [zeroWindSpeedKph, setZeroWindSpeedKph] = useState("");
   const [startGR, setStartGR] = useState("");
   const [endGR, setEndGR] = useState("");
+
+  const [savedDistanceSpeedKph, setSavedDistanceSpeedKph] = useState("");
+  const [savedTimeSpeedKph, setSavedTimeSpeedKph] = useState("");
+
   const [runHeadingDeg, setRunHeadingDeg] = useState("");
   const [dropDistanceNm, setDropDistanceNm] = useState("");
 
@@ -857,6 +1009,28 @@ export default function App() {
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [showRawWinds, setShowRawWinds] = useState(false);
   const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
+
+  const foundNumbers = useMemo(
+    () =>
+      calculateFindYourNumbers({
+        weight: findWeight,
+        unitSystem: findUnitSystem,
+        heightCm: findHeightCm,
+        heightFeet: findHeightFeet,
+        heightInches: findHeightInches,
+        suitSetup: findSuitSetup,
+        pilotProfile: findPilotProfile,
+      }),
+    [
+      findWeight,
+      findUnitSystem,
+      findHeightCm,
+      findHeightFeet,
+      findHeightInches,
+      findSuitSetup,
+      findPilotProfile,
+    ]
+  );
 
   const windAdvantage = useMemo(
     () =>
@@ -882,6 +1056,67 @@ export default function App() {
 
     return calculateDropPoint(lat, lon, heading, distanceNm);
   }, [referenceLat, referenceLon, runHeadingDeg, dropDistanceNm]);
+
+  function toggleFindUnitSystem() {
+    if (findUnitSystem === "metric") {
+      const weightKg = optionalNumberFromInput(findWeight);
+      if (weightKg !== null) {
+        setFindWeight(String(Math.round(kgToLb(weightKg))));
+      }
+
+      const heightCm = optionalNumberFromInput(findHeightCm);
+      if (heightCm !== null) {
+        const split = splitInchesToFeetAndInches(cmToInches(heightCm));
+        setFindHeightFeet(String(split.feet));
+        setFindHeightInches(String(split.inches));
+      }
+
+      setFindUnitSystem("imperial");
+      return;
+    }
+
+    const weightLb = optionalNumberFromInput(findWeight);
+    if (weightLb !== null) {
+      setFindWeight(String(Math.round(lbToKg(weightLb))));
+    }
+
+    const totalInches = feetAndInchesToTotalInches(
+      findHeightFeet,
+      findHeightInches
+    );
+
+    if (totalInches > 0) {
+      setFindHeightCm(String(Math.round(inchesToCm(totalInches))));
+    }
+
+    setFindUnitSystem("metric");
+  }
+
+  function pushAllFoundNumbersToFlyPage() {
+    const distanceSpeed = String(foundNumbers.distanceSpeedKph);
+    const timeSpeed = String(foundNumbers.timeSpeedKph);
+
+    setSavedDistanceSpeedKph(distanceSpeed);
+    setSavedTimeSpeedKph(timeSpeed);
+
+    setZeroWindSpeedKph(distanceSpeed);
+    setStartGR(foundNumbers.speedStartGR.toFixed(2));
+    setEndGR(foundNumbers.speedEndGR.toFixed(2));
+    setTaskMode("distance");
+    setActivePage("fly");
+  }
+
+  function handleFlyTaskModeChange(nextTaskMode: TaskMode) {
+    setTaskMode(nextTaskMode);
+
+    if (nextTaskMode === "distance" && savedDistanceSpeedKph !== "") {
+      setZeroWindSpeedKph(savedDistanceSpeedKph);
+    }
+
+    if (nextTaskMode === "time" && savedTimeSpeedKph !== "") {
+      setZeroWindSpeedKph(savedTimeSpeedKph);
+    }
+  }
 
   function updateWind(
     altitudeM: number,
@@ -994,6 +1229,187 @@ export default function App() {
     [taskMode, zeroWindSpeedKph, startGR, endGR, runHeadingDeg, winds]
   );
 
+  if (activePage === "landing") {
+    return (
+      <main className="app landing-page">
+        <header className="app-header landing-header">
+          <img
+            className="app-logo landing-logo"
+            src={`${import.meta.env.BASE_URL}numbers-to-fly-logo.png`}
+            alt="Numbers to Fly logo"
+          />
+
+          <p className="tagline">Know your numbers in the window.</p>
+
+          <div className="landing-actions">
+            <button type="button" onClick={() => setActivePage("find")}>
+              Find your Numbers
+            </button>
+
+            <button type="button" onClick={() => setActivePage("fly")}>
+              Fly your Numbers
+            </button>
+          </div>
+        </header>
+      </main>
+    );
+  }
+
+  if (activePage === "find") {
+    return (
+      <main className="app">
+        <header className="app-header">
+          <img
+            className="app-logo"
+            src={`${import.meta.env.BASE_URL}numbers-to-fly-logo.png`}
+            alt="Numbers to Fly logo"
+          />
+
+          <p className="tagline">Find your Numbers</p>
+
+          <button
+            type="button"
+            className="back-button"
+            onClick={() => setActivePage("landing")}
+          >
+            Back
+          </button>
+        </header>
+
+        <section className="card">
+          <h2>Find your Numbers</h2>
+
+          <p className="subtitle">
+            Enter your body details and suit setup to estimate starting numbers.
+          </p>
+
+          <button
+            type="button"
+            className="primary-action-button"
+            onClick={toggleFindUnitSystem}
+          >
+            {findUnitSystem === "metric"
+              ? "Switch to Imperial"
+              : "Switch to Metric"}
+          </button>
+
+          <div className="manual-wind-controls">
+            <label>
+              Weight, {findUnitSystem === "metric" ? "kg" : "lb"}
+              <input
+                type="number"
+                value={findWeight}
+                placeholder={
+                  findUnitSystem === "metric" ? "Example 78" : "Example 175"
+                }
+                onChange={(e) => setFindWeight(e.target.value)}
+              />
+            </label>
+
+            {findUnitSystem === "metric" ? (
+              <label>
+                Height, cm
+                <input
+                  type="number"
+                  value={findHeightCm}
+                  placeholder="Example 180"
+                  onChange={(e) => setFindHeightCm(e.target.value)}
+                />
+              </label>
+            ) : (
+              <>
+                <label>
+                  Height, feet
+                  <input
+                    type="number"
+                    value={findHeightFeet}
+                    placeholder="Example 5"
+                    onChange={(e) => setFindHeightFeet(e.target.value)}
+                  />
+                </label>
+
+                <label>
+                  Height, inches
+                  <input
+                    type="number"
+                    value={findHeightInches}
+                    placeholder="Example 11"
+                    onChange={(e) => setFindHeightInches(e.target.value)}
+                  />
+                </label>
+              </>
+            )}
+          </div>
+
+          <label>
+            Suit setup
+            <select
+              value={findSuitSetup}
+              onChange={(e) => setFindSuitSetup(e.target.value as SuitSetup)}
+            >
+              <option value="crplus-no-wingtips">CR+ without wingtips</option>
+              <option value="crplus-wingtips">CR+ with wingtips</option>
+              <option value="other">Other / unknown</option>
+            </select>
+          </label>
+
+          <label>
+            Pilot profile
+            <select
+              value={findPilotProfile}
+              onChange={(e) =>
+                setFindPilotProfile(e.target.value as PilotProfile)
+              }
+            >
+              <option value="light-low-power">Light / lower power</option>
+              <option value="average">Average</option>
+              <option value="strong-heavy">Strong / heavy</option>
+            </select>
+          </label>
+        </section>
+
+        <section className="card">
+          <h2>Estimated Numbers</h2>
+
+          <div className="numbers-grid">
+            <div className="number-tile">
+              <span>Distance speed</span>
+              <strong>{foundNumbers.distanceSpeedKph} km/h</strong>
+            </div>
+
+            <div className="number-tile">
+              <span>Time speed</span>
+              <strong>{foundNumbers.timeSpeedKph} km/h</strong>
+            </div>
+
+            <div className="number-tile">
+              <span>Speed start GR</span>
+              <strong>{foundNumbers.speedStartGR.toFixed(2)}</strong>
+            </div>
+
+            <div className="number-tile">
+              <span>Speed end GR</span>
+              <strong>{foundNumbers.speedEndGR.toFixed(2)}</strong>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="primary-action-button"
+            onClick={pushAllFoundNumbersToFlyPage}
+          >
+            Push all numbers to Fly your Numbers
+          </button>
+
+          <p className="calculator-disclaimer">
+            Starting point only. Refine these numbers with actual training data,
+            suit setup, FlySight data, and coaching feedback.
+          </p>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app">
       <header className="app-header">
@@ -1003,7 +1419,15 @@ export default function App() {
           alt="Numbers to Fly logo"
         />
 
-        <p className="tagline">Know your numbers in the window.</p>
+        <p className="tagline">Fly your Numbers</p>
+
+        <button
+          type="button"
+          className="back-button"
+          onClick={() => setActivePage("landing")}
+        >
+          Back
+        </button>
       </header>
 
       <section className="card">
@@ -1013,7 +1437,7 @@ export default function App() {
           Task
           <select
             value={taskMode}
-            onChange={(e) => setTaskMode(e.target.value as TaskMode)}
+            onChange={(e) => handleFlyTaskModeChange(e.target.value as TaskMode)}
           >
             <option value="time">Time</option>
             <option value="distance">Distance</option>

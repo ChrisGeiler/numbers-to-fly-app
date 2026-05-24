@@ -116,3 +116,14 @@ code,
   font-style: italic;
   font-weight: 700;
 }
+
+.push-buttons {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.push-buttons .primary-action-button {
+  width: 100%;
+  margin: 0;
+}
