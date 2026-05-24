@@ -214,20 +214,6 @@ function averageTailwindForHeading(
   );
 }
 
-function colourBetween(
-  start: [number, number, number],
-  end: [number, number, number],
-  progress: number
-): string {
-  const safeProgress = Math.min(Math.max(progress, 0), 1);
-
-  const r = Math.round(start[0] + (end[0] - start[0]) * safeProgress);
-  const g = Math.round(start[1] + (end[1] - start[1]) * safeProgress);
-  const b = Math.round(start[2] + (end[2] - start[2]) * safeProgress);
-
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
 function flightLineColourFromHeadingDifference(
   selectedHeadingDeg: number,
   bestHeadingDeg: number
@@ -237,15 +223,16 @@ function flightLineColourFromHeadingDifference(
   );
 
   if (difference <= 7.5) {
-    return "#00ff5a"; // bright green
+    return "#00ff5a";
   }
 
   if (difference <= 15) {
-    return "#f97316"; // orange
+    return "#f97316";
   }
 
-  return "#ef4444"; // red
+  return "#ef4444";
 }
+
 function calculateWindAdvantageSummary(
   headingDeg: number,
   winds: WindLayer[]
@@ -294,6 +281,7 @@ function calculateWindAdvantageSummary(
     ),
   };
 }
+
 function delayedPerformanceDropKph(altitudeM: number): number {
   if (altitudeM >= 2200) return 0;
 
@@ -1031,7 +1019,7 @@ export default function App() {
           alt="Numbers to Fly logo"
         />
 
-        <p className="subtitle">Know your numbers in the window.</p>
+        <p className="tagline">Know your numbers in the window.</p>
       </header>
 
       <section className="card">
@@ -1114,8 +1102,9 @@ export default function App() {
         {showMapPicker && (
           <>
             <p className="subtitle">
-              Tap the map to set the reference point. The flight line changes
-              colour based on the wind advantage for the selected heading.
+              Tap the map to set the reference point. Green is within 7.5° of
+              the best tailwind heading, orange is within 15°, and red is
+              outside that range.
             </p>
 
             <MapClickPicker
@@ -1128,6 +1117,12 @@ export default function App() {
           </>
         )}
 
+        <HeadingSlider
+          runHeadingDeg={runHeadingDeg}
+          windAdvantage={windAdvantage}
+          onChange={updateHeadingFromSlider}
+        />
+
         <label>
           Run heading, degrees
           <input
@@ -1135,16 +1130,10 @@ export default function App() {
             min="0"
             max="359"
             value={runHeadingDeg}
-            placeholder="Example 90"
+            placeholder="Manual heading entry"
             onChange={(e) => setRunHeadingDeg(e.target.value)}
           />
         </label>
-
-        <HeadingSlider
-          runHeadingDeg={runHeadingDeg}
-          windAdvantage={windAdvantage}
-          onChange={updateHeadingFromSlider}
-        />
 
         <div className="manual-wind-controls">
           <label>
