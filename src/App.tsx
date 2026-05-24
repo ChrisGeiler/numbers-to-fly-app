@@ -419,6 +419,43 @@ function calculateTargets(
   return preventSpeedIncreasesThroughWindow(rawRows);
 }
 
+function HeadingSlider({
+  runHeadingDeg,
+  onChange,
+}: {
+  runHeadingDeg: string;
+  onChange: (value: string) => void;
+}) {
+  const heading = Math.round(numberFromInput(runHeadingDeg, 0));
+
+  return (
+    <div className="heading-slider-panel">
+      <div className="heading-slider-readout">
+        Flight heading:{" "}
+        <strong>{runHeadingDeg.trim() === "" ? "---" : `${heading}°`}</strong>
+      </div>
+
+      <input
+        className="heading-slider"
+        type="range"
+        min="0"
+        max="359"
+        step="1"
+        value={numberFromInput(runHeadingDeg, 0)}
+        onChange={(e) => onChange(e.target.value)}
+      />
+
+      <div className="heading-slider-scale">
+        <span>000°</span>
+        <span>090°</span>
+        <span>180°</span>
+        <span>270°</span>
+        <span>359°</span>
+      </div>
+    </div>
+  );
+}
+
 function MapClickPicker({
   referenceLat,
   referenceLon,
@@ -458,9 +495,9 @@ function MapClickPicker({
     <div className="map-picker">
       <MapContainer center={center} zoom={12} scrollWheelZoom={true}>
         <TileLayer
-  attribution="Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community"
-  url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-/>
+          attribution="Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        />
 
         <ClickHandler />
 
@@ -695,7 +732,6 @@ export default function App() {
   const [startGR, setStartGR] = useState("");
   const [endGR, setEndGR] = useState("");
   const [runHeadingDeg, setRunHeadingDeg] = useState("");
-
   const [dropDistanceNm, setDropDistanceNm] = useState("");
 
   const [globalWindFromDeg, setGlobalWindFromDeg] = useState("");
@@ -749,6 +785,10 @@ export default function App() {
         speedKt: globalWindSpeedKt,
       }))
     );
+  }
+
+  function updateHeadingFromSlider(value: string) {
+    setRunHeadingDeg(value);
   }
 
   async function fetchMarkSchulzeWindsForLocation(lat: number, lon: number) {
@@ -915,28 +955,16 @@ export default function App() {
           </label>
         )}
 
-       <label>
-  Run heading, degrees
-  <input
-    type="number"
-    value={runHeadingDeg}
-    placeholder="Example 90"
-    onChange={(e) => setRunHeadingDeg(e.target.value)}
-  />
-</label>
-
-<label>
-  Drop distance from reference point, NM
-  <input
-    type="number"
-    step="0.1"
-    value={dropDistanceNm}
-    placeholder="Example 3.0"
-    onChange={(e) => setDropDistanceNm(e.target.value)}
-  />
-</label>
-
-<h2>Reference Point</h2>
+        <label>
+          Drop distance from reference point, NM
+          <input
+            type="number"
+            step="0.1"
+            value={dropDistanceNm}
+            placeholder="Example 3.0"
+            onChange={(e) => setDropDistanceNm(e.target.value)}
+          />
+        </label>
 
         <h2>Reference Point</h2>
 
@@ -956,8 +984,8 @@ export default function App() {
         {showMapPicker && (
           <>
             <p className="subtitle">
-              Tap the map to set the reference point. The flight line is drawn
-              from the calculated drop/start point to the reference point.
+              Tap the map to set the reference point. Use the heading slider to
+              rotate the flight line around the reference point.
             </p>
 
             <MapClickPicker
@@ -968,6 +996,23 @@ export default function App() {
             />
           </>
         )}
+
+        <label>
+          Run heading, degrees
+          <input
+            type="number"
+            min="0"
+            max="359"
+            value={runHeadingDeg}
+            placeholder="Example 90"
+            onChange={(e) => setRunHeadingDeg(e.target.value)}
+          />
+        </label>
+
+        <HeadingSlider
+          runHeadingDeg={runHeadingDeg}
+          onChange={updateHeadingFromSlider}
+        />
 
         <div className="manual-wind-controls">
           <label>
