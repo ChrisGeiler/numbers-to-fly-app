@@ -45,6 +45,15 @@ type LatLon = {
   lon: number;
 };
 
+type WindAdvantageSummary = {
+  averageTailwindKt: number;
+  bestAverageTailwindKt: number;
+  worstAverageTailwindKt: number;
+  bestHeadingDeg: number;
+  score: number;
+  color: string;
+};
+
 const altitudes = [
   2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600, 1500,
 ];
@@ -183,6 +192,108 @@ function windComponents(
   };
 }
 
+function averageTailwindForHeading(
+  headingDeg: number,
+  winds: WindLayer[]
+): number {
+  if (winds.length === 0) return 0;
+
+  const tailwinds = winds.map((wind) => {
+    const components = windComponents(
+      headingDeg,
+      numberFromInput(wind.directionFromDeg, 0),
+      numberFromInput(wind.speedKt, 0)
+    );
+
+    return components.tailwindKt;
+  });
+
+  return (
+    tailwinds.reduce((total, tailwindKt) => total + tailwindKt, 0) /
+    tailwinds.length
+  );
+}
+
+function colourBetween(
+  start: [number, number, number],
+  end: [number, number, number],
+  progress: number
+): string {
+  const safeProgress = Math.min(Math.max(progress, 0), 1);
+
+  const r = Math.round(start[0] + (end[0] - start[0]) * safeProgress);
+  const g = Math.round(start[1] + (end[1] - start[1]) * safeProgress);
+  const b = Math.round(start[2] + (end[2] - start[2]) * safeProgress);
+
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function flightLineColourFromHeadingDifference(
+  selectedHeadingDeg: number,
+  bestHeadingDeg: number
+): string {
+  const difference = Math.abs(
+    signedAngleDeg(selectedHeadingDeg, bestHeadingDeg)
+  );
+
+  if (difference <= 7.5) {
+    return "#00ff5a"; // bright green
+  }
+
+  if (difference <= 15) {
+    return "#f97316"; // orange
+  }
+
+  return "#ef4444"; // red
+}
+function calculateWindAdvantageSummary(
+  headingDeg: number,
+  winds: WindLayer[]
+): WindAdvantageSummary {
+  const selectedHeadingDeg = normalizeDeg(headingDeg);
+  const currentAverageTailwindKt = averageTailwindForHeading(
+    selectedHeadingDeg,
+    winds
+  );
+
+  let bestHeadingDeg = 0;
+  let bestAverageTailwindKt = -Infinity;
+  let worstAverageTailwindKt = Infinity;
+
+  for (let testHeading = 0; testHeading < 360; testHeading += 1) {
+    const testAverageTailwindKt = averageTailwindForHeading(testHeading, winds);
+
+    if (testAverageTailwindKt > bestAverageTailwindKt) {
+      bestAverageTailwindKt = testAverageTailwindKt;
+      bestHeadingDeg = testHeading;
+    }
+
+    if (testAverageTailwindKt < worstAverageTailwindKt) {
+      worstAverageTailwindKt = testAverageTailwindKt;
+    }
+  }
+
+  const range = bestAverageTailwindKt - worstAverageTailwindKt;
+
+  const rawScore =
+    range <= 0.1
+      ? 0.5
+      : (currentAverageTailwindKt - worstAverageTailwindKt) / range;
+
+  const score = Math.min(Math.max(rawScore, 0), 1);
+
+  return {
+    averageTailwindKt: currentAverageTailwindKt,
+    bestAverageTailwindKt,
+    worstAverageTailwindKt,
+    bestHeadingDeg,
+    score,
+    color: flightLineColourFromHeadingDifference(
+      selectedHeadingDeg,
+      bestHeadingDeg
+    ),
+  };
+}
 function delayedPerformanceDropKph(altitudeM: number): number {
   if (altitudeM >= 2200) return 0;
 
@@ -421,12 +532,16 @@ function calculateTargets(
 
 function HeadingSlider({
   runHeadingDeg,
+  windAdvantage,
   onChange,
 }: {
   runHeadingDeg: string;
+  windAdvantage: WindAdvantageSummary;
   onChange: (value: string) => void;
 }) {
   const heading = Math.round(numberFromInput(runHeadingDeg, 0));
+  const averageTailwind = Math.round(windAdvantage.averageTailwindKt);
+  const bestTailwind = Math.round(windAdvantage.bestAverageTailwindKt);
 
   return (
     <div className="heading-slider-panel">
@@ -452,6 +567,13 @@ function HeadingSlider({
         <span>270°</span>
         <span>359°</span>
       </div>
+
+      <p className="subtitle">
+        Wind advantage: {averageTailwind >= 0 ? "+" : ""}
+        {averageTailwind} kt average. Best heading about{" "}
+        {windAdvantage.bestHeadingDeg}° gives {bestTailwind >= 0 ? "+" : ""}
+        {bestTailwind} kt.
+      </p>
     </div>
   );
 }
@@ -460,11 +582,13 @@ function MapClickPicker({
   referenceLat,
   referenceLon,
   dropPoint,
+  flightLineColor,
   onPick,
 }: {
   referenceLat: string;
   referenceLon: string;
   dropPoint: LatLon | null;
+  flightLineColor: string;
   onPick: (lat: number, lon: number) => void;
 }) {
   const lat = optionalNumberFromInput(referenceLat);
@@ -516,9 +640,9 @@ function MapClickPicker({
           <Polyline
             positions={linePositions}
             pathOptions={{
-              color: "#22d3ee",
-              weight: 4,
-              opacity: 0.9,
+              color: flightLineColor,
+              weight: 5,
+              opacity: 0.95,
             }}
           />
         )}
@@ -745,6 +869,12 @@ export default function App() {
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [showRawWinds, setShowRawWinds] = useState(false);
   const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
+
+  const windAdvantage = useMemo(
+    () =>
+      calculateWindAdvantageSummary(numberFromInput(runHeadingDeg, 0), winds),
+    [runHeadingDeg, winds]
+  );
 
   const calculatedDropPoint = useMemo(() => {
     const lat = optionalNumberFromInput(referenceLat);
@@ -984,14 +1114,15 @@ export default function App() {
         {showMapPicker && (
           <>
             <p className="subtitle">
-              Tap the map to set the reference point. Use the heading slider to
-              rotate the flight line around the reference point.
+              Tap the map to set the reference point. The flight line changes
+              colour based on the wind advantage for the selected heading.
             </p>
 
             <MapClickPicker
               referenceLat={referenceLat}
               referenceLon={referenceLon}
               dropPoint={calculatedDropPoint}
+              flightLineColor={windAdvantage.color}
               onPick={pickReferenceFromMap}
             />
           </>
@@ -1011,6 +1142,7 @@ export default function App() {
 
         <HeadingSlider
           runHeadingDeg={runHeadingDeg}
+          windAdvantage={windAdvantage}
           onChange={updateHeadingFromSlider}
         />
 
