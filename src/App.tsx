@@ -953,22 +953,6 @@ export default function App() {
     }
   }
 
-  async function loadWindsFromEnteredReference() {
-    const lat = optionalNumberFromInput(referenceLat);
-    const lon = optionalNumberFromInput(referenceLon);
-
-    if (lat === null || lon === null) {
-      setFetchStatus("Enter reference latitude and longitude first.");
-      return;
-    }
-
-    setReferenceStatus(`Reference point set manually: ${lat}, ${lon}.`);
-
-    if (windSource === "mark-schulze") {
-      await fetchMarkSchulzeWindsForLocation(lat, lon);
-    }
-  }
-
   async function pickReferenceFromMap(lat: number, lon: number) {
     await setReferencePoint(lat, lon, "map");
   }
@@ -990,7 +974,7 @@ export default function App() {
     const lon = optionalNumberFromInput(referenceLon);
 
     if (lat === null || lon === null) {
-      setReferenceStatus("Set the reference point before opening Windy.");
+      setReferenceStatus("Choose a reference point before opening Windy.");
       return;
     }
 
@@ -1087,8 +1071,7 @@ export default function App() {
         <h2>Reference Point</h2>
 
         <p className="subtitle">
-          Choose the competition reference point on the map, or enter its
-          coordinates manually.
+          Choose the competition reference point on the map.
         </p>
 
         <button
@@ -1122,46 +1105,6 @@ export default function App() {
           windAdvantage={windAdvantage}
           onChange={updateHeadingFromSlider}
         />
-
-        <label>
-          Run heading, degrees
-          <input
-            type="number"
-            min="0"
-            max="359"
-            value={runHeadingDeg}
-            placeholder="Manual heading entry"
-            onChange={(e) => setRunHeadingDeg(e.target.value)}
-          />
-        </label>
-
-        <div className="manual-wind-controls">
-          <label>
-            Latitude
-            <input
-              type="number"
-              step="0.000001"
-              value={referenceLat}
-              placeholder="Example -28.514026"
-              onChange={(e) => setReferenceLat(e.target.value)}
-            />
-          </label>
-
-          <label>
-            Longitude
-            <input
-              type="number"
-              step="0.000001"
-              value={referenceLon}
-              placeholder="Example 153.551623"
-              onChange={(e) => setReferenceLon(e.target.value)}
-            />
-          </label>
-        </div>
-
-        <button type="button" onClick={loadWindsFromEnteredReference}>
-          Load winds from entered coordinates
-        </button>
 
         {calculatedDropPoint && (
           <p className="subtitle">
