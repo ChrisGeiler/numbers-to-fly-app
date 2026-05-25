@@ -13,8 +13,11 @@ import "./App.css";
 type AppPage = "landing" | "find" | "fly";
 type TaskMode = "time" | "distance" | "speed";
 type WindSource = "manual" | "mark-schulze" | "windy";
-type SuitSetup = "crplus-no-wingtips" | "crplus-wingtips" | "other";
-type PilotProfile = "light-low-power" | "average" | "strong-heavy";
+type SuitSetup =
+  | "crplus-no-wingtips"
+  | "crplus-wingtips"
+  | "freak-atc"
+  | "swift";
 type UnitSystem = "metric" | "imperial";
 
 type WindLayer = {
@@ -122,6 +125,7 @@ function splitInchesToFeetAndInches(totalInches: number): {
   inches: number;
 } {
   const rounded = Math.round(totalInches);
+
   return {
     feet: Math.floor(rounded / 12),
     inches: rounded % 12,
@@ -135,7 +139,6 @@ function calculateFindYourNumbers({
   heightFeet,
   heightInches,
   suitSetup,
-  pilotProfile,
 }: {
   weight: string;
   unitSystem: UnitSystem;
@@ -143,7 +146,6 @@ function calculateFindYourNumbers({
   heightFeet: string;
   heightInches: string;
   suitSetup: SuitSetup;
-  pilotProfile: PilotProfile;
 }) {
   const referenceWeightLb = 175;
   const referenceHeightIn = 71;
@@ -178,50 +180,46 @@ function calculateFindYourNumbers({
   );
 
   const suitDistanceAdjustmentKph =
-    suitSetup === "crplus-wingtips" ? -10 : 0;
+  suitSetup === "crplus-wingtips"
+    ? -10
+    : suitSetup === "freak-atc"
+      ? 5
+      : suitSetup === "swift"
+        ? 10
+        : 0;
 
-  const suitTimeAdjustmentKph = suitSetup === "crplus-wingtips" ? -10 : 0;
-
-  const profileAdjustmentKph =
-    pilotProfile === "light-low-power"
-      ? -5
-      : pilotProfile === "strong-heavy"
-        ? 5
+const suitTimeAdjustmentKph =
+  suitSetup === "crplus-wingtips"
+    ? -10
+    : suitSetup === "freak-atc"
+      ? 5
+      : suitSetup === "swift"
+        ? 10
         : 0;
 
   const distanceSpeedKph = Math.round(
-    185 +
-      weightAdjustmentKph +
-      heightAdjustmentKph +
-      suitDistanceAdjustmentKph +
-      profileAdjustmentKph
+    185 + weightAdjustmentKph + heightAdjustmentKph + suitDistanceAdjustmentKph
   );
 
   const timeSpeedKph = Math.round(
-    150 +
-      weightAdjustmentKph +
-      heightAdjustmentKph +
-      suitTimeAdjustmentKph +
-      profileAdjustmentKph
+    150 + weightAdjustmentKph + heightAdjustmentKph + suitTimeAdjustmentKph
   );
 
-  let speedStartGR = 1.0;
-  let speedEndGR = 1.7;
-  let distanceGRGuidance =
-    "Aim around 1.5–1.7 GR and refine with FlySight data.";
+  let speedStartGR = 1.2;
+  let speedEndGR = 1.9;
 
-  if (pilotProfile === "light-low-power" || weightLb < 150) {
-    speedStartGR = 1.0;
+  if (weightLb < 150) {
+    speedStartGR = 0.8;
     speedEndGR = 1.5;
-    distanceGRGuidance =
-      "Avoid flying too flat. A GR around 1.3 may be ideal, and no higher than about 1.5 as a starting point.";
-  }
-
-  if (pilotProfile === "strong-heavy" || weightLb > 205) {
+  } else if (weightLb < 170) {
     speedStartGR = 1.0;
+    speedEndGR = 1.7;
+  } else if (weightLb < 190) {
+    speedStartGR = 1.1;
     speedEndGR = 1.8;
-    distanceGRGuidance =
-      "You may be able to carry energy at a flatter GR, but expect the best results to need higher airspeed.";
+  } else {
+    speedStartGR = 1.2;
+    speedEndGR = 1.9;
   }
 
   return {
@@ -231,7 +229,6 @@ function calculateFindYourNumbers({
     timeSpeedKph,
     speedStartGR,
     speedEndGR,
-    distanceGRGuidance,
   };
 }
 
@@ -982,8 +979,6 @@ export default function App() {
   const [findHeightInches, setFindHeightInches] = useState("");
   const [findSuitSetup, setFindSuitSetup] =
     useState<SuitSetup>("crplus-no-wingtips");
-  const [findPilotProfile, setFindPilotProfile] =
-    useState<PilotProfile>("average");
 
   const [taskMode, setTaskMode] = useState<TaskMode>("distance");
   const [windSource, setWindSource] = useState<WindSource>("mark-schulze");
@@ -1019,7 +1014,6 @@ export default function App() {
         heightFeet: findHeightFeet,
         heightInches: findHeightInches,
         suitSetup: findSuitSetup,
-        pilotProfile: findPilotProfile,
       }),
     [
       findWeight,
@@ -1028,7 +1022,6 @@ export default function App() {
       findHeightFeet,
       findHeightInches,
       findSuitSetup,
-      findPilotProfile,
     ]
   );
 
@@ -1344,27 +1337,14 @@ export default function App() {
           <label>
             Suit setup
             <select
-              value={findSuitSetup}
-              onChange={(e) => setFindSuitSetup(e.target.value as SuitSetup)}
-            >
-              <option value="crplus-no-wingtips">CR+ without wingtips</option>
-              <option value="crplus-wingtips">CR+ with wingtips</option>
-              <option value="other">Other / unknown</option>
-            </select>
-          </label>
-
-          <label>
-            Pilot profile
-            <select
-              value={findPilotProfile}
-              onChange={(e) =>
-                setFindPilotProfile(e.target.value as PilotProfile)
-              }
-            >
-              <option value="light-low-power">Light / lower power</option>
-              <option value="average">Average</option>
-              <option value="strong-heavy">Strong / heavy</option>
-            </select>
+  value={findSuitSetup}
+  onChange={(e) => setFindSuitSetup(e.target.value as SuitSetup)}
+>
+  <option value="crplus-no-wingtips">CR+ without wingtips</option>
+  <option value="crplus-wingtips">CR+ with wingtips</option>
+  <option value="freak-atc">Freak / ATC</option>
+  <option value="swift">Swift</option>
+</select>
           </label>
         </section>
 
