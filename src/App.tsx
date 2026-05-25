@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   MapContainer,
   Marker,
   Polyline,
   TileLayer,
+  useMap,
   useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
@@ -87,6 +88,13 @@ const dropPointIcon = L.divIcon({
   html: "<div></div>",
   iconSize: [22, 22],
   iconAnchor: [11, 11],
+});
+
+const userLocationIcon = L.divIcon({
+  className: "user-location-marker",
+  html: "<div></div>",
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
 });
 
 function numberFromInput(value: string, fallback = 0): number {
@@ -179,30 +187,21 @@ function calculateFindYourNumbers({
     5
   );
 
-  const suitDistanceAdjustmentKph =
-  suitSetup === "crplus-wingtips"
-    ? -10
-    : suitSetup === "freak-atc"
-      ? 5
-      : suitSetup === "swift"
-        ? 10
-        : 0;
-
-const suitTimeAdjustmentKph =
-  suitSetup === "crplus-wingtips"
-    ? -10
-    : suitSetup === "freak-atc"
-      ? 5
-      : suitSetup === "swift"
-        ? 10
-        : 0;
+  const suitSpeedAdjustmentKph =
+    suitSetup === "crplus-wingtips"
+      ? -10
+      : suitSetup === "freak-atc"
+        ? 5
+        : suitSetup === "swift"
+          ? 10
+          : 0;
 
   const distanceSpeedKph = Math.round(
-    185 + weightAdjustmentKph + heightAdjustmentKph + suitDistanceAdjustmentKph
+    185 + weightAdjustmentKph + heightAdjustmentKph + suitSpeedAdjustmentKph
   );
 
   const timeSpeedKph = Math.round(
-    150 + weightAdjustmentKph + heightAdjustmentKph + suitTimeAdjustmentKph
+    150 + weightAdjustmentKph + heightAdjustmentKph + suitSpeedAdjustmentKph
   );
 
   let speedStartGR = 1.2;
@@ -699,15 +698,45 @@ function HeadingSlider({
   );
 }
 
+function MapViewportUpdater({
+  referenceLat,
+  referenceLon,
+  userMapLocation,
+}: {
+  referenceLat: string;
+  referenceLon: string;
+  userMapLocation: LatLon | null;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    const lat = optionalNumberFromInput(referenceLat);
+    const lon = optionalNumberFromInput(referenceLon);
+
+    if (lat !== null && lon !== null) {
+      map.setView([lat, lon], 12);
+      return;
+    }
+
+    if (userMapLocation !== null) {
+      map.setView([userMapLocation.lat, userMapLocation.lon], 13);
+    }
+  }, [map, referenceLat, referenceLon, userMapLocation]);
+
+  return null;
+}
+
 function MapClickPicker({
   referenceLat,
   referenceLon,
+  userMapLocation,
   dropPoint,
   flightLineColor,
   onPick,
 }: {
   referenceLat: string;
   referenceLon: string;
+  userMapLocation: LatLon | null;
   dropPoint: LatLon | null;
   flightLineColor: string;
   onPick: (lat: number, lon: number) => void;
@@ -715,8 +744,16 @@ function MapClickPicker({
   const lat = optionalNumberFromInput(referenceLat);
   const lon = optionalNumberFromInput(referenceLon);
 
-  const center: [number, number] =
-    lat !== null && lon !== null ? [lat, lon] : [-28.6474, 153.602];
+  const hasReferencePoint = lat !== null && lon !== null;
+  const hasUserMapLocation = userMapLocation !== null;
+
+  const center: [number, number] = hasReferencePoint
+    ? [lat, lon]
+    : hasUserMapLocation
+      ? [userMapLocation.lat, userMapLocation.lon]
+      : [20, 0];
+
+  const initialZoom = hasReferencePoint ? 12 : hasUserMapLocation ? 13 : 2;
 
   function ClickHandler() {
     useMapEvents({
@@ -738,13 +775,26 @@ function MapClickPicker({
 
   return (
     <div className="map-picker">
-      <MapContainer center={center} zoom={12} scrollWheelZoom={true}>
+      <MapContainer center={center} zoom={initialZoom} scrollWheelZoom={true}>
+        <MapViewportUpdater
+          referenceLat={referenceLat}
+          referenceLon={referenceLon}
+          userMapLocation={userMapLocation}
+        />
+
         <TileLayer
           attribution="Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community"
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
         />
 
         <ClickHandler />
+
+        {userMapLocation !== null && !hasReferencePoint && (
+          <Marker
+            position={[userMapLocation.lat, userMapLocation.lon]}
+            icon={userLocationIcon}
+          />
+        )}
 
         {dropPoint !== null && (
           <Marker
@@ -999,6 +1049,9 @@ export default function App() {
   const [referenceLat, setReferenceLat] = useState("");
   const [referenceLon, setReferenceLon] = useState("");
 
+  const [userMapLocation, setUserMapLocation] = useState<LatLon | null>(null);
+  const [locationStatus, setLocationStatus] = useState("");
+
   const [fetchStatus, setFetchStatus] = useState("");
   const [referenceStatus, setReferenceStatus] = useState("");
   const [showMapPicker, setShowMapPicker] = useState(false);
@@ -1049,6 +1102,51 @@ export default function App() {
 
     return calculateDropPoint(lat, lon, heading, distanceNm);
   }, [referenceLat, referenceLon, runHeadingDeg, dropDistanceNm]);
+
+  function requestUserMapLocation() {
+    if (!navigator.geolocation) {
+      setLocationStatus("Location is not supported by this browser.");
+      return;
+    }
+
+    setLocationStatus("Finding your location...");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const nextLocation = {
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+        };
+
+        const accuracyM = Math.round(position.coords.accuracy);
+
+        setUserMapLocation(nextLocation);
+        setLocationStatus(
+          `Map centred near your location. Accuracy about ${accuracyM} m. Tap the map to choose the reference point.`
+        );
+      },
+      (error) => {
+        setLocationStatus(
+          `Could not get your location. ${error.message}. You can still zoom the map manually.`
+        );
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      }
+    );
+  }
+
+  function toggleMapPicker() {
+    const openingMap = !showMapPicker;
+
+    setShowMapPicker(openingMap);
+
+    if (openingMap && userMapLocation === null) {
+      requestUserMapLocation();
+    }
+  }
 
   function toggleFindUnitSystem() {
     if (findUnitSystem === "metric") {
@@ -1337,14 +1435,14 @@ export default function App() {
           <label>
             Suit setup
             <select
-  value={findSuitSetup}
-  onChange={(e) => setFindSuitSetup(e.target.value as SuitSetup)}
->
-  <option value="crplus-no-wingtips">CR+ without wingtips</option>
-  <option value="crplus-wingtips">CR+ with wingtips</option>
-  <option value="freak-atc">Freak / ATC</option>
-  <option value="swift">Swift</option>
-</select>
+              value={findSuitSetup}
+              onChange={(e) => setFindSuitSetup(e.target.value as SuitSetup)}
+            >
+              <option value="crplus-no-wingtips">CR+ without wingtips</option>
+              <option value="crplus-wingtips">CR+ with wingtips</option>
+              <option value="freak-atc">Freak / ATC</option>
+              <option value="swift">Swift</option>
+            </select>
           </label>
         </section>
 
@@ -1481,10 +1579,12 @@ export default function App() {
         <button
           type="button"
           className="primary-action-button"
-          onClick={() => setShowMapPicker((current) => !current)}
+          onClick={toggleMapPicker}
         >
           {showMapPicker ? "Hide map" : "Choose reference point"}
         </button>
+
+        {locationStatus && <p className="subtitle">{locationStatus}</p>}
 
         {showMapPicker && (
           <>
@@ -1497,6 +1597,7 @@ export default function App() {
             <MapClickPicker
               referenceLat={referenceLat}
               referenceLon={referenceLon}
+              userMapLocation={userMapLocation}
               dropPoint={calculatedDropPoint}
               flightLineColor={windAdvantage.color}
               onPick={pickReferenceFromMap}

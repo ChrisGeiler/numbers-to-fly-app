@@ -26,19 +26,19 @@ select {
 .app {
   width: min(900px, calc(100% - 28px));
   margin: 0 auto;
-  padding: 18px 0 48px;
+  padding: 4px 0 48px;
 }
 
 .app-header {
   text-align: center;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .app-logo {
   display: block;
   width: min(360px, 92%);
   height: auto;
-  margin: 0 auto 8px;
+  margin: 0 auto 2px;
   filter: drop-shadow(0 0 18px rgba(34, 211, 238, 0.28));
 }
 
@@ -421,4 +421,47 @@ tr:last-child td {
 
 .map-heading-slider-panel {
   margin-top: 14px;
+}
+
+.landing-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0;
+}
+
+.landing-header {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.landing-logo {
+  width: min(420px, 92%);
+  margin-bottom: 8px;
+}
+
+.landing-actions {
+  display: grid;
+  gap: 16px;
+  width: min(420px, 92%);
+  margin: 28px auto 0;
+}
+
+.landing-actions button {
+  width: 100%;
+  margin: 0;
+  font-size: 1.1rem;
+  padding: 16px 18px;
+  border-radius: 16px;
+}
+
+.user-location-marker div {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #38bdf8;
+  border: 3px solid #e0f2fe;
+  box-shadow: 0 0 0 8px rgba(56, 189, 248, 0.25),
+    0 0 18px rgba(56, 189, 248, 0.8);
 }
