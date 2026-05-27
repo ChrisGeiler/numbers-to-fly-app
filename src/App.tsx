@@ -22,6 +22,12 @@ type SuitSetup =
 type UnitSystem = "metric" | "imperial";
 type FlySightVersion = "original" | "flysight2";
 type ConfigTask = "distance" | "speed" | "time";
+type ConfigSuit =
+  | "crplus-wingtips"
+  | "crplus-no-wingtips"
+  | "freak"
+  | "atc"
+  | "swift";
 
 type WindLayer = {
   altitudeM: number;
@@ -156,6 +162,26 @@ function timezoneHoursToSeconds(hours: number): number {
 
 function getDeviceTimezoneOffsetSeconds(): number {
   return -new Date().getTimezoneOffset() * 60;
+}
+
+function getSuitDistanceGR(configSuit: ConfigSuit): {
+  minGR: number;
+  maxGR: number;
+} {
+  const maxGRBySuit: Record<ConfigSuit, number> = {
+    "crplus-wingtips": 3.7,
+    "crplus-no-wingtips": 3.4,
+    freak: 2.8,
+    atc: 2.5,
+    swift: 2.2,
+  };
+
+  const maxGR = maxGRBySuit[configSuit];
+
+  return {
+    maxGR,
+    minGR: Number((maxGR - 0.4).toFixed(1)),
+  };
 }
 
 function downloadTextFile(filename: string, text: string) {
@@ -1362,9 +1388,10 @@ export default function App() {
   const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
 
   const [configTask, setConfigTask] = useState<ConfigTask>("distance");
+  const [configSuit, setConfigSuit] =
+    useState<ConfigSuit>("crplus-no-wingtips");
   const [flySightVersion, setFlySightVersion] =
     useState<FlySightVersion>("original");
-
   const [configDzElevM, setConfigDzElevM] = useState("");
   const [configTimezoneOffsetHours, setConfigTimezoneOffsetHours] =
     useState("");
@@ -1585,6 +1612,17 @@ export default function App() {
     setConfigTimezoneOffsetHours(String(hours));
     setCopyStatus(`Timezone set from this device: ${seconds} seconds.`);
   }
+
+  function updateConfigSuit(nextSuit: ConfigSuit) {
+  setConfigSuit(nextSuit);
+
+  if (configTask === "distance") {
+    const suitGR = getSuitDistanceGR(nextSuit);
+
+    setConfigToneMin(suitGR.minGR.toFixed(1));
+    setConfigToneMax(suitGR.maxGR.toFixed(1));
+  }
+}
 
 async function copyGeneratedConfig() {
   if (toneRangeInvalid) {
@@ -1938,13 +1976,40 @@ function downloadGeneratedConfig() {
             Task
             <select
               value={configTask}
-              onChange={(e) => setConfigTask(e.target.value as ConfigTask)}
+              onChange={(e) => {
+                const nextTask = e.target.value as ConfigTask;
+
+                setConfigTask(nextTask);
+
+                if (nextTask === "distance") {
+                  const suitGR = getSuitDistanceGR(configSuit);
+
+                  setConfigToneMin(suitGR.minGR.toFixed(1));
+                  setConfigToneMax(suitGR.maxGR.toFixed(1));
+                }
+              }}
             >
               <option value="distance">Distance</option>
               <option value="speed">Speed</option>
               <option value="time">Time</option>
             </select>
           </label>
+          
+          {configTask === "distance" && (
+            <label>
+              Suit
+              <select
+                value={configSuit}
+                onChange={(e) => updateConfigSuit(e.target.value as ConfigSuit)}
+              >
+                <option value="crplus-wingtips">CR+ with wingtips</option>
+                <option value="crplus-no-wingtips">CR+ without wingtips</option>
+                <option value="freak">Freak</option>
+                <option value="atc">ATC</option>
+                <option value="swift">Swift</option>
+              </select>
+            </label>
+          )}
 
           <div className="manual-wind-controls">
             <label>
@@ -2005,6 +2070,37 @@ function downloadGeneratedConfig() {
              Tone maximum must be greater than tone minimum.
           </p>
 )}
+
+      {configTask === "distance" && (
+        <section className="card tutorial-card">
+          <h2>Understanding GR Tone Settings</h2>
+
+          <p>
+            The maximum tone should be a glide ratio that is relatively high, 
+            but realistically achievable for the suit and pilot.
+          </p>
+
+          <p>
+            You may be capable of flying a higher number, but the goal is not
+            to chase the highest tone possible. If the maximum tone is set too high,
+            there's a chance that you may increase the Angle of Attack (AoA) too much, 
+            lose airspeed, and then struggle to sustain high performance through the window.
+          </p>
+
+          <p>
+            A high but achievable maximum tone lets the pilot know they are flying
+            well while keeping focus on good wing configuration and
+            maintaining the speed needed to sustain a high glide ratio through the window.
+          </p>
+
+          <p>
+            The minimum tone is set 0.4 GR below the maximum tone. This gives a useful
+            working range and allows the pilot to understand the effect that 
+            adjustments are having on the suits performance.
+
+          </p>
+        </section>
+      )}
         </section>
 
         <section className="card">

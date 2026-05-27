@@ -530,3 +530,9 @@ button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+.tutorial-card p {
+  text-align: left;
+  color: #c7f9ff;
+  line-height: 1.6;
+}
