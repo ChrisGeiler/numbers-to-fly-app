@@ -535,4 +535,9 @@ button:disabled {
   text-align: left;
   color: #c7f9ff;
   line-height: 1.6;
+  margin: 0 0 18px;
+}
+
+.tutorial-card p:last-child {
+  margin-bottom: 0;
 }

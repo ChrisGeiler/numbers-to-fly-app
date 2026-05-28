@@ -196,6 +196,60 @@ function downloadTextFile(filename: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
+function interpolateGRByWeight(weightKg: number): {
+  speedStartGR: number;
+  speedEndGR: number;
+} {
+  const points = [
+    { weightKg: 63, startGR: 0.7, endGR: 1.4 },
+    { weightKg: 68, startGR: 0.8, endGR: 1.5 },
+    { weightKg: 74, startGR: 0.9, endGR: 1.6 },
+    { weightKg: 81, startGR: 1.0, endGR: 1.7 },
+    { weightKg: 90, startGR: 1.1, endGR: 1.8 },
+    { weightKg: 100, startGR: 1.2, endGR: 1.9 },
+  ];
+
+  if (weightKg <= 63) {
+    return {
+      speedStartGR: 0.7,
+      speedEndGR: 1.4,
+    };
+  }
+
+  if (weightKg >= 100) {
+    return {
+      speedStartGR: 1.2,
+      speedEndGR: 1.9,
+    };
+  }
+
+  for (let index = 0; index < points.length - 1; index++) {
+    const lower = points[index];
+    const upper = points[index + 1];
+
+    if (weightKg >= lower.weightKg && weightKg <= upper.weightKg) {
+      const progress =
+        (weightKg - lower.weightKg) / (upper.weightKg - lower.weightKg);
+
+      const speedStartGR =
+        lower.startGR + (upper.startGR - lower.startGR) * progress;
+
+      const speedEndGR =
+        lower.endGR + (upper.endGR - lower.endGR) * progress;
+
+      return {
+        speedStartGR: Number(speedStartGR.toFixed(2)),
+        speedEndGR: Number(speedEndGR.toFixed(2)),
+      };
+    }
+  }
+
+  return {
+    speedStartGR: 1.0,
+    speedEndGR: 1.7,
+  };
+}
+
 function calculateFindYourNumbers({
   weight,
   unitSystem,
@@ -250,36 +304,41 @@ function calculateFindYourNumbers({
           ? 10
           : 0;
 
- const distanceSpeedKph = Math.round(
-  185 + bodyAdjustmentKph + suitSpeedAdjustmentKph
-);
+  const distanceSpeedKph = Math.round(
+    185 + bodyAdjustmentKph + suitSpeedAdjustmentKph
+  );
 
-const timeSpeedKph = Math.round(
-  150 + bodyAdjustmentKph + suitSpeedAdjustmentKph
-);
+  const timeSpeedKph = Math.round(
+    150 + bodyAdjustmentKph + suitSpeedAdjustmentKph
+  );
 
-  let speedStartGR = 1.2;
-  let speedEndGR = 1.9;
+  const interpolatedGR = interpolateGRByWeight(lbToKg(weightLb));
 
-  if (weightLb < 150) {
-    speedStartGR = 0.8;
-    speedEndGR = 1.5;
-  } else if (weightLb < 170) {
-    speedStartGR = 1.0;
-    speedEndGR = 1.7;
-  } else if (weightLb < 190) {
-    speedStartGR = 1.1;
-    speedEndGR = 1.8;
-  } else {
-    speedStartGR = 1.2;
-    speedEndGR = 1.9;
-  }
+  const heightExpectedForWeightIn =
+    referenceHeightIn + (weightLb - referenceWeightLb) / 10;
 
-  // Tall/light pilots often have lower wing loading.
-  // They may need to fly a slightly steeper profile to keep energy.
-  if (pilotHeightIn >= 72 && weightLb < 170) {
-    speedEndGR = Math.max(speedStartGR + 0.4, speedEndGR - 0.1);
-  }
+  const heightForWeightDeltaIn = pilotHeightIn - heightExpectedForWeightIn;
+
+  // Positive heightForWeightDeltaIn means tall/light for their weight.
+  // Negative heightForWeightDeltaIn means short/heavy for their weight.
+  const wingLoadingGRCorrection = Math.min(
+    Math.max(-heightForWeightDeltaIn * 0.03, -0.1),
+    0.1
+  );
+
+  const speedStartGR = Number(
+    Math.max(
+      0.6,
+      interpolatedGR.speedStartGR + wingLoadingGRCorrection
+    ).toFixed(2)
+  );
+
+  const speedEndGR = Number(
+    Math.max(
+      speedStartGR + 0.6,
+      interpolatedGR.speedEndGR + wingLoadingGRCorrection
+    ).toFixed(2)
+  );
 
   return {
     weightLb,
@@ -2105,6 +2164,57 @@ function downloadGeneratedConfig() {
           </p>
         </section>
       )}
+
+      {configTask === "time" && (
+        <section className="card tutorial-card">
+          <h2>Understanding Time Tone Settings</h2>
+
+          <p>
+            For Time, the low tone should be an achievable vertical speed that helps
+            confirm you are flying well without forcing you to fly too slowly and risk
+            stalling the suit.
+          </p>
+
+          <p>
+            It is great if you are actually flying slower than the lowest tone, but
+            you do not need to know that exact number. You only need to know that you
+            are in a good range and that the suit is still flying cleanly.
+          </p>
+
+          <p>
+            Focus on maintaining a good wing configuration, managing your horizontal
+            speed, and using your senses of wind speed, wind noise, and suit pressure
+            to feel whether you can ask the suit for more or whether you need to hold
+            what you have.
+          </p>
+        </section>
+      )}
+
+      {configTask === "speed" && (
+        <section className="card tutorial-card">
+          <h2>Understanding Speed Tone Settings</h2>
+
+          <p>
+            For Speed, the maximum tone should be an achievable high speed. You may
+            peak at a higher speed during your run, but the goal is to set a high tone
+            that confirms you are flying well without encouraging you to chase an
+            unrealistic number.
+          </p>
+
+          <p>
+            As long as you keep hearing the high tones and maintain the correct wing
+            configuration and glide ratio, you know you are flying a good run.
+          </p>
+
+          <p>
+            If you flatten out too much and make the glide ratio go higher than
+            desired, do not push back down aggressively on the suit. That will usually
+            slow your horizontal speed for longer than any benefit you gain from trying
+            to rebuild energy.
+          </p>
+        </section>
+      )}
+
         </section>
 
         <section className="card">
