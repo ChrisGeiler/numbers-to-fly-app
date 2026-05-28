@@ -239,7 +239,7 @@ function calculateFindYourNumbers({
   const weightDeltaLb = weightLb - referenceWeightLb;
   const heightDeltaIn = pilotHeightIn - referenceHeightIn;
 
-  const bodyAdjustmentKph = weightDeltaLb * 0.4 - heightDeltaIn * 2.0;
+  const bodyAdjustmentKph = weightDeltaLb * 0.55 - heightDeltaIn * 1.5;
 
   const suitSpeedAdjustmentKph =
     suitSetup === "crplus-wingtips"
