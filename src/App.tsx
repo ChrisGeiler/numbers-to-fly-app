@@ -236,12 +236,10 @@ function calculateFindYourNumbers({
         ? feetAndInchesToTotalInches(heightFeet, heightInches)
         : referenceHeightIn;
 
-  const weightAdjustmentKph = ((weightLb - referenceWeightLb) / 10) * 4.5;
+  const weightDeltaLb = weightLb - referenceWeightLb;
+  const heightDeltaIn = pilotHeightIn - referenceHeightIn;
 
-  const heightAdjustmentKph = Math.min(
-    Math.max(pilotHeightIn - referenceHeightIn, -5),
-    5
-  );
+  const bodyAdjustmentKph = weightDeltaLb * 0.4 - heightDeltaIn * 2.0;
 
   const suitSpeedAdjustmentKph =
     suitSetup === "crplus-wingtips"
@@ -252,13 +250,13 @@ function calculateFindYourNumbers({
           ? 10
           : 0;
 
-  const distanceSpeedKph = Math.round(
-    185 + weightAdjustmentKph + heightAdjustmentKph + suitSpeedAdjustmentKph
-  );
+ const distanceSpeedKph = Math.round(
+  185 + bodyAdjustmentKph + suitSpeedAdjustmentKph
+);
 
-  const timeSpeedKph = Math.round(
-    150 + weightAdjustmentKph + heightAdjustmentKph + suitSpeedAdjustmentKph
-  );
+const timeSpeedKph = Math.round(
+  150 + bodyAdjustmentKph + suitSpeedAdjustmentKph
+);
 
   let speedStartGR = 1.2;
   let speedEndGR = 1.9;
@@ -275,6 +273,12 @@ function calculateFindYourNumbers({
   } else {
     speedStartGR = 1.2;
     speedEndGR = 1.9;
+  }
+
+  // Tall/light pilots often have lower wing loading.
+  // They may need to fly a slightly steeper profile to keep energy.
+  if (pilotHeightIn >= 72 && weightLb < 170) {
+    speedEndGR = Math.max(speedStartGR + 0.4, speedEndGR - 0.1);
   }
 
   return {
@@ -1771,15 +1775,15 @@ function downloadGeneratedConfig() {
 
           <div className="landing-actions">
             <button type="button" onClick={() => setActivePage("find")}>
-              Find your Numbers
+              Find the Numbers
             </button>
 
             <button type="button" onClick={() => setActivePage("fly")}>
-              Fly your Numbers
+              Fly the Numbers
             </button>
 
             <button type="button" onClick={() => setActivePage("config")}>
-              Config your Numbers
+              Config the Numbers
             </button>
           </div>
         </header>
