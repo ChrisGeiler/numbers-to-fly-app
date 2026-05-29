@@ -184,6 +184,136 @@ function getSuitDistanceGR(configSuit: ConfigSuit): {
   };
 }
 
+function getPilotBodyAdjustmentKph({
+  weight,
+  unitSystem,
+  heightCm,
+  heightFeet,
+  heightInches,
+}: {
+  weight: string;
+  unitSystem: UnitSystem;
+  heightCm: string;
+  heightFeet: string;
+  heightInches: string;
+}): number {
+  const referenceWeightLb = 175;
+  const referenceHeightIn = 71;
+
+  const weightNumber = optionalNumberFromInput(weight);
+
+  const weightLb =
+    weightNumber === null
+      ? referenceWeightLb
+      : unitSystem === "metric"
+        ? kgToLb(weightNumber)
+        : weightNumber;
+
+  const hasMetricHeight = heightCm.trim() !== "";
+  const hasImperialHeight =
+    heightFeet.trim() !== "" || heightInches.trim() !== "";
+
+  const pilotHeightIn =
+    unitSystem === "metric"
+      ? hasMetricHeight
+        ? cmToInches(numberFromInput(heightCm, 0))
+        : referenceHeightIn
+      : hasImperialHeight
+        ? feetAndInchesToTotalInches(heightFeet, heightInches)
+        : referenceHeightIn;
+
+  const weightDeltaLb = weightLb - referenceWeightLb;
+  const heightDeltaIn = pilotHeightIn - referenceHeightIn;
+
+  return weightDeltaLb * 0.55 - heightDeltaIn * 1.5;
+}
+
+function mapSuitSetupToConfigSuit(suitSetup: SuitSetup): ConfigSuit {
+  if (suitSetup === "crplus-wingtips") return "crplus-wingtips";
+  if (suitSetup === "crplus-no-wingtips") return "crplus-no-wingtips";
+  if (suitSetup === "swift") return "swift";
+
+  // Find your Numbers currently combines Freak / ATC.
+  // Default to Freak for Config your Numbers.
+  return "freak";
+}
+
+function getConfigTonePreset({
+  task,
+  configSuit,
+  bodyAdjustmentKph,
+}: {
+  task: ConfigTask;
+  configSuit: ConfigSuit;
+  bodyAdjustmentKph: number;
+}): {
+  toneMin: number;
+  toneMax: number;
+} {
+  if (task === "distance") {
+    const suitGR = getSuitDistanceGR(configSuit);
+
+    return {
+      toneMin: suitGR.minGR,
+      toneMax: suitGR.maxGR,
+    };
+  }
+
+  const speedToneBySuit: Record<
+    ConfigSuit,
+    { lowKph: number; highKph: number }
+  > = {
+    swift: { lowKph: 170, highKph: 200 },
+    atc: { lowKph: 190, highKph: 220 },
+    freak: { lowKph: 210, highKph: 240 },
+    "crplus-no-wingtips": { lowKph: 230, highKph: 260 },
+    "crplus-wingtips": { lowKph: 220, highKph: 250 },
+  };
+
+  const timeToneBySuit: Record<
+    ConfigSuit,
+    { lowKph: number; highKph: number }
+  > = {
+    swift: { lowKph: 70, highKph: 76 },
+    atc: { lowKph: 60, highKph: 66 },
+    freak: { lowKph: 54, highKph: 60 },
+    "crplus-no-wingtips": { lowKph: 45, highKph: 51 },
+    "crplus-wingtips": { lowKph: 40, highKph: 46 },
+  };
+
+  if (task === "speed") {
+    const base = speedToneBySuit[configSuit];
+
+    return {
+      toneMin: Math.round(base.lowKph + bodyAdjustmentKph),
+      toneMax: Math.round(base.highKph + bodyAdjustmentKph),
+    };
+  }
+
+  const base = timeToneBySuit[configSuit];
+
+  const verticalAdjustmentKph = Math.min(
+    Math.max(bodyAdjustmentKph * 0.25, -5),
+    5
+  );
+
+  return {
+    toneMin: Math.round(base.lowKph + verticalAdjustmentKph),
+    toneMax: Math.round(base.highKph + verticalAdjustmentKph),
+  };
+}
+
+function windAdjustedSpeedToneKph(
+  baseKph: number,
+  averageTailwindKt: number
+): number {
+  if (averageTailwindKt >= 0) {
+    return Math.round(baseKph + averageTailwindKt);
+  }
+
+  return Math.round(baseKph + averageTailwindKt * 0.5);
+}
+
 function downloadTextFile(filename: string, text: string) {
   const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -367,7 +497,6 @@ function generateFlySightConfig({
   alarmTask,
 }: {
   task: ConfigTask;
-  flySightVersion: FlySightVersion;
   dzElevM: string;
   timezoneOffsetHours: string;
   toneMin: string;
@@ -1497,7 +1626,6 @@ export default function App() {
     () =>
       generateFlySightConfig({
         task: configTask,
-        flySightVersion,
         dzElevM: configDzElevM,
         timezoneOffsetHours: configTimezoneOffsetHours,
         toneMin: configToneMin,
@@ -1514,7 +1642,6 @@ export default function App() {
       }),
     [
       configTask,
-      flySightVersion,
       configDzElevM,
       configTimezoneOffsetHours,
       configToneMin,
@@ -1642,19 +1769,43 @@ export default function App() {
     setFindUnitSystem("metric");
   }
 
-  function pushAllFoundNumbersToFlyPage() {
-    const distanceSpeed = String(foundNumbers.distanceSpeedKph);
-    const timeSpeed = String(foundNumbers.timeSpeedKph);
+function pushAllFoundNumbersToFlyPage() {
+  const distanceSpeed = String(foundNumbers.distanceSpeedKph);
+  const timeSpeed = String(foundNumbers.timeSpeedKph);
+  const speedStart = foundNumbers.speedStartGR.toFixed(2);
+  const speedEnd = foundNumbers.speedEndGR.toFixed(2);
 
-    setSavedDistanceSpeedKph(distanceSpeed);
-    setSavedTimeSpeedKph(timeSpeed);
+  const nextConfigSuit = mapSuitSetupToConfigSuit(findSuitSetup);
 
-    setZeroWindSpeedKph(distanceSpeed);
-    setStartGR(foundNumbers.speedStartGR.toFixed(2));
-    setEndGR(foundNumbers.speedEndGR.toFixed(2));
-    setTaskMode("distance");
-    setActivePage("fly");
-  }
+  const bodyAdjustmentKph = getPilotBodyAdjustmentKph({
+    weight: findWeight,
+    unitSystem: findUnitSystem,
+    heightCm: findHeightCm,
+    heightFeet: findHeightFeet,
+    heightInches: findHeightInches,
+  });
+
+  const distanceTonePreset = getConfigTonePreset({
+    task: "distance",
+    configSuit: nextConfigSuit,
+    bodyAdjustmentKph,
+  });
+
+  setSavedDistanceSpeedKph(distanceSpeed);
+  setSavedTimeSpeedKph(timeSpeed);
+
+  setZeroWindSpeedKph(distanceSpeed);
+  setStartGR(speedStart);
+  setEndGR(speedEnd);
+
+  setConfigSuit(nextConfigSuit);
+  setConfigTask("distance");
+  setConfigToneMin(String(distanceTonePreset.toneMin));
+  setConfigToneMax(String(distanceTonePreset.toneMax));
+
+  setTaskMode("distance");
+  setActivePage("fly");
+}
 
   function handleFlyTaskModeChange(nextTaskMode: TaskMode) {
     setTaskMode(nextTaskMode);
@@ -1668,23 +1819,58 @@ export default function App() {
     }
   }
 
-  function useDeviceTimezoneForConfig() {
-    const seconds = getDeviceTimezoneOffsetSeconds();
-    const hours = seconds / 3600;
+function useDeviceTimezoneForConfig() {
+  const seconds = getDeviceTimezoneOffsetSeconds();
+  const hours = seconds / 3600;
 
-    setConfigTimezoneOffsetHours(String(hours));
-    setCopyStatus(`Timezone set from this device: ${seconds} seconds.`);
+  setConfigTimezoneOffsetHours(String(hours));
+  setCopyStatus(`Timezone set from this device: ${seconds} seconds.`);
+}
+
+function applyConfigTonePreset(nextTask: ConfigTask, nextSuit: ConfigSuit) {
+  const bodyAdjustmentKph = getPilotBodyAdjustmentKph({
+    weight: findWeight,
+    unitSystem: findUnitSystem,
+    heightCm: findHeightCm,
+    heightFeet: findHeightFeet,
+    heightInches: findHeightInches,
+  });
+
+  const tonePreset = getConfigTonePreset({
+    task: nextTask,
+    configSuit: nextSuit,
+    bodyAdjustmentKph,
+  });
+
+  if (nextTask === "speed") {
+    setConfigToneMin(
+      String(
+        windAdjustedSpeedToneKph(
+          tonePreset.toneMin,
+          configWindSummary.averageTailwindKt
+        )
+      )
+    );
+
+    setConfigToneMax(
+      String(
+        windAdjustedSpeedToneKph(
+          tonePreset.toneMax,
+          configWindSummary.averageTailwindKt
+        )
+      )
+    );
+
+    return;
   }
 
-  function updateConfigSuit(nextSuit: ConfigSuit) {
+  setConfigToneMin(String(tonePreset.toneMin));
+  setConfigToneMax(String(tonePreset.toneMax));
+}
+
+function updateConfigSuit(nextSuit: ConfigSuit) {
   setConfigSuit(nextSuit);
-
-  if (configTask === "distance") {
-    const suitGR = getSuitDistanceGR(nextSuit);
-
-    setConfigToneMin(suitGR.minGR.toFixed(1));
-    setConfigToneMax(suitGR.maxGR.toFixed(1));
-  }
+  applyConfigTonePreset(configTask, nextSuit);
 }
 
 async function copyGeneratedConfig() {
@@ -1707,9 +1893,8 @@ function downloadGeneratedConfig() {
     return;
   }
 
-  downloadTextFile(`${configTask}.TXT`, generatedConfigText);  }
-
-  function updateWind(
+  downloadTextFile(`${configTask}.TXT`, generatedConfigText);
+}  function updateWind(
     altitudeM: number,
     field: "directionFromDeg" | "speedKt",
     value: string
@@ -1819,6 +2004,29 @@ function downloadGeneratedConfig() {
       ),
     [taskMode, zeroWindSpeedKph, startGR, endGR, runHeadingDeg, winds]
   );
+
+  const configWindSummary = useMemo(() => {
+  if (results.length === 0) {
+    return {
+      averageTailwindKt: 0,
+      averageCrosswindKt: 0,
+    };
+  }
+
+  const averageTailwindKt =
+    results.reduce((total, row) => total + row.tailwindKt, 0) /
+    results.length;
+
+  const averageCrosswindKt =
+    results.reduce((total, row) => total + Math.abs(row.crosswindKt), 0) /
+    results.length;
+
+  return {
+    averageTailwindKt,
+    averageCrosswindKt,
+  };
+
+}, [results]);
 
   if (activePage === "landing") {
     return (
@@ -2043,36 +2251,28 @@ function downloadGeneratedConfig() {
                 const nextTask = e.target.value as ConfigTask;
 
                 setConfigTask(nextTask);
-
-                if (nextTask === "distance") {
-                  const suitGR = getSuitDistanceGR(configSuit);
-
-                  setConfigToneMin(suitGR.minGR.toFixed(1));
-                  setConfigToneMax(suitGR.maxGR.toFixed(1));
-                }
+                applyConfigTonePreset(nextTask, configSuit);
               }}
             >
               <option value="distance">Distance</option>
               <option value="speed">Speed</option>
               <option value="time">Time</option>
             </select>
+          </label>          
+
+          <label>
+            Suit
+            <select
+              value={configSuit}
+              onChange={(e) => updateConfigSuit(e.target.value as ConfigSuit)}
+            >
+              <option value="crplus-wingtips">CR+ with wingtips</option>
+              <option value="crplus-no-wingtips">CR+ without wingtips</option>
+              <option value="freak">Freak</option>
+              <option value="atc">ATC</option>
+              <option value="swift">Swift</option>
+            </select>
           </label>
-          
-          {configTask === "distance" && (
-            <label>
-              Suit
-              <select
-                value={configSuit}
-                onChange={(e) => updateConfigSuit(e.target.value as ConfigSuit)}
-              >
-                <option value="crplus-wingtips">CR+ with wingtips</option>
-                <option value="crplus-no-wingtips">CR+ without wingtips</option>
-                <option value="freak">Freak</option>
-                <option value="atc">ATC</option>
-                <option value="swift">Swift</option>
-              </select>
-            </label>
-          )}
 
           <div className="manual-wind-controls">
             <label>
