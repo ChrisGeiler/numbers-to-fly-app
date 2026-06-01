@@ -22,6 +22,17 @@ type SuitSetup =
 type UnitSystem = "metric" | "imperial";
 type FlySightVersion = "original" | "flysight2";
 type ConfigTask = "distance" | "speed" | "time";
+
+type StoredConfigTonePresets = Partial<
+  Record<
+    ConfigTask,
+    {
+      toneMin: string;
+      toneMax: string;
+    }
+  >
+>;
+
 type ConfigSuit =
   | "crplus-wingtips"
   | "crplus-no-wingtips"
@@ -1591,6 +1602,9 @@ export default function App() {
   const [configToneMin, setConfigToneMin] = useState("");
   const [configToneMax, setConfigToneMax] = useState("");
 
+  const [storedConfigTonePresets, setStoredConfigTonePresets] =
+    useState<StoredConfigTonePresets>({});
+
   const [configAlarm9, setConfigAlarm9] = useState("3353");
   const [configAlarm5, setConfigAlarm5] = useState("3000");
   const [configAlarm4, setConfigAlarm4] = useState("2900");
@@ -1827,7 +1841,34 @@ function useDeviceTimezoneForConfig() {
   setCopyStatus(`Timezone set from this device: ${seconds} seconds.`);
 }
 
-function applyConfigTonePreset(nextTask: ConfigTask, nextSuit: ConfigSuit) {
+function getConfigWindSummary(currentResults: ResultRow[]) {
+  if (currentResults.length === 0) {
+    return {
+      averageTailwindKt: 0,
+      averageCrosswindKt: 0,
+    };
+  }
+
+  const averageTailwindKt =
+    currentResults.reduce((total, row) => total + row.tailwindKt, 0) / currentResults.length;
+
+  const averageCrosswindKt =
+    currentResults.reduce((total, row) => total + Math.abs(row.crosswindKt), 0) /
+    currentResults.length;
+
+  return {
+    averageTailwindKt,
+    averageCrosswindKt,
+  };
+}
+
+function calculateConfigTonePresetForTask(
+  nextTask: ConfigTask,
+  nextSuit: ConfigSuit
+): {
+  toneMin: string;
+  toneMax: string;
+} {
   const bodyAdjustmentKph = getPilotBodyAdjustmentKph({
     weight: findWeight,
     unitSystem: findUnitSystem,
@@ -1843,34 +1884,107 @@ function applyConfigTonePreset(nextTask: ConfigTask, nextSuit: ConfigSuit) {
   });
 
   if (nextTask === "speed") {
-    setConfigToneMin(
-      String(
+    return {
+      toneMin: String(
         windAdjustedSpeedToneKph(
           tonePreset.toneMin,
-          configWindSummary.averageTailwindKt
+          getConfigWindSummary(results).averageTailwindKt
         )
-      )
-    );
-
-    setConfigToneMax(
-      String(
+      ),
+      toneMax: String(
         windAdjustedSpeedToneKph(
           tonePreset.toneMax,
-          configWindSummary.averageTailwindKt
+          getConfigWindSummary(results).averageTailwindKt
         )
-      )
-    );
-
-    return;
+      ),
+    };
   }
 
-  setConfigToneMin(String(tonePreset.toneMin));
-  setConfigToneMax(String(tonePreset.toneMax));
+  return {
+    toneMin: String(tonePreset.toneMin),
+    toneMax: String(tonePreset.toneMax),
+  };
 }
+
+function applyConfigTonePreset(nextTask: ConfigTask, nextSuit: ConfigSuit) {
+  const tonePreset = calculateConfigTonePresetForTask(nextTask, nextSuit);
+
+  setConfigToneMin(tonePreset.toneMin);
+  setConfigToneMax(tonePreset.toneMax);
+}
+
 
 function updateConfigSuit(nextSuit: ConfigSuit) {
   setConfigSuit(nextSuit);
   applyConfigTonePreset(configTask, nextSuit);
+}
+
+function pushFlyNumbersToConfig() {
+  const distanceTonePreset = calculateConfigTonePresetForTask(
+    "distance",
+    configSuit
+  );
+
+  const speedTonePreset = calculateConfigTonePresetForTask(
+    "speed",
+    configSuit
+  );
+
+  const timeTonePreset = calculateConfigTonePresetForTask(
+    "time",
+    configSuit
+  );
+
+  storeConfigTonePreset(
+    "distance",
+    distanceTonePreset.toneMin,
+    distanceTonePreset.toneMax
+  );
+
+  storeConfigTonePreset(
+    "speed",
+    speedTonePreset.toneMin,
+    speedTonePreset.toneMax
+  );
+
+  storeConfigTonePreset(
+    "time",
+    timeTonePreset.toneMin,
+    timeTonePreset.toneMax
+  );
+
+  setConfigTask(taskMode);
+  setConfigToneMin(
+    taskMode === "distance"
+      ? distanceTonePreset.toneMin
+      : taskMode === "speed"
+        ? speedTonePreset.toneMin
+        : timeTonePreset.toneMin
+  );
+  setConfigToneMax(
+    taskMode === "distance"
+      ? distanceTonePreset.toneMax
+      : taskMode === "speed"
+        ? speedTonePreset.toneMax
+        : timeTonePreset.toneMax
+  );
+
+  setCopyStatus("Fly numbers pushed to Config the Numbers.");
+  setActivePage("config");
+}
+
+function storeConfigTonePreset(
+  task: ConfigTask,
+  toneMin: string,
+  toneMax: string
+) {
+  setStoredConfigTonePresets((currentPresets) => ({
+    ...currentPresets,
+    [task]: {
+      toneMin,
+      toneMax,
+    },
+  }));
 }
 
 async function copyGeneratedConfig() {
@@ -2004,29 +2118,6 @@ function downloadGeneratedConfig() {
       ),
     [taskMode, zeroWindSpeedKph, startGR, endGR, runHeadingDeg, winds]
   );
-
-  const configWindSummary = useMemo(() => {
-  if (results.length === 0) {
-    return {
-      averageTailwindKt: 0,
-      averageCrosswindKt: 0,
-    };
-  }
-
-  const averageTailwindKt =
-    results.reduce((total, row) => total + row.tailwindKt, 0) /
-    results.length;
-
-  const averageCrosswindKt =
-    results.reduce((total, row) => total + Math.abs(row.crosswindKt), 0) /
-    results.length;
-
-  return {
-    averageTailwindKt,
-    averageCrosswindKt,
-  };
-
-}, [results]);
 
   if (activePage === "landing") {
     return (
@@ -2249,8 +2340,16 @@ function downloadGeneratedConfig() {
               value={configTask}
               onChange={(e) => {
                 const nextTask = e.target.value as ConfigTask;
+                const storedPreset = storedConfigTonePresets[nextTask];
 
                 setConfigTask(nextTask);
+
+                if (storedPreset) {
+                  setConfigToneMin(storedPreset.toneMin);
+                  setConfigToneMax(storedPreset.toneMax);
+                  return;
+                }
+
                 applyConfigTonePreset(nextTask, configSuit);
               }}
             >
@@ -2832,6 +2931,21 @@ function downloadGeneratedConfig() {
       </section>
 
       <TargetGraph taskMode={taskMode} results={results} />
+
+      <section className="card">
+        <button
+          type="button"
+          className="primary-action-button"
+          onClick={pushFlyNumbersToConfig}
+        >
+          Push to Config my Numbers
+        </button>
+
+        <p className="subtitle">
+          Stores Distance, Speed, and Time tone settings using the current suit,
+          body inputs, and flight path wind calculation.
+        </p>
+      </section>
     </main>
   );
 }
