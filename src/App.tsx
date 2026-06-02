@@ -339,6 +339,18 @@ function windAdjustedSpeedToneKph(
   return Math.round(baseKph + averageTailwindKt * 0.5);
 }
 
+function windAdjustedDistanceGR(
+  baseGR: number,
+  averageTailwindKt: number
+): number {
+  const windAdjustmentGR =
+    averageTailwindKt >= 0
+      ? Math.round(averageTailwindKt / 10) * 0.1
+      : -Math.round(Math.abs(averageTailwindKt) / 10) * 0.2;
+
+  return Number((baseGR + windAdjustmentGR).toFixed(1));
+}
+
 function downloadTextFile(filename: string, text: string) {
   const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -1982,19 +1994,32 @@ function calculateConfigTonePresetForTask(
     bodyAdjustmentKph,
   });
 
-  if (nextTask === "speed") {
+  const windSummary = getConfigWindSummary(results);
+
+  if (nextTask === "distance") {
     return {
       toneMin: String(
-        windAdjustedSpeedToneKph(
+        windAdjustedDistanceGR(
           tonePreset.toneMin,
-          getConfigWindSummary(results).averageTailwindKt
+          windSummary.averageTailwindKt
         )
       ),
       toneMax: String(
-        windAdjustedSpeedToneKph(
+        windAdjustedDistanceGR(
           tonePreset.toneMax,
-          getConfigWindSummary(results).averageTailwindKt
+          windSummary.averageTailwindKt
         )
+      ),
+    };
+  }
+
+  if (nextTask === "speed") {
+    return {
+      toneMin: String(
+        windAdjustedSpeedToneKph(tonePreset.toneMin, windSummary.averageTailwindKt)
+      ),
+      toneMax: String(
+        windAdjustedSpeedToneKph(tonePreset.toneMax, windSummary.averageTailwindKt)
       ),
     };
   }
@@ -2003,9 +2028,7 @@ function calculateConfigTonePresetForTask(
     toneMin: String(tonePreset.toneMin),
     toneMax: String(tonePreset.toneMax),
   };
-}
-
-function applyConfigTonePreset(nextTask: ConfigTask, nextSuit: ConfigSuit) {
+}function applyConfigTonePreset(nextTask: ConfigTask, nextSuit: ConfigSuit) {
   const tonePreset = calculateConfigTonePresetForTask(nextTask, nextSuit);
 
   setConfigToneMin(tonePreset.toneMin);
@@ -2602,6 +2625,13 @@ async function handleWindSourceChange(source: WindSource) {
           </p>
 )}
 
+{configTask === "distance" && (
+  <p className="subtitle">
+    {getConfigWindSummary(results).averageTailwindKt >= 0
+      ? "Distance GR tones include the current flight path wind adjustment. Tailwind adds about 0.1 GR for every 10 kt."
+      : "Distance GR tones include the current flight path wind adjustment. This flight path has a headwind component. Fly your normal zero-wind speed and accept that the achievable glide ratio will be lower. Headwind reduces the expected GR by about 0.2 for every 10 kt."}
+  </p>
+)}
       {configTask === "distance" && (
         <section className="card tutorial-card">
           <h2>Understanding GR Tone Settings</h2>
@@ -2613,7 +2643,7 @@ async function handleWindSourceChange(source: WindSource) {
 
           <p>
             You may be capable of flying a higher number, but the goal is not
-            to chase the highest tone possible. If the maximum tone is set too high,
+            to chase the highest GR possible. If the maximum tone is set too high,
             there's a chance that you may increase the Angle of Attack (AoA) too much, 
             lose airspeed, and then struggle to sustain high performance through the window.
           </p>
