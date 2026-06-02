@@ -13,7 +13,7 @@ import "./App.css";
 
 type AppPage = "landing" | "find" | "fly" | "config";
 type TaskMode = "time" | "distance" | "speed";
-type WindSource = "manual" | "mark-schulze" | "windy";
+type WindSource = "manual" | "mark-schulze" | "open-meteo" | "windy";
 type SuitSetup =
   | "crplus-no-wingtips"
   | "crplus-wingtips"
@@ -65,6 +65,20 @@ type MarkSchulzeResponse = {
   directionSI?: Record<string, number>;
   speedSI?: Record<string, number>;
   model?: string;
+};
+
+type OpenMeteoResponse = {
+  hourly?: {
+    time?: string[];
+    wind_speed_1000hPa?: number[];
+    wind_direction_1000hPa?: number[];
+    wind_speed_925hPa?: number[];
+    wind_direction_925hPa?: number[];
+    wind_speed_850hPa?: number[];
+    wind_direction_850hPa?: number[];
+    wind_speed_700hPa?: number[];
+    wind_direction_700hPa?: number[];
+  };
 };
 
 type LatLon = {
@@ -1061,6 +1075,91 @@ function interpolateDirection(
   return normalizeDeg(lowerDirection + shortestDifference * progress);
 }
 
+const openMeteoPressureAltitudeM: Record<string, number> = {
+  "1000": 110,
+  "925": 760,
+  "850": 1450,
+  "700": 3000,
+};
+
+function getOpenMeteoHourlyIndex(data: OpenMeteoResponse): number {
+  const times = data.hourly?.time;
+
+  if (!times || times.length === 0) {
+    return 0;
+  }
+
+  const now = new Date();
+  let closestIndex = 0;
+  let closestDifferenceMs = Infinity;
+
+  times.forEach((time, index) => {
+    const forecastTime = new Date(time);
+    const differenceMs = Math.abs(forecastTime.getTime() - now.getTime());
+
+    if (differenceMs < closestDifferenceMs) {
+      closestDifferenceMs = differenceMs;
+      closestIndex = index;
+    }
+  });
+
+  return closestIndex;
+}
+
+function mapOpenMeteoToWindLayers(data: OpenMeteoResponse): WindLayer[] {
+  const hourly = data.hourly;
+
+  if (!hourly) {
+    throw new Error("Open-Meteo response did not include hourly data.");
+  }
+
+  const index = getOpenMeteoHourlyIndex(data);
+
+  const altitudeLevels = Object.values(openMeteoPressureAltitudeM);
+
+  const directionsByAltitude: Record<string, number> = {
+    [String(openMeteoPressureAltitudeM["1000"])]:
+      hourly.wind_direction_1000hPa?.[index] ?? 0,
+    [String(openMeteoPressureAltitudeM["925"])]:
+      hourly.wind_direction_925hPa?.[index] ?? 0,
+    [String(openMeteoPressureAltitudeM["850"])]:
+      hourly.wind_direction_850hPa?.[index] ?? 0,
+    [String(openMeteoPressureAltitudeM["700"])]:
+      hourly.wind_direction_700hPa?.[index] ?? 0,
+  };
+
+  const speedsByAltitude: Record<string, number> = {
+    [String(openMeteoPressureAltitudeM["1000"])]:
+      hourly.wind_speed_1000hPa?.[index] ?? 0,
+    [String(openMeteoPressureAltitudeM["925"])]:
+      hourly.wind_speed_925hPa?.[index] ?? 0,
+    [String(openMeteoPressureAltitudeM["850"])]:
+      hourly.wind_speed_850hPa?.[index] ?? 0,
+    [String(openMeteoPressureAltitudeM["700"])]:
+      hourly.wind_speed_700hPa?.[index] ?? 0,
+  };
+
+  return altitudes.map((altitudeM) => {
+    const directionFromDeg = interpolateDirection(
+      altitudeM,
+      altitudeLevels,
+      directionsByAltitude
+    );
+
+    const speedKt = interpolateNumber(
+      altitudeM,
+      altitudeLevels,
+      speedsByAltitude
+    );
+
+    return {
+      altitudeM,
+      directionFromDeg: String(Math.round(directionFromDeg)),
+      speedKt: String(Math.round(speedKt)),
+    };
+  });
+}
+
 function mapMarkSchulzeToWindLayers(data: MarkSchulzeResponse): WindLayer[] {
   if (!data.altSI || !data.directionSI || !data.speedSI) {
     throw new Error(
@@ -1971,6 +2070,13 @@ function pushFlyNumbersToConfig() {
 
   setCopyStatus("Fly numbers pushed to Config the Numbers.");
   setActivePage("config");
+
+window.setTimeout(() => {
+  window.scrollTo({
+    top: 0,
+    behavior: "smooth",
+  });
+}, 0);
 }
 
 function storeConfigTonePreset(
@@ -2059,10 +2165,55 @@ function downloadGeneratedConfig() {
           ? error.message
           : "Unknown error while fetching winds.";
 
-      setFetchStatus(`Could not fetch Mark Schulze winds. ${message}.`);
+      setFetchStatus(`Could not fetch Mark Schulze winds, switch to Open Meteo. ${message}.`);
     }
   }
 
+
+  async function fetchOpenMeteoWindsForLocation(lat: number, lon: number) {
+  setFetchStatus("Fetching Open-Meteo winds...");
+
+  const hourlyFields = [
+    "wind_speed_1000hPa",
+    "wind_direction_1000hPa",
+    "wind_speed_925hPa",
+    "wind_direction_925hPa",
+    "wind_speed_850hPa",
+    "wind_direction_850hPa",
+    "wind_speed_700hPa",
+    "wind_direction_700hPa",
+  ].join(",");
+
+  const url =
+    `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(
+      lat
+    )}&longitude=${encodeURIComponent(
+      lon
+    )}&hourly=${encodeURIComponent(hourlyFields)}&wind_speed_unit=kn`;
+
+  try {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Request failed with status ${response.status}`);
+    }
+
+    const data = (await response.json()) as OpenMeteoResponse;
+    const importedWinds = mapOpenMeteoToWindLayers(data);
+
+    setWinds(importedWinds);
+    setFetchStatus("Loaded Open-Meteo forecast winds.");
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unknown error while fetching winds.";
+
+    setFetchStatus(
+      `Could not fetch Open-Meteo winds. ${message}. Use raw winds or try again later.`
+    );
+  }
+}
   async function setReferencePoint(lat: number, lon: number, sourceLabel: string) {
     const nextLat = lat.toFixed(6);
     const nextLon = lon.toFixed(6);
@@ -2076,24 +2227,42 @@ function downloadGeneratedConfig() {
     if (windSource === "mark-schulze") {
       await fetchMarkSchulzeWindsForLocation(lat, lon);
     }
+
+    if (windSource === "open-meteo") {
+      await fetchOpenMeteoWindsForLocation(lat, lon);
+    }
   }
 
   async function pickReferenceFromMap(lat: number, lon: number) {
     await setReferencePoint(lat, lon, "map");
   }
 
-  function handleWindSourceChange(source: WindSource) {
-    setWindSource(source);
-    setFetchStatus("");
+async function handleWindSourceChange(source: WindSource) {
+  setWindSource(source);
+  setFetchStatus("");
 
-    if (source === "manual") {
-      setShowRawWinds(true);
-      return;
-    }
-
-    setShowRawWinds(false);
+  if (source === "manual") {
+    setShowRawWinds(true);
+    return;
   }
 
+  setShowRawWinds(false);
+
+  const lat = optionalNumberFromInput(referenceLat);
+  const lon = optionalNumberFromInput(referenceLon);
+
+  if (lat === null || lon === null) {
+    return;
+  }
+
+  if (source === "mark-schulze") {
+    await fetchMarkSchulzeWindsForLocation(lat, lon);
+  }
+
+  if (source === "open-meteo") {
+    await fetchOpenMeteoWindsForLocation(lat, lon);
+  }
+}
   function openWindyVisualCheck() {
     const lat = optionalNumberFromInput(referenceLat);
     const lon = optionalNumberFromInput(referenceLon);
@@ -2174,7 +2343,7 @@ function downloadGeneratedConfig() {
           <h2>Find your Numbers</h2>
 
           <p className="subtitle">
-            Enter your body details and suit setup to estimate starting numbers.
+            Enter your body details and suit to estimate starting numbers.
           </p>
 
           <button
@@ -2250,7 +2419,7 @@ function downloadGeneratedConfig() {
         </section>
 
         <section className="card">
-          <h2>Estimated Numbers</h2>
+          <h2>Estimated Zero Wind Numbers</h2>
 
           <div className="numbers-grid">
             <div className="number-tile">
@@ -2798,6 +2967,7 @@ function downloadGeneratedConfig() {
             onChange={(e) => handleWindSourceChange(e.target.value as WindSource)}
           >
             <option value="mark-schulze">Mark Schulze</option>
+            <option value="open-meteo">Open-Meteo</option>
             <option value="manual">Manual</option>
             <option value="windy">Windy visual check</option>
           </select>
