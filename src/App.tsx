@@ -12,7 +12,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
 
-type AppPage = "landing" | "find" | "fly" | "config";
+type AppPage = "landing" | "find" | "fly" | "config" | "lane";
 type TaskMode = "time" | "distance" | "speed";
 type WindSource = "manual" | "mark-schulze" | "open-meteo" | "windy";
 type SuitSetup =
@@ -2447,6 +2447,23 @@ async function handleWindSourceChange(source: WindSource) {
     [taskMode, zeroWindSpeedKph, startGR, endGR, runHeadingDeg, winds]
   );
 
+    if (activePage === "lane") {
+    return (
+      <main className="app">
+        <header className="page-header">
+          <button type="button" onClick={() => setActivePage("fly")}>
+            Back to Fly the Numbers
+          </button>
+
+          <h1>Lane View</h1>
+          <p className="subtitle">
+            This page will show the flight lane, wind arrows, and numbers to fly.
+          </p>
+        </header>
+      </main>
+    );
+  }
+
   if (activePage === "landing") {
     return (
       <main className="app landing-page">
@@ -3171,7 +3188,15 @@ async function handleWindSourceChange(source: WindSource) {
               runHeadingDeg={runHeadingDeg}
               showTemporaryFlightLine={showTemporaryFlightLine}
             />
-          </>
+
+            <button
+              type="button"
+              className="primary-action-button"
+              onClick={() => setActivePage("lane")}
+            >
+              Zoom on my Lane
+            </button>
+            </>
         )}
 
         <HeadingSlider
@@ -3337,20 +3362,20 @@ async function handleWindSourceChange(source: WindSource) {
 
       <TargetGraph taskMode={taskMode} results={results} />
 
-      <section className="card">
-        <button
-          type="button"
-          className="primary-action-button"
-          onClick={pushFlyNumbersToConfig}
-        >
-          Push to Config my Numbers
-        </button>
+<section className="card">
+  <button
+    type="button"
+    className="primary-action-button"
+    onClick={pushFlyNumbersToConfig}
+  >
+    Push to Config my Numbers
+  </button>
 
-        <p className="subtitle">
-          Stores Distance, Speed, and Time tone settings using the current suit,
-          body inputs, and flight path wind calculation.
-        </p>
-      </section>
+  <p className="subtitle">
+    Stores Distance, Speed, and Time tone settings using the current suit, body
+    inputs, and flight path wind calculation.
+  </p>
+</section>
     </main>
   );
 }
