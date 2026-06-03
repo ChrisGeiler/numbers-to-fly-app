@@ -2663,31 +2663,55 @@ async function handleWindSourceChange(source: WindSource) {
         </section>
       )}
 
-      {configTask === "time" && (
-        <section className="card tutorial-card">
-          <h2>Understanding Time Tone Settings</h2>
+{configTask === "time" && (
+  <section className="card tutorial-card">
+    <h2>Understanding Time Tone Settings</h2>
 
-          <p>
-            For Time, the low tone should be an achievable vertical speed that helps
-            confirm you are flying well without forcing you to fly too slowly and risk
-            stalling the suit.
-          </p>
+    <p>
+      For Time, the low tone should be an achievable vertical speed that helps
+      confirm you are flying well without forcing you to fly too slowly and risk
+      stalling the suit.
+    </p>
 
-          <p>
-            It is great if you are actually flying slower than the lowest tone, but
-            you do not need to know that exact number. You only need to know that you
-            are in a good range and that the suit is still flying cleanly.
-          </p>
+    <p>
+      It's great if you're actually flying slower than the lowest tone, but
+      you do not need to know that exact number. You only need to know that you
+      are in a good range and that the suit is still flying cleanly. If you're
+      consistently flying well below the minimum tone you can lower the number
+      manually in the above window.
+    </p>
 
-          <p>
-            Focus on maintaining a good wing configuration, managing your horizontal
-            speed, and using your senses of wind speed, wind noise, and suit pressure
-            to feel whether you can ask the suit for more or whether you need to hold
-            what you have.
-          </p>
-        </section>
-      )}
+    <p>
+      Focus on maintaining a good wing configuration, managing your horizontal
+      speed, and using your senses of wind speed, wind noise, and suit pressure
+      to feel whether you can ask the suit for more or whether you need to hold
+      what you have.
+    </p>
 
+    {getConfigWindSummary(results).averageTailwindKt < 0 && (
+      <p>
+        This flight path has a headwind component. For Time, the wind does not
+        change the suit&apos;s airspeed performance, but it does change the
+        ground-speed number to fly. A 10 kt direct headwind component would 
+        allow you to fly about 10 km/h slower over the ground while keeping
+        the same airspeed and wing configuration. This calculation will change 
+        as the wind becomes more of a crosswind.
+        
+      </p>
+    )}
+
+
+
+    {getConfigWindSummary(results).averageTailwindKt < 0 && (
+      <p>
+        In a headwind, be less aggressive with your flare for Time and Distance.
+        The suit will lose ground speed more quickly, so an overly aggressive
+        flare can make it harder to keep the suit flying efficiently through the
+        window.
+      </p>
+    )}
+  </section>
+)}
       {configTask === "speed" && (
         <section className="card tutorial-card">
           <h2>Understanding Speed Tone Settings</h2>
