@@ -993,8 +993,7 @@ function leastFavorableWindAhead(index: number, tailwindsKt: number[]): number {
 }
 
 function grWindCorrection(effectiveWindAheadKt: number): number {
-  if (effectiveWindAheadKt >= 0) return effectiveWindAheadKt / 100;
-  return effectiveWindAheadKt / 50;
+  return effectiveWindAheadKt / 100;
 }
 
 function blendedTimeWindCorrectionKph(
@@ -1250,7 +1249,13 @@ function calculateTargets(
     if (taskMode === "speed") {
       const effectiveWindAheadKt = leastFavorableWindAhead(index, tailwindsKt);
       const baseGR = baseGRAtAltitude(wind.altitudeM, startGR, endGR);
-      const targetGR = baseGR + grWindCorrection(effectiveWindAheadKt);
+      const correctionProgress = Math.min(
+        Math.max((2500 - wind.altitudeM) / 1000, 0),
+        1
+      );
+
+      const targetGR =
+        baseGR + grWindCorrection(effectiveWindAheadKt) * correctionProgress;
 
       return {
         altitudeM: wind.altitudeM,
@@ -1296,12 +1301,15 @@ function calculateTargets(
 function HeadingSlider({
   runHeadingDeg,
   windAdvantage,
+  windSourceUnavailable,
   onChange,
 }: {
   runHeadingDeg: string;
   windAdvantage: WindAdvantageSummary;
+  windSourceUnavailable: boolean;
   onChange: (value: string) => void;
-}) {
+}) {  
+  
   const heading = Math.round(numberFromInput(runHeadingDeg, 0));
   const averageTailwind = Math.round(windAdvantage.averageTailwindKt);
   const bestTailwind = Math.round(windAdvantage.bestAverageTailwindKt);
@@ -1332,10 +1340,16 @@ function HeadingSlider({
       </div>
 
       <p className="subtitle">
-        Wind advantage: {averageTailwind >= 0 ? "+" : ""}
-        {averageTailwind} kt average. Best heading about{" "}
-        {windAdvantage.bestHeadingDeg}° gives {bestTailwind >= 0 ? "+" : ""}
-        {bestTailwind} kt.
+        {windSourceUnavailable ? (
+          "Current wind source unavailable, please choose new wind source."
+        ) : (
+          <>
+            Wind advantage: {averageTailwind >= 0 ? "+" : ""}
+            {averageTailwind} kt average. Best heading about{" "}
+            {windAdvantage.bestHeadingDeg}° gives {bestTailwind >= 0 ? "+" : ""}
+            {bestTailwind} kt.
+          </>
+        )}
       </p>
     </div>
   );
@@ -2035,6 +2049,24 @@ function calculateConfigTonePresetForTask(
   setConfigToneMax(tonePreset.toneMax);
 }
 
+function applyConfigAlarmDefaults(nextTask: ConfigTask) {
+  if (nextTask === "speed") {
+    setConfigAlarm5("3100");
+    setConfigAlarm4("3000");
+    setConfigAlarm3("2900");
+    setConfigAlarm2("2800");
+    setConfigAlarm1("2700");
+    setConfigAlarmBeep("2600");
+    return;
+  }
+
+  setConfigAlarm5("3000");
+  setConfigAlarm4("2900");
+  setConfigAlarm3("2800");
+  setConfigAlarm2("2700");
+  setConfigAlarm1("2600");
+  setConfigAlarmBeep("2500");
+}
 
 function updateConfigSuit(nextSuit: ConfigSuit) {
   setConfigSuit(nextSuit);
@@ -2535,6 +2567,7 @@ async function handleWindSourceChange(source: WindSource) {
                 const storedPreset = storedConfigTonePresets[nextTask];
 
                 setConfigTask(nextTask);
+                applyConfigAlarmDefaults(nextTask);
 
                 if (storedPreset) {
                   setConfigToneMin(storedPreset.toneMin);
@@ -2712,31 +2745,47 @@ async function handleWindSourceChange(source: WindSource) {
     )}
   </section>
 )}
-      {configTask === "speed" && (
-        <section className="card tutorial-card">
-          <h2>Understanding Speed Tone Settings</h2>
+{configTask === "speed" && (
+  <section className="card tutorial-card">
+    <h2>Understanding Speed Tone Settings</h2>
 
-          <p>
-            For Speed, the maximum tone should be an achievable high speed. You may
-            peak at a higher speed during your run, but the goal is to set a high tone
-            that confirms you are flying well without encouraging you to chase an
-            unrealistic number.
-          </p>
+    <p>
+      For Speed, the maximum tone should be an achievable high speed. You may
+      peak at a higher speed during your run, but the goal is to set a high tone
+      that confirms you are flying well without encouraging you to chase an
+      unrealistic number.
+    </p>
 
-          <p>
-            As long as you keep hearing the high tones and maintain the correct wing
-            configuration and glide ratio, you know you are flying a good run.
-          </p>
+    <p>
+      As long as you keep hearing the high tones and maintain the correct wing
+      configuration and glide ratio, you know you are flying a good run.
+    </p>
 
-          <p>
-            If you flatten out too much and make the glide ratio go higher than
-            desired, do not push back down aggressively on the suit. That will usually
-            slow your horizontal speed for longer than any benefit you gain from trying
-            to rebuild energy.
-          </p>
-        </section>
-      )}
+    <p>
+      If you flatten out too much and make the glide ratio go higher than
+      desired, do not push back down aggressively on the suit. That will usually
+      slow your horizontal speed for longer than any benefit you gain from trying
+      to rebuild energy.
+    </p>
 
+    {getConfigWindSummary(results).averageTailwindKt < 0 && (
+      <p>
+        This flight path has a headwind component. For Speed, you should expect
+        a slower peak ground speed because the score is measured over the ground,
+        not through the air.
+      </p>
+    )}
+
+    {getConfigWindSummary(results).averageTailwindKt < 0 && (
+      <p>
+        In a headwind, it is important to keep the end glide ratio lower and
+        avoid flattening the suit too much. A steeper GR helps maintain  
+        energy and creates the best horizontal speed in these conditions.
+        
+      </p>
+    )}
+  </section>
+)}
         </section>
 
         <section className="card">
@@ -2750,6 +2799,14 @@ async function handleWindSourceChange(source: WindSource) {
             The “9” alarm is the maximum competition exit altitude warning. If you hear
             it, the aircraft is too high and any record score may be void.
           </p>
+
+          {configTask === "speed" && (
+            <p className="subtitle">
+              For Speed, the countdown alarms are raised by 100 m. This gives you about
+              100 m after the beep to hear the glide ratio feedback and settle closer to
+              the target GR before entering the scoring window.
+            </p>
+          )}
 
           <div className="alarm-grid">
             <label>
@@ -2998,9 +3055,9 @@ async function handleWindSourceChange(source: WindSource) {
         <HeadingSlider
           runHeadingDeg={runHeadingDeg}
           windAdvantage={windAdvantage}
+          windSourceUnavailable={fetchStatus.includes("Could not fetch")}
           onChange={updateHeadingFromSlider}
-        />
-
+        />  
         {calculatedDropPoint && (
           <p className="subtitle">
             Drop/start point: {calculatedDropPoint.lat.toFixed(6)},{" "}
