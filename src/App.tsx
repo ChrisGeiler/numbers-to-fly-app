@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   MapContainer,
   Marker,
+  Polygon,
   Polyline,
   TileLayer,
   useMap,
@@ -672,7 +673,7 @@ H_Thresh:  0     ; Minimum horizontal speed for tone (cm/s)
 
 Use_SAS:   0     ; Use skydiver's airspeed
                  ;   0 = No
-                 
+
                  ;   1 = Yes
 TZ_Offset: ${tzSeconds}     ; Timezone offset of output files in seconds
                  ;   -14400 = UTC-4
@@ -865,6 +866,51 @@ function calculateDropPoint(
     backBearing,
     nmToMetres(dropDistanceNm)
   );
+}
+
+function buildLanePolygon(
+  startPoint: LatLon,
+  endPoint: LatLon,
+  runHeadingDeg: number,
+  halfWidthM: number
+): [number, number][] {
+  const leftBearing = normalizeDeg(runHeadingDeg - 90);
+  const rightBearing = normalizeDeg(runHeadingDeg + 90);
+
+  const startLeft = destinationPoint(
+    startPoint.lat,
+    startPoint.lon,
+    leftBearing,
+    halfWidthM
+  );
+
+  const endLeft = destinationPoint(
+    endPoint.lat,
+    endPoint.lon,
+    leftBearing,
+    halfWidthM
+  );
+
+  const endRight = destinationPoint(
+    endPoint.lat,
+    endPoint.lon,
+    rightBearing,
+    halfWidthM
+  );
+
+  const startRight = destinationPoint(
+    startPoint.lat,
+    startPoint.lon,
+    rightBearing,
+    halfWidthM
+  );
+
+  return [
+    [startLeft.lat, startLeft.lon],
+    [endLeft.lat, endLeft.lon],
+    [endRight.lat, endRight.lon],
+    [startRight.lat, startRight.lon],
+  ];
 }
 
 function applyTailHeadDeadband(tailwindKt: number): number {
@@ -1303,11 +1349,15 @@ function HeadingSlider({
   runHeadingDeg,
   windAdvantage,
   windSourceUnavailable,
+  onInteractionStart,
+  onInteractionEnd,
   onChange,
 }: {
   runHeadingDeg: string;
   windAdvantage: WindAdvantageSummary;
   windSourceUnavailable: boolean;
+  onInteractionStart: () => void;
+  onInteractionEnd: () => void;
   onChange: (value: string) => void;
 }) {  
   
@@ -1329,6 +1379,11 @@ function HeadingSlider({
         max="359"
         step="1"
         value={numberFromInput(runHeadingDeg, 0)}
+        onPointerDown={() => onInteractionStart()}
+        onPointerUp={() => onInteractionEnd()}
+        onPointerCancel={() => onInteractionEnd()}
+        onTouchEnd={() => onInteractionEnd()}
+        onMouseUp={() => onInteractionEnd()}
         onChange={(e) => onChange(e.target.value)}
       />
 
@@ -1390,6 +1445,8 @@ function MapClickPicker({
   userMapLocation,
   dropPoint,
   flightLineColor,
+  runHeadingDeg,
+  showTemporaryFlightLine, 
   onPick,
 }: {
   referenceLat: string;
@@ -1397,6 +1454,8 @@ function MapClickPicker({
   userMapLocation: LatLon | null;
   dropPoint: LatLon | null;
   flightLineColor: string;
+  runHeadingDeg: string;
+  showTemporaryFlightLine: boolean;
   onPick: (lat: number, lon: number) => void;
 }) {
   const lat = optionalNumberFromInput(referenceLat);
@@ -1431,6 +1490,22 @@ function MapClickPicker({
         ]
       : [];
 
+  const headingNumber = optionalNumberFromInput(runHeadingDeg);
+
+  const hasLaneGeometry =
+    lat !== null &&
+    lon !== null &&
+    dropPoint !== null &&
+    headingNumber !== null;
+
+  const outerLanePolygon = hasLaneGeometry
+    ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 600)
+    : [];
+
+  const innerLanePolygon = hasLaneGeometry
+    ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 300)
+    : [];
+
   return (
     <div className="map-picker">
       <MapContainer center={center} zoom={initialZoom} scrollWheelZoom={true}>
@@ -1454,6 +1529,32 @@ function MapClickPicker({
           />
         )}
 
+        {outerLanePolygon.length === 4 && (
+          <Polygon
+            positions={outerLanePolygon}
+            pathOptions={{
+              color: "#f97316",
+              weight: 2,
+              opacity: 0.85,
+              fillColor: "#f97316",
+              fillOpacity: 0.16,
+            }}
+          />
+        )}
+
+        {innerLanePolygon.length === 4 && (
+          <Polygon
+            positions={innerLanePolygon}
+            pathOptions={{
+              color: "#22c55e",
+              weight: 2,
+              opacity: 0.95,
+              fillColor: "#22c55e",
+              fillOpacity: 0.2,
+            }}
+          />
+        )}
+
         {dropPoint !== null && (
           <Marker
             position={[dropPoint.lat, dropPoint.lon]}
@@ -1465,7 +1566,7 @@ function MapClickPicker({
           <Marker position={[lat, lon]} icon={referencePointIcon} />
         )}
 
-        {linePositions.length === 2 && (
+        {showTemporaryFlightLine && linePositions.length === 2 && (
           <Polyline
             positions={linePositions}
             pathOptions={{
@@ -1479,6 +1580,7 @@ function MapClickPicker({
     </div>
   );
 }
+
 
 function TargetGraph({
   taskMode,
@@ -1699,6 +1801,7 @@ export default function App() {
   const [savedTimeSpeedKph, setSavedTimeSpeedKph] = useState("");
 
   const [runHeadingDeg, setRunHeadingDeg] = useState("");
+  const [showTemporaryFlightLine, setShowTemporaryFlightLine] = useState(false);
   const [dropDistanceNm, setDropDistanceNm] = useState("");
 
   const [globalWindFromDeg, setGlobalWindFromDeg] = useState("");
@@ -3065,6 +3168,8 @@ async function handleWindSourceChange(source: WindSource) {
               dropPoint={calculatedDropPoint}
               flightLineColor={windAdvantage.color}
               onPick={pickReferenceFromMap}
+              runHeadingDeg={runHeadingDeg}
+              showTemporaryFlightLine={showTemporaryFlightLine}
             />
           </>
         )}
@@ -3073,8 +3178,10 @@ async function handleWindSourceChange(source: WindSource) {
           runHeadingDeg={runHeadingDeg}
           windAdvantage={windAdvantage}
           windSourceUnavailable={fetchStatus.includes("Could not fetch")}
+          onInteractionStart={() => setShowTemporaryFlightLine(true)}
+          onInteractionEnd={() => setShowTemporaryFlightLine(false)}
           onChange={updateHeadingFromSlider}
-        />  
+        />
         {calculatedDropPoint && (
           <p className="subtitle">
             Drop/start point: {calculatedDropPoint.lat.toFixed(6)},{" "}
