@@ -1498,11 +1498,15 @@ function MapClickPicker({
     dropPoint !== null &&
     headingNumber !== null;
 
-  const outerLanePolygon = hasLaneGeometry
-    ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 600)
+  const redLanePolygon = hasLaneGeometry
+  ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 600)
+  : [];
+
+  const yellowLanePolygon = hasLaneGeometry
+    ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 450)
     : [];
 
-  const innerLanePolygon = hasLaneGeometry
+  const greenLanePolygon = hasLaneGeometry
     ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 300)
     : [];
 
@@ -1529,28 +1533,41 @@ function MapClickPicker({
           />
         )}
 
-        {outerLanePolygon.length === 4 && (
+        {redLanePolygon.length === 4 && (
           <Polygon
-            positions={outerLanePolygon}
+            positions={redLanePolygon}
             pathOptions={{
-              color: "#f97316",
+              color: "#ef4444",
               weight: 2,
               opacity: 0.85,
-              fillColor: "#f97316",
-              fillOpacity: 0.16,
+              fillColor: "#ef4444",
+              fillOpacity: 0.18,
             }}
           />
         )}
 
-        {innerLanePolygon.length === 4 && (
+        {yellowLanePolygon.length === 4 && (
           <Polygon
-            positions={innerLanePolygon}
+            positions={yellowLanePolygon}
+            pathOptions={{
+              color: "#facc15",
+              weight: 2,
+              opacity: 0.9,
+              fillColor: "#facc15",
+              fillOpacity: 0.22,
+            }}
+          />
+        )}
+
+        {greenLanePolygon.length === 4 && (
+          <Polygon
+            positions={greenLanePolygon}
             pathOptions={{
               color: "#22c55e",
               weight: 2,
               opacity: 0.95,
               fillColor: "#22c55e",
-              fillOpacity: 0.2,
+              fillOpacity: 0.26,
             }}
           />
         )}
@@ -1581,6 +1598,109 @@ function MapClickPicker({
   );
 }
 
+function LaneViewMap({
+  referenceLat,
+  referenceLon,
+  dropPoint,
+  runHeadingDeg,
+}: {
+  referenceLat: string;
+  referenceLon: string;
+  dropPoint: LatLon | null;
+  runHeadingDeg: string;
+}) {
+  const lat = optionalNumberFromInput(referenceLat);
+  const lon = optionalNumberFromInput(referenceLon);
+  const headingNumber = optionalNumberFromInput(runHeadingDeg);
+
+  const hasLaneGeometry =
+    lat !== null &&
+    lon !== null &&
+    dropPoint !== null &&
+    headingNumber !== null;
+
+  const center: [number, number] =
+    hasLaneGeometry && dropPoint !== null
+      ? [(lat + dropPoint.lat) / 2, (lon + dropPoint.lon) / 2]
+      : lat !== null && lon !== null
+        ? [lat, lon]
+        : [20, 0];
+
+  const outerLanePolygon = hasLaneGeometry
+    ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 600)
+    : [];
+
+  const innerLanePolygon = hasLaneGeometry
+    ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 300)
+    : [];
+
+  const linePositions =
+    hasLaneGeometry && dropPoint !== null
+      ? [
+          [dropPoint.lat, dropPoint.lon] as [number, number],
+          [lat, lon] as [number, number],
+        ]
+      : [];
+
+  return (
+    <div className="lane-view-map">
+      <MapContainer center={center} zoom={13} scrollWheelZoom={true}>
+        <TileLayer
+          attribution="Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        />
+
+        {outerLanePolygon.length === 4 && (
+          <Polygon
+            positions={outerLanePolygon}
+            pathOptions={{
+              color: "#f97316",
+              weight: 2,
+              opacity: 0.9,
+              fillColor: "#f97316",
+              fillOpacity: 0.16,
+            }}
+          />
+        )}
+
+        {innerLanePolygon.length === 4 && (
+          <Polygon
+            positions={innerLanePolygon}
+            pathOptions={{
+              color: "#22c55e",
+              weight: 2,
+              opacity: 0.95,
+              fillColor: "#22c55e",
+              fillOpacity: 0.24,
+            }}
+          />
+        )}
+
+        {linePositions.length === 2 && (
+          <Polyline
+            positions={linePositions}
+            pathOptions={{
+              color: "#38bdf8",
+              weight: 4,
+              opacity: 0.9,
+            }}
+          />
+        )}
+
+        {dropPoint !== null && (
+          <Marker
+            position={[dropPoint.lat, dropPoint.lon]}
+            icon={dropPointIcon}
+          />
+        )}
+
+        {lat !== null && lon !== null && (
+          <Marker position={[lat, lon]} icon={referencePointIcon} />
+        )}
+      </MapContainer>
+    </div>
+  );
+}
 
 function TargetGraph({
   taskMode,
@@ -2447,22 +2567,31 @@ async function handleWindSourceChange(source: WindSource) {
     [taskMode, zeroWindSpeedKph, startGR, endGR, runHeadingDeg, winds]
   );
 
-    if (activePage === "lane") {
-    return (
-      <main className="app">
-        <header className="page-header">
-          <button type="button" onClick={() => setActivePage("fly")}>
-            Back to Fly the Numbers
-          </button>
+if (activePage === "lane") {
+  return (
+    <main className="app">
+      <header className="page-header">
+        <button type="button" onClick={() => setActivePage("fly")}>
+          Back to Fly the Numbers
+        </button>
 
-          <h1>Lane View</h1>
-          <p className="subtitle">
-            This page will show the flight lane, wind arrows, and numbers to fly.
-          </p>
-        </header>
-      </main>
-    );
-  }
+        <h1>Lane View</h1>
+        <p className="subtitle">
+          Flight lane based on your reference point, heading, and drop distance.
+        </p>
+      </header>
+
+      <section className="card">
+        <LaneViewMap
+          referenceLat={referenceLat}
+          referenceLon={referenceLon}
+          dropPoint={calculatedDropPoint}
+          runHeadingDeg={runHeadingDeg}
+        />
+      </section>
+    </main>
+  );
+}
 
   if (activePage === "landing") {
     return (
