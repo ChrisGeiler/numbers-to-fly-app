@@ -672,6 +672,7 @@ H_Thresh:  0     ; Minimum horizontal speed for tone (cm/s)
 
 Use_SAS:   0     ; Use skydiver's airspeed
                  ;   0 = No
+                 
                  ;   1 = Yes
 TZ_Offset: ${tzSeconds}     ; Timezone offset of output files in seconds
                  ;   -14400 = UTC-4
@@ -2665,36 +2666,52 @@ async function handleWindSourceChange(source: WindSource) {
       : "Distance GR tones include the current flight path wind adjustment. This flight path has a headwind component. Fly your normal zero-wind speed and accept that the achievable glide ratio will be lower. Headwind reduces the expected GR by about 0.2 for every 10 kt."}
   </p>
 )}
-      {configTask === "distance" && (
-        <section className="card tutorial-card">
-          <h2>Understanding GR Tone Settings</h2>
+{configTask === "distance" && (
+  <section className="card tutorial-card">
+    <h2>Understanding GR Tone Settings</h2>
 
-          <p>
-            The maximum tone should be a glide ratio that is relatively high, 
-            but realistically achievable for the suit and pilot.
-          </p>
+    <p>
+      The maximum tone should be a glide ratio that is relatively high, but
+      realistically achievable for the suit and pilot.
+    </p>
 
-          <p>
-            You may be capable of flying a higher number, but the goal is not
-            to chase the highest GR possible. If the maximum tone is set too high,
-            there's a chance that you may increase the Angle of Attack (AoA) too much, 
-            lose airspeed, and then struggle to sustain high performance through the window.
-          </p>
+    <p>
+      You may be capable of flying a higher number, but the goal is not to chase
+      the highest GR possible. If the maximum tone is set too high, there&apos;s a
+      chance that you may increase the Angle of Attack (AoA) too much, lose
+      airspeed, and then struggle to sustain high performance through the window.
+    </p>
 
-          <p>
-            A high but achievable maximum tone lets the pilot know they are flying
-            well while keeping focus on good wing configuration and
-            maintaining the speed needed to sustain a high glide ratio through the window.
-          </p>
+    <p>
+      A high but achievable maximum tone lets the pilot know they are flying
+      well while keeping focus on good wing configuration and maintaining the
+      speed needed to sustain a high glide ratio through the window.
+    </p>
 
-          <p>
-            The minimum tone is set 0.4 GR below the maximum tone. This gives a useful
-            working range and allows the pilot to understand the effect that 
-            adjustments are having on the suits performance.
+    <p>
+      The minimum tone is set 0.4 GR below the maximum tone. This gives a useful
+      working range and allows the pilot to understand the effect that
+      adjustments are having on the suits performance.
+    </p>
 
-          </p>
-        </section>
-      )}
+    {getConfigWindSummary(results).averageTailwindKt < 0 && (
+      <p>
+        This flight path has a headwind component. For Distance, do not chase a
+        higher glide ratio by slowing the suit down. Fly your normal zero-wind
+        speed and accept that the achievable glide ratio will be lower.
+      </p>
+    )}
+
+    {getConfigWindSummary(results).averageTailwindKt < 0 && (
+      <p>
+        In a headwind, be less aggressive with your flare for Time and Distance.
+        The suit will lose ground speed more rapidly, so an overly aggressive
+        flare can make it harder to keep the suit flying efficiently through the
+        window.
+      </p>
+    )}
+  </section>
+)}
 
 {configTask === "time" && (
   <section className="card tutorial-card">
@@ -2707,9 +2724,9 @@ async function handleWindSourceChange(source: WindSource) {
     </p>
 
     <p>
-      It's great if you're actually flying slower than the lowest tone, but
+      It&apos;s great if you&apos;re actually flying slower than the lowest tone, but
       you do not need to know that exact number. You only need to know that you
-      are in a good range and that the suit is still flying cleanly. If you're
+      are in a good range and that the suit is still flying cleanly. If you&apos;re
       consistently flying well below the minimum tone you can lower the number
       manually in the above window.
     </p>
@@ -2738,7 +2755,7 @@ async function handleWindSourceChange(source: WindSource) {
     {getConfigWindSummary(results).averageTailwindKt < 0 && (
       <p>
         In a headwind, be less aggressive with your flare for Time and Distance.
-        The suit will lose ground speed more quickly, so an overly aggressive
+        The suit will lose ground speed more rapidly, so an overly aggressive
         flare can make it harder to keep the suit flying efficiently through the
         window.
       </p>
