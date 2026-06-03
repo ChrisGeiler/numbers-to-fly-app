@@ -1626,19 +1626,35 @@ function LaneViewMap({
         ? [lat, lon]
         : [20, 0];
 
-  const outerLanePolygon = hasLaneGeometry
-    ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 600)
-    : [];
+  const redLanePolygon: [number, number][] =
+    dropPoint !== null &&
+    lat !== null &&
+    lon !== null &&
+    headingNumber !== null
+      ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 600)
+      : [];
 
-  const innerLanePolygon = hasLaneGeometry
-    ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 300)
-    : [];
+  const yellowLanePolygon: [number, number][] =
+    dropPoint !== null &&
+    lat !== null &&
+    lon !== null &&
+    headingNumber !== null
+      ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 450)
+      : [];
 
-  const linePositions =
-    hasLaneGeometry && dropPoint !== null
+  const greenLanePolygon: [number, number][] =
+    dropPoint !== null &&
+    lat !== null &&
+    lon !== null &&
+    headingNumber !== null
+      ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 300)
+      : [];
+
+  const linePositions: [number, number][] =
+    dropPoint !== null && lat !== null && lon !== null
       ? [
-          [dropPoint.lat, dropPoint.lon] as [number, number],
-          [lat, lon] as [number, number],
+          [dropPoint.lat, dropPoint.lon],
+          [lat, lon],
         ]
       : [];
 
@@ -1650,28 +1666,41 @@ function LaneViewMap({
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
         />
 
-        {outerLanePolygon.length === 4 && (
+        {redLanePolygon.length === 4 && (
           <Polygon
-            positions={outerLanePolygon}
+            positions={redLanePolygon}
             pathOptions={{
-              color: "#f97316",
+              color: "#ef4444",
               weight: 2,
-              opacity: 0.9,
-              fillColor: "#f97316",
-              fillOpacity: 0.16,
+              opacity: 0.85,
+              fillColor: "#ef4444",
+              fillOpacity: 0.18,
             }}
           />
         )}
 
-        {innerLanePolygon.length === 4 && (
+        {yellowLanePolygon.length === 4 && (
           <Polygon
-            positions={innerLanePolygon}
+            positions={yellowLanePolygon}
+            pathOptions={{
+              color: "#facc15",
+              weight: 2,
+              opacity: 0.9,
+              fillColor: "#facc15",
+              fillOpacity: 0.22,
+            }}
+          />
+        )}
+
+        {greenLanePolygon.length === 4 && (
+          <Polygon
+            positions={greenLanePolygon}
             pathOptions={{
               color: "#22c55e",
               weight: 2,
               opacity: 0.95,
               fillColor: "#22c55e",
-              fillOpacity: 0.24,
+              fillOpacity: 0.26,
             }}
           />
         )}
