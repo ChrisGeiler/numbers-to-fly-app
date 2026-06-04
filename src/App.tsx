@@ -913,6 +913,55 @@ function buildLanePolygon(
   ];
 }
 
+function buildLaneStripPolygon(
+  startPoint: LatLon,
+  endPoint: LatLon,
+  runHeadingDeg: number,
+  innerOffsetM: number,
+  outerOffsetM: number,
+  side: "left" | "right"
+): [number, number][] {
+  const bearing =
+    side === "left"
+      ? normalizeDeg(runHeadingDeg - 90)
+      : normalizeDeg(runHeadingDeg + 90);
+
+  const startInner = destinationPoint(
+    startPoint.lat,
+    startPoint.lon,
+    bearing,
+    innerOffsetM
+  );
+
+  const endInner = destinationPoint(
+    endPoint.lat,
+    endPoint.lon,
+    bearing,
+    innerOffsetM
+  );
+
+  const endOuter = destinationPoint(
+    endPoint.lat,
+    endPoint.lon,
+    bearing,
+    outerOffsetM
+  );
+
+  const startOuter = destinationPoint(
+    startPoint.lat,
+    startPoint.lon,
+    bearing,
+    outerOffsetM
+  );
+
+  return [
+    [startInner.lat, startInner.lon],
+    [endInner.lat, endInner.lon],
+    [endOuter.lat, endOuter.lon],
+    [startOuter.lat, startOuter.lon],
+  ];
+}
+
 function applyTailHeadDeadband(tailwindKt: number): number {
   if (Math.abs(tailwindKt) <= tailHeadDeadbandKt) return 0;
   return tailwindKt;
@@ -1446,7 +1495,7 @@ function MapClickPicker({
   dropPoint,
   flightLineColor,
   runHeadingDeg,
-  showTemporaryFlightLine, 
+  showTemporaryFlightLine,
   onPick,
 }: {
   referenceLat: string;
@@ -1482,31 +1531,67 @@ function MapClickPicker({
     return null;
   }
 
-  const linePositions =
+  const linePositions: [number, number][] =
     lat !== null && lon !== null && dropPoint !== null
       ? [
-          [dropPoint.lat, dropPoint.lon] as [number, number],
-          [lat, lon] as [number, number],
+          [dropPoint.lat, dropPoint.lon],
+          [lat, lon],
         ]
       : [];
 
   const headingNumber = optionalNumberFromInput(runHeadingDeg);
 
-  const hasLaneGeometry =
+  const canBuildLane =
+    dropPoint !== null &&
     lat !== null &&
     lon !== null &&
-    dropPoint !== null &&
     headingNumber !== null;
 
-  const redLanePolygon = hasLaneGeometry
-  ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 600)
-  : [];
-
-  const yellowLanePolygon = hasLaneGeometry
-    ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 450)
+  const leftRedLanePolygon: [number, number][] = canBuildLane
+    ? buildLaneStripPolygon(
+        dropPoint,
+        { lat, lon },
+        headingNumber,
+        450,
+        600,
+        "left"
+      )
     : [];
 
-  const greenLanePolygon = hasLaneGeometry
+  const leftYellowLanePolygon: [number, number][] = canBuildLane
+    ? buildLaneStripPolygon(
+        dropPoint,
+        { lat, lon },
+        headingNumber,
+        300,
+        450,
+        "left"
+      )
+    : [];
+
+  const rightYellowLanePolygon: [number, number][] = canBuildLane
+    ? buildLaneStripPolygon(
+        dropPoint,
+        { lat, lon },
+        headingNumber,
+        300,
+        450,
+        "right"
+      )
+    : [];
+
+  const rightRedLanePolygon: [number, number][] = canBuildLane
+    ? buildLaneStripPolygon(
+        dropPoint,
+        { lat, lon },
+        headingNumber,
+        450,
+        600,
+        "right"
+      )
+    : [];
+
+  const greenLanePolygon: [number, number][] = canBuildLane
     ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 300)
     : [];
 
@@ -1533,12 +1618,12 @@ function MapClickPicker({
           />
         )}
 
-        {redLanePolygon.length === 4 && (
+        {leftRedLanePolygon.length === 4 && (
           <Polygon
-            positions={redLanePolygon}
+            positions={leftRedLanePolygon}
             pathOptions={{
               color: "#ef4444",
-              weight: 2,
+              weight: 1,
               opacity: 0.85,
               fillColor: "#ef4444",
               fillOpacity: 0.18,
@@ -1546,12 +1631,38 @@ function MapClickPicker({
           />
         )}
 
-        {yellowLanePolygon.length === 4 && (
+        {rightRedLanePolygon.length === 4 && (
           <Polygon
-            positions={yellowLanePolygon}
+            positions={rightRedLanePolygon}
+            pathOptions={{
+              color: "#ef4444",
+              weight: 1,
+              opacity: 0.85,
+              fillColor: "#ef4444",
+              fillOpacity: 0.18,
+            }}
+          />
+        )}
+
+        {leftYellowLanePolygon.length === 4 && (
+          <Polygon
+            positions={leftYellowLanePolygon}
             pathOptions={{
               color: "#facc15",
-              weight: 2,
+              weight: 1,
+              opacity: 0.9,
+              fillColor: "#facc15",
+              fillOpacity: 0.22,
+            }}
+          />
+        )}
+
+        {rightYellowLanePolygon.length === 4 && (
+          <Polygon
+            positions={rightYellowLanePolygon}
+            pathOptions={{
+              color: "#facc15",
+              weight: 1,
               opacity: 0.9,
               fillColor: "#facc15",
               fillOpacity: 0.22,
@@ -1566,8 +1677,7 @@ function MapClickPicker({
               color: "#22c55e",
               weight: 2,
               opacity: 0.95,
-              fillColor: "#22c55e",
-              fillOpacity: 0.26,
+              fillOpacity: 0,
             }}
           />
         )}
@@ -1626,37 +1736,31 @@ function LaneViewMap({
         ? [lat, lon]
         : [20, 0];
 
-  const redLanePolygon: [number, number][] =
+  const canBuildLane =
     dropPoint !== null &&
     lat !== null &&
     lon !== null &&
-    headingNumber !== null
-      ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 600)
-      : [];
+    headingNumber !== null;
 
-  const yellowLanePolygon: [number, number][] =
-    dropPoint !== null &&
-    lat !== null &&
-    lon !== null &&
-    headingNumber !== null
-      ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 450)
-      : [];
+  const leftRedLanePolygon: [number, number][] = canBuildLane
+    ? buildLaneStripPolygon(dropPoint, { lat, lon }, headingNumber, 450, 600, "left")
+    : [];
 
-  const greenLanePolygon: [number, number][] =
-    dropPoint !== null &&
-    lat !== null &&
-    lon !== null &&
-    headingNumber !== null
-      ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 300)
-      : [];
+  const leftYellowLanePolygon: [number, number][] = canBuildLane
+    ? buildLaneStripPolygon(dropPoint, { lat, lon }, headingNumber, 300, 450, "left")
+    : [];
 
-  const linePositions: [number, number][] =
-    dropPoint !== null && lat !== null && lon !== null
-      ? [
-          [dropPoint.lat, dropPoint.lon],
-          [lat, lon],
-        ]
-      : [];
+  const rightYellowLanePolygon: [number, number][] = canBuildLane
+    ? buildLaneStripPolygon(dropPoint, { lat, lon }, headingNumber, 300, 450, "right")
+    : [];
+
+  const rightRedLanePolygon: [number, number][] = canBuildLane
+    ? buildLaneStripPolygon(dropPoint, { lat, lon }, headingNumber, 450, 600, "right")
+    : [];
+
+  const greenLanePolygon: [number, number][] = canBuildLane
+    ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 300)
+    : [];
 
   return (
     <div className="lane-view-map">
@@ -1666,66 +1770,80 @@ function LaneViewMap({
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
         />
 
-        {redLanePolygon.length === 4 && (
-          <Polygon
-            positions={redLanePolygon}
-            pathOptions={{
-              color: "#ef4444",
-              weight: 2,
-              opacity: 0.85,
-              fillColor: "#ef4444",
-              fillOpacity: 0.18,
-            }}
-          />
-        )}
+{leftRedLanePolygon.length === 4 && (
+  <Polygon
+    positions={leftRedLanePolygon}
+    pathOptions={{
+      color: "#ef4444",
+      weight: 1,
+      opacity: 0.85,
+      fillColor: "#ef4444",
+      fillOpacity: 0.18,
+    }}
+  />
+)}
 
-        {yellowLanePolygon.length === 4 && (
-          <Polygon
-            positions={yellowLanePolygon}
-            pathOptions={{
-              color: "#facc15",
-              weight: 2,
-              opacity: 0.9,
-              fillColor: "#facc15",
-              fillOpacity: 0.22,
-            }}
-          />
-        )}
+{rightRedLanePolygon.length === 4 && (
+  <Polygon
+    positions={rightRedLanePolygon}
+    pathOptions={{
+      color: "#ef4444",
+      weight: 1,
+      opacity: 0.85,
+      fillColor: "#ef4444",
+      fillOpacity: 0.18,
+    }}
+  />
+)}
 
-        {greenLanePolygon.length === 4 && (
-          <Polygon
-            positions={greenLanePolygon}
-            pathOptions={{
-              color: "#22c55e",
-              weight: 2,
-              opacity: 0.95,
-              fillColor: "#22c55e",
-              fillOpacity: 0.26,
-            }}
-          />
-        )}
+{leftYellowLanePolygon.length === 4 && (
+  <Polygon
+    positions={leftYellowLanePolygon}
+    pathOptions={{
+      color: "#facc15",
+      weight: 1,
+      opacity: 0.9,
+      fillColor: "#facc15",
+      fillOpacity: 0.22,
+    }}
+  />
+)}
 
-        {linePositions.length === 2 && (
-          <Polyline
-            positions={linePositions}
-            pathOptions={{
-              color: "#38bdf8",
-              weight: 4,
-              opacity: 0.9,
-            }}
-          />
-        )}
+{rightYellowLanePolygon.length === 4 && (
+  <Polygon
+    positions={rightYellowLanePolygon}
+    pathOptions={{
+      color: "#facc15",
+      weight: 1,
+      opacity: 0.9,
+      fillColor: "#facc15",
+      fillOpacity: 0.22,
+    }}
+  />
+)}        
 
-        {dropPoint !== null && (
-          <Marker
-            position={[dropPoint.lat, dropPoint.lon]}
-            icon={dropPointIcon}
-          />
-        )}
+{greenLanePolygon.length === 4 && (
+  <Polygon
+    positions={greenLanePolygon}
+    pathOptions={{
+      color: "#22c55e",
+      weight: 2,
+      opacity: 0.95,
+      fillOpacity: 0,
+    }}
+  />
+)}
 
-        {lat !== null && lon !== null && (
-          <Marker position={[lat, lon]} icon={referencePointIcon} />
-        )}
+{dropPoint !== null && (
+  <Marker
+    position={[dropPoint.lat, dropPoint.lon]}
+    icon={dropPointIcon}
+  />
+)}
+
+{lat !== null && lon !== null && (
+  <Marker position={[lat, lon]} icon={referencePointIcon} />
+)}
       </MapContainer>
     </div>
   );
