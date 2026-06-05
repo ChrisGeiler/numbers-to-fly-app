@@ -1835,7 +1835,7 @@ function LaneViewMap({
         ],
       },
       center,
-      zoom: 12.85,
+      zoom: 12.65,
       bearing: headingNumber,
       pitch: 0,
     });
@@ -1938,7 +1938,7 @@ function LaneViewMap({
           lanePoint.lat,
           lanePoint.lon,
           windMarkerSideBearing,
-          900
+          1200
         );
 
         const windSpeedKt = Math.round(numberFromInput(wind.speedKt, 0));
