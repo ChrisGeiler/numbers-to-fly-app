@@ -1837,12 +1837,64 @@ function LaneViewMap({
         ],
       },
       center,
-      zoom: 12.9,
+      zoom: 12,
       bearing: headingNumber,
       pitch: 0,
     });
 
     map.on("load", () => {
+      const windMarkerSideBearing = normalizeDeg(headingNumber - 90);
+      const laneLengthM = nmToMetres(numberFromInput(dropDistanceNm, 0));
+
+      const bounds = new maplibregl.LngLatBounds();;
+
+      [
+        ...leftRedLanePolygon,
+        ...rightRedLanePolygon,
+        ...leftYellowLanePolygon,
+        ...rightYellowLanePolygon,
+        ...greenLanePolygon,
+      ].forEach(([pointLat, pointLon]) => {
+        bounds.extend([pointLon, pointLat]);
+      });
+
+      winds.forEach((wind) => {
+        const segmentProgress = Math.min(
+          Math.max((2500 - wind.altitudeM) / 1000, 0),
+          1
+        );
+
+        const lanePoint = destinationPoint(
+          dropPoint.lat,
+          dropPoint.lon,
+          headingNumber,
+          laneLengthM * segmentProgress
+        );
+
+        const windEdgePoint = destinationPoint(
+          lanePoint.lat,
+          lanePoint.lon,
+          windMarkerSideBearing,
+          600
+        );
+
+        bounds.extend([windEdgePoint.lon, windEdgePoint.lat]);
+      });
+
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds, {
+          padding: {
+          top: 45,
+          bottom: 85,
+          left: 105,
+          right: 25,
+        },
+          duration: 0,
+        });
+
+        map.setBearing(headingNumber);
+        map.setPitch(0);
+      }
       map.addSource("lane-red-left", {
         type: "geojson",
         data: makePolygonFeature(leftRedLanePolygon) as GeoJSON.Feature,
@@ -1920,8 +1972,6 @@ function LaneViewMap({
       });
 
       const mapBearingDeg = normalizeDeg(headingNumber + 180);
-      const windMarkerSideBearing = normalizeDeg(headingNumber - 90);
-      const laneLengthM = nmToMetres(numberFromInput(dropDistanceNm, 0));
 
       winds.forEach((wind) => {
         const segmentProgress = Math.min(
