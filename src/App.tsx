@@ -8,13 +8,15 @@ import {
   useMap,
   useMapEvents,
 } from "react-leaflet";
+import Fuse from "fuse.js";
+import { faiRuleSections } from "./faiPerformanceRules.ts";
 import L from "leaflet";
 import maplibregl from "maplibre-gl";
 import "leaflet/dist/leaflet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./App.css";
 
-type AppPage = "landing" | "find" | "fly" | "config" | "lane";
+type AppPage = "landing" | "find" | "fly" | "config" | "lane" | "rules";
 type TaskMode = "time" | "distance" | "speed";
 type WindSource = "manual" | "mark-schulze" | "open-meteo" | "windy";
 type SuitSetup =
@@ -2188,9 +2190,38 @@ function TargetGraph({
   );
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function highlightSearchText(text: string, query: string) {
+  const words = query
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word.length >= 2);
+
+  if (words.length === 0) {
+    return text;
+  }
+
+  const pattern = words.map(escapeRegExp).join("|");
+  const regex = new RegExp(`(${pattern})`, "gi");
+  const parts = text.split(regex);
+
+  return parts.map((part, index) =>
+    regex.test(part) ? (
+      <mark className="rules-search-highlight" key={`${part}-${index}`}>
+        {part}
+      </mark>
+    ) : (
+      part
+    )
+  );
+}
+
 export default function App() {
   const [activePage, setActivePage] = useState<AppPage>("landing");
-
+  const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [findUnitSystem, setFindUnitSystem] = useState<UnitSystem>("metric");
   const [findWeight, setFindWeight] = useState("");
   const [findHeightCm, setFindHeightCm] = useState("");
@@ -2884,6 +2915,69 @@ if (activePage === "lane") {
   );
 }
 
+  if (activePage === "rules") {
+  const fuse = new Fuse(faiRuleSections, {
+  keys: ["id", "title", "text", "searchTerms"],
+  threshold: 0.4,
+  ignoreLocation: true,
+  includeScore: true,
+});
+
+  const ruleResults =
+    rulesSearchQuery.trim() === ""
+      ? faiRuleSections
+      : fuse.search(rulesSearchQuery).map((result) => result.item);
+
+  return (
+    <main className="app">
+      <header className="page-header">
+        <button type="button" onClick={() => setActivePage("landing")}>
+          Back to Home
+        </button>
+
+        <h1>FAI Rules Search</h1>
+        <p className="subtitle">
+          Search the Performance Wingsuit rules by keyword, phrase, or topic.
+        </p>
+      </header>
+
+      <section className="card">
+        <label>
+          Search rules
+          <input
+            value={rulesSearchQuery}
+            onChange={(event) => setRulesSearchQuery(event.target.value)}
+            placeholder="Try: scoring window, GPS, penalty, exit altitude"
+          />
+        </label>
+
+        <p className="subtitle">
+          Showing {ruleResults.length} result
+          {ruleResults.length === 1 ? "" : "s"}.
+        </p>
+      </section>
+
+      {ruleResults.length === 0 ? (
+        <section className="card">
+          <h2>No matching rules found</h2>
+          <p className="subtitle">
+            Try another word or phrase, such as GPS, penalty, lane, window, exit,
+            equipment, wingtip, or scoring.
+          </p>
+        </section>
+      ) : (
+        ruleResults.map((rule) => (
+          <section className="card" key={rule.id}>
+            <h2>{rule.title}</h2>
+            <p className="subtitle">{rule.id}</p>
+            <p>{highlightSearchText(rule.text, rulesSearchQuery)}</p>
+          </section>
+        ))
+      )}
+    </main>
+  );
+}
+
   if (activePage === "landing") {
     return (
       <main className="app landing-page">
@@ -2894,19 +2988,23 @@ if (activePage === "lane") {
             alt="Numbers to Fly logo"
           />
 
-          <p className="tagline">Know your numbers in the window.</p>
+          <p className="tagline">Performance knowledge in your pocket.</p>
 
           <div className="landing-actions">
             <button type="button" onClick={() => setActivePage("find")}>
-              Find the Numbers
+              Find your Numbers to fly
             </button>
 
             <button type="button" onClick={() => setActivePage("fly")}>
-              Fly the Numbers
+              Fly the window
             </button>
 
             <button type="button" onClick={() => setActivePage("config")}>
-              Config the Numbers
+              Config your Flysight
+            </button>
+
+            <button type="button" onClick={() => setActivePage("rules")}>
+              FAI Rules Search
             </button>
           </div>
         </header>
