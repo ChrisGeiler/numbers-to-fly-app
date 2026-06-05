@@ -559,9 +559,9 @@ button:disabled {
 
 .lane-wind-marker {
   display: grid;
-  grid-template-columns: 78px 46px;
+  grid-template-columns: 70px 46px;
   align-items: center;
-  gap: 8px;
+  gap: 0;
   background: rgba(0, 0, 0, 0.38);
   border-radius: 10px;
   padding: 5px 8px;

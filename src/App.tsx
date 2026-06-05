@@ -1835,7 +1835,7 @@ function LaneViewMap({
         ],
       },
       center,
-      zoom: 12.65,
+      zoom: 12.9,
       bearing: headingNumber,
       pitch: 0,
     });
@@ -1938,7 +1938,7 @@ function LaneViewMap({
           lanePoint.lat,
           lanePoint.lon,
           windMarkerSideBearing,
-          1200
+          600
         );
 
         const windSpeedKt = Math.round(numberFromInput(wind.speedKt, 0));
@@ -1963,9 +1963,11 @@ function LaneViewMap({
         new maplibregl.Marker({
           element: markerElement,
           rotationAlignment: "viewport",
-        })
-          .setLngLat([markerPoint.lon, markerPoint.lat])
-          .addTo(map);
+          anchor: "right",
+          offset: [-8, 0],
+})
+  .setLngLat([markerPoint.lon, markerPoint.lat])
+  .addTo(map);
       });
 
       new maplibregl.Marker({ color: "#22d3ee" })
@@ -3612,7 +3614,7 @@ if (activePage === "lane") {
               className="primary-action-button"
               onClick={() => setActivePage("lane")}
             >
-              Zoom on my Lane
+              Fly my Lane
             </button>
             </>
         )}
