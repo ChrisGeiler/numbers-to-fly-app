@@ -556,3 +556,52 @@ button:disabled {
 .tutorial-card p:last-child {
   margin-bottom: 0;
 }
+
+.lane-wind-marker {
+  display: grid;
+  grid-template-columns: 76px 48px;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.94);
+  font-weight: 900;
+  font-size: 19px;
+  line-height: 1;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.95),
+    0 0 8px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.lane-wind-speed {
+  text-align: right;
+  opacity: 0.96;
+}
+
+.lane-wind-arrow {
+  width: 48px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 38px;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.72);
+  transform-origin: center;
+}
+
+.lane-wind-speed {
+  text-align: left;
+  opacity: 0.95;
+}
+
+.lane-view-map .maplibregl-ctrl-attrib {
+  background: rgba(255, 255, 255, 0.55);
+  color: rgba(0, 0, 0, 0.85);
+  border-radius: 10px;
+  backdrop-filter: blur(4px);
+}
+
+.lane-view-map .maplibregl-ctrl-attrib a {
+  color: rgba(0, 0, 0, 0.85);
+}

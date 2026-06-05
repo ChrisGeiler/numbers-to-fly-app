@@ -9,7 +9,9 @@ import {
   useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
+import maplibregl from "maplibre-gl";
 import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import "./App.css";
 
 type AppPage = "landing" | "find" | "fly" | "config" | "lane";
@@ -1713,140 +1715,278 @@ function LaneViewMap({
   referenceLon,
   dropPoint,
   runHeadingDeg,
+  dropDistanceNm,
+  winds,
 }: {
   referenceLat: string;
   referenceLon: string;
   dropPoint: LatLon | null;
   runHeadingDeg: string;
+  dropDistanceNm: string;
+  winds: WindLayer[];
 }) {
-  const lat = optionalNumberFromInput(referenceLat);
-  const lon = optionalNumberFromInput(referenceLon);
-  const headingNumber = optionalNumberFromInput(runHeadingDeg);
-
-  const hasLaneGeometry =
-    lat !== null &&
-    lon !== null &&
-    dropPoint !== null &&
-    headingNumber !== null;
-
-  const center: [number, number] =
-    hasLaneGeometry && dropPoint !== null
-      ? [(lat + dropPoint.lat) / 2, (lon + dropPoint.lon) / 2]
-      : lat !== null && lon !== null
-        ? [lat, lon]
-        : [20, 0];
-
-  const canBuildLane =
-    dropPoint !== null &&
-    lat !== null &&
-    lon !== null &&
-    headingNumber !== null;
-
-  const leftRedLanePolygon: [number, number][] = canBuildLane
-    ? buildLaneStripPolygon(dropPoint, { lat, lon }, headingNumber, 450, 600, "left")
-    : [];
-
-  const leftYellowLanePolygon: [number, number][] = canBuildLane
-    ? buildLaneStripPolygon(dropPoint, { lat, lon }, headingNumber, 300, 450, "left")
-    : [];
-
-  const rightYellowLanePolygon: [number, number][] = canBuildLane
-    ? buildLaneStripPolygon(dropPoint, { lat, lon }, headingNumber, 300, 450, "right")
-    : [];
-
-  const rightRedLanePolygon: [number, number][] = canBuildLane
-    ? buildLaneStripPolygon(dropPoint, { lat, lon }, headingNumber, 450, 600, "right")
-    : [];
-
-  const greenLanePolygon: [number, number][] = canBuildLane
-    ? buildLanePolygon(dropPoint, { lat, lon }, headingNumber, 300)
-    : [];
-
-  return (
-    <div className="lane-view-map">
-      <MapContainer center={center} zoom={13} scrollWheelZoom={true}>
-        <TileLayer
-          attribution="Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community"
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-        />
-
-{leftRedLanePolygon.length === 4 && (
-  <Polygon
-    positions={leftRedLanePolygon}
-    pathOptions={{
-      color: "#ef4444",
-      weight: 1,
-      opacity: 0.85,
-      fillColor: "#ef4444",
-      fillOpacity: 0.18,
-    }}
-  />
-)}
-
-{rightRedLanePolygon.length === 4 && (
-  <Polygon
-    positions={rightRedLanePolygon}
-    pathOptions={{
-      color: "#ef4444",
-      weight: 1,
-      opacity: 0.85,
-      fillColor: "#ef4444",
-      fillOpacity: 0.18,
-    }}
-  />
-)}
-
-{leftYellowLanePolygon.length === 4 && (
-  <Polygon
-    positions={leftYellowLanePolygon}
-    pathOptions={{
-      color: "#facc15",
-      weight: 1,
-      opacity: 0.9,
-      fillColor: "#facc15",
-      fillOpacity: 0.22,
-    }}
-  />
-)}
-
-{rightYellowLanePolygon.length === 4 && (
-  <Polygon
-    positions={rightYellowLanePolygon}
-    pathOptions={{
-      color: "#facc15",
-      weight: 1,
-      opacity: 0.9,
-      fillColor: "#facc15",
-      fillOpacity: 0.22,
-    }}
-  />
-)}        
-
-{greenLanePolygon.length === 4 && (
-  <Polygon
-    positions={greenLanePolygon}
-    pathOptions={{
-      color: "#22c55e",
-      weight: 2,
-      opacity: 0.95,
-      fillOpacity: 0,
-    }}
-  />
-)}
-
-{dropPoint !== null && (
-  <Marker
-    position={[dropPoint.lat, dropPoint.lon]}
-    icon={dropPointIcon}
-  />
-)}
-
-{lat !== null && lon !== null && (
-  <Marker position={[lat, lon]} icon={referencePointIcon} />
-)}
-      </MapContainer>
-    </div>
+  
+  const mapContainerRef = useMemo(
+    () => ({ current: null as HTMLDivElement | null }),
+    []
   );
+
+  useEffect(() => {
+    const lat = optionalNumberFromInput(referenceLat);
+    const lon = optionalNumberFromInput(referenceLon);
+    const headingNumber = optionalNumberFromInput(runHeadingDeg);
+
+    if (
+      lat === null ||
+      lon === null ||
+      dropPoint === null ||
+      headingNumber === null ||
+      mapContainerRef.current === null
+    ) {
+      return;
+    }
+
+    const referencePoint = { lat, lon };
+
+    const center: [number, number] = [
+      (lon + dropPoint.lon) / 2,
+      (lat + dropPoint.lat) / 2,
+    ];
+
+    function toMapLibrePolygon(points: [number, number][]) {
+      return points.map(([pointLat, pointLon]) => [pointLon, pointLat]);
+    }
+
+    function makePolygonFeature(points: [number, number][]) {
+      return {
+        type: "Feature",
+        properties: {},
+        geometry: {
+          type: "Polygon",
+          coordinates: [[...toMapLibrePolygon(points), toMapLibrePolygon(points)[0]]],
+        },
+      };
+    }
+
+    const leftRedLanePolygon = buildLaneStripPolygon(
+      dropPoint,
+      referencePoint,
+      headingNumber,
+      450,
+      600,
+      "left"
+    );
+
+    const rightRedLanePolygon = buildLaneStripPolygon(
+      dropPoint,
+      referencePoint,
+      headingNumber,
+      450,
+      600,
+      "right"
+    );
+
+    const leftYellowLanePolygon = buildLaneStripPolygon(
+      dropPoint,
+      referencePoint,
+      headingNumber,
+      300,
+      450,
+      "left"
+    );
+
+    const rightYellowLanePolygon = buildLaneStripPolygon(
+      dropPoint,
+      referencePoint,
+      headingNumber,
+      300,
+      450,
+      "right"
+    );
+
+    const greenLanePolygon = buildLanePolygon(
+      dropPoint,
+      referencePoint,
+      headingNumber,
+      300
+    );
+
+    const map = new maplibregl.Map({
+      container: mapContainerRef.current,
+      style: {
+        version: 8,
+        sources: {
+          satellite: {
+            type: "raster",
+            tiles: [
+              "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            ],
+            tileSize: 256,
+            attribution:
+              "Tiles © Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+          },
+        },
+        layers: [
+          {
+            id: "satellite",
+            type: "raster",
+            source: "satellite",
+          },
+        ],
+      },
+      center,
+      zoom: 12.85,
+      bearing: headingNumber,
+      pitch: 0,
+    });
+
+    map.on("load", () => {
+      map.addSource("lane-red-left", {
+        type: "geojson",
+        data: makePolygonFeature(leftRedLanePolygon) as GeoJSON.Feature,
+      });
+
+      map.addSource("lane-red-right", {
+        type: "geojson",
+        data: makePolygonFeature(rightRedLanePolygon) as GeoJSON.Feature,
+      });
+
+      map.addSource("lane-yellow-left", {
+        type: "geojson",
+        data: makePolygonFeature(leftYellowLanePolygon) as GeoJSON.Feature,
+      });
+
+      map.addSource("lane-yellow-right", {
+        type: "geojson",
+        data: makePolygonFeature(rightYellowLanePolygon) as GeoJSON.Feature,
+      });
+
+      map.addSource("lane-green-outline", {
+        type: "geojson",
+        data: makePolygonFeature(greenLanePolygon) as GeoJSON.Feature,
+      });
+
+      map.addLayer({
+        id: "lane-red-left-fill",
+        type: "fill",
+        source: "lane-red-left",
+        paint: {
+          "fill-color": "#ef4444",
+          "fill-opacity": 0.18,
+        },
+      });
+
+      map.addLayer({
+        id: "lane-red-right-fill",
+        type: "fill",
+        source: "lane-red-right",
+        paint: {
+          "fill-color": "#ef4444",
+          "fill-opacity": 0.18,
+        },
+      });
+
+      map.addLayer({
+        id: "lane-yellow-left-fill",
+        type: "fill",
+        source: "lane-yellow-left",
+        paint: {
+          "fill-color": "#facc15",
+          "fill-opacity": 0.22,
+        },
+      });
+
+      map.addLayer({
+        id: "lane-yellow-right-fill",
+        type: "fill",
+        source: "lane-yellow-right",
+        paint: {
+          "fill-color": "#facc15",
+          "fill-opacity": 0.22,
+        },
+      });
+
+      map.addLayer({
+        id: "lane-green-outline-line",
+        type: "line",
+        source: "lane-green-outline",
+        paint: {
+          "line-color": "#22c55e",
+          "line-width": 3,
+          "line-opacity": 0.95,
+        },
+      });
+
+      const mapBearingDeg = normalizeDeg(headingNumber + 180);
+      const windMarkerSideBearing = normalizeDeg(headingNumber - 90);
+      const laneLengthM = nmToMetres(numberFromInput(dropDistanceNm, 0));
+
+      winds.forEach((wind) => {
+        const segmentProgress = Math.min(
+          Math.max((2500 - wind.altitudeM) / 1000, 0),
+          1
+        );
+
+        const lanePoint = destinationPoint(
+          dropPoint.lat,
+          dropPoint.lon,
+          headingNumber,
+          laneLengthM * segmentProgress
+        );
+
+        const markerPoint = destinationPoint(
+          lanePoint.lat,
+          lanePoint.lon,
+          windMarkerSideBearing,
+          900
+        );
+
+        const windSpeedKt = Math.round(numberFromInput(wind.speedKt, 0));
+        const windFromDeg = Math.round(numberFromInput(wind.directionFromDeg, 0));
+
+        // Show the direction the wind is travelling toward, corrected for the rotated map.
+        const windTowardDeg = normalizeDeg(windFromDeg + 180);
+        const windScreenRotationDeg =
+          signedAngleDeg(mapBearingDeg, windTowardDeg) + 90;
+
+        const markerElement = document.createElement("div");
+        markerElement.className = "lane-wind-marker";
+        markerElement.innerHTML = `
+          <div class="lane-wind-speed">${windSpeedKt} kt</div>
+          <div
+            class="lane-wind-arrow"
+            style="transform: rotate(${windScreenRotationDeg}deg);"
+          >
+            ➜
+          </div>
+        `;
+        new maplibregl.Marker({
+          element: markerElement,
+          rotationAlignment: "viewport",
+        })
+          .setLngLat([markerPoint.lon, markerPoint.lat])
+          .addTo(map);
+      });
+
+      new maplibregl.Marker({ color: "#22d3ee" })
+        .setLngLat([lon, lat])
+        .addTo(map);
+    });
+
+    return () => {
+      map.remove();
+    };
+  }, [
+  referenceLat,
+  referenceLon,
+  dropPoint,
+  runHeadingDeg,
+  dropDistanceNm,
+  winds,
+  mapContainerRef,
+]);
+
+  return <div ref={mapContainerRef} className="lane-view-map" />;
 }
 
 function TargetGraph({
@@ -2734,6 +2874,8 @@ if (activePage === "lane") {
           referenceLon={referenceLon}
           dropPoint={calculatedDropPoint}
           runHeadingDeg={runHeadingDeg}
+          dropDistanceNm={dropDistanceNm}
+          winds={winds}
         />
       </section>
     </main>
