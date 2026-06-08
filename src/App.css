@@ -644,3 +644,40 @@ button:disabled {
   border: 1px solid rgba(34, 211, 238, 0.45);
   background: rgba(255, 255, 255, 0.04);
 }
+
+.rule-result-card {
+  text-align: left;
+}
+
+.rule-result-summary {
+  cursor: pointer;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  text-align: center;
+}
+
+.rule-result-summary::-webkit-details-marker {
+  display: none;
+}
+
+.rule-result-title {
+  color: #22d3ee;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.rule-result-id {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.95rem;
+}
+
+.rule-result-body {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.rule-result-card[open] .rule-result-summary {
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(34, 211, 238, 0.25);
+}

@@ -399,6 +399,8 @@ export const faiRuleSections: RuleSection[] = [
     id: "addendum-c-performance-dfp-dl-penalties",
     title: "Addendum C — Performance Flying: DFP, DL, Penalties",
     text: "Addendum C relates to Performance Flying and covers the Designated Flight Path, Designated Lane, and penalties. It supports the performance lane and penalty rules, including how the Designated Flight Path and Designated Lane are applied for Performance Wingsuit Flying.",
+    imageSrc: "/numbers-to-fly-app/rules/addendum-c-lanes-exiting.png",
+    imageAlt: "FAI Addendum C diagram showing designated flight path, designated lane, and penalties.",
     searchTerms: [
       "addendum c",
       "dfp",

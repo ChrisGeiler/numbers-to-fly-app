@@ -2269,6 +2269,53 @@ function highlightSearchText(text: string, query: string) {
   );
 }
 
+function getSearchWords(query: string) {
+  return query
+    .toLowerCase()
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.replace(/[^a-z0-9]/g, ""))
+    .filter((word) => word.length >= 3);
+}
+
+function ruleMatchesSearchWords(
+  rule: {
+    id: string;
+    title: string;
+    text: string;
+    searchTerms?: string[];
+  },
+  query: string
+) {
+  const words = getSearchWords(query);
+
+  if (words.length === 0) {
+    return true;
+  }
+
+  const haystack = [
+    rule.id,
+    rule.title,
+    rule.text,
+    ...(rule.searchTerms ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return words.every((word) => {
+    const plural = `${word}s`;
+    const withoutPlural = word.endsWith("s") ? word.slice(0, -1) : word;
+    const softStem = word.length >= 5 ? word.replace(/e$/, "") : word;
+
+    return (
+      haystack.includes(word) ||
+      haystack.includes(plural) ||
+      haystack.includes(withoutPlural) ||
+      haystack.includes(softStem)
+    );
+  });
+}
+
 export default function App() {
   const [activePage, setActivePage] = useState<AppPage>("landing");
   const [rulesSearchQuery, setRulesSearchQuery] = useState("");
@@ -2976,7 +3023,10 @@ if (activePage === "lane") {
   const ruleResults =
     rulesSearchQuery.trim() === ""
       ? faiRuleSections
-      : fuse.search(rulesSearchQuery).map((result) => result.item);
+      : fuse
+          .search(rulesSearchQuery)
+          .map((result) => result.item)
+          .filter((rule) => ruleMatchesSearchWords(rule, rulesSearchQuery));
 
   return (
     <main className="app">
@@ -3017,19 +3067,25 @@ if (activePage === "lane") {
         </section>
       ) : (
         ruleResults.map((rule) => (
-          <section className="card" key={rule.id}>
-            <h2>{rule.title}</h2>
-            <p className="subtitle">{rule.id}</p>
-            <p>{highlightSearchText(rule.text, rulesSearchQuery)}</p>
+          <details className="card rule-result-card" key={rule.id}>
+            <summary className="rule-result-summary">
+              <span className="rule-result-title">{rule.title}</span>
+              <span className="rule-result-id">{rule.id}</span>
+            </summary>
 
-            {rule.imageSrc && (
-              <img
-                className="rule-result-image"
-                src={rule.imageSrc}
-                alt={rule.imageAlt ?? rule.title}
-              />
-            )}
-          </section>        ))
+            <div className="rule-result-body">
+              <p>{highlightSearchText(rule.text, rulesSearchQuery)}</p>
+
+              {rule.imageSrc && (
+                <img
+                  className="rule-result-image"
+                  src={rule.imageSrc}
+                  alt={rule.imageAlt ?? rule.title}
+                />
+              )}
+            </div>
+          </details>
+        ))
       )}
     </main>
   );
