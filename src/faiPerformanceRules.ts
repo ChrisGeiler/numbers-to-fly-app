@@ -3,6 +3,8 @@ export type RuleSection = {
   title: string;
   text: string;
   searchTerms?: string[];
+  imageSrc?: string;
+  imageAlt?: string;
 };
 
 export const faiRuleSections: RuleSection[] = [
@@ -417,6 +419,8 @@ export const faiRuleSections: RuleSection[] = [
     id: "addendum-d-measuring-wingsuit",
     title: "Addendum D — Guidelines for Measuring a Wingsuit",
     text: "Arm span A is the maximum distance between the tips of the longest fingers on each hand with arms fully extended. The wingsuit is measured laid flat on the floor, all zippers fully closed, placed on top of a tape measure, and stretched lengthwise and spanwise with enough tension to remove slack but not stretch the fabric. The wingsuit span measurement B is conducted separately from any skydive parachute system, which must not be attached during the measurement process. The length C of any wingtip must not exceed the length D of the last rib of the arm wing fabric. Foot fairings or any other extension to the bottom of the sole of the bootie may extend perpendicular to the foot no more than 30 cm from the location that the foot makes contact with the inside of the bootie E. If winglets are present, the height F of a single winglet, measured perpendicular to the surface of the wingtip above the upper surface or below the lower surface of the wingtip, whichever is greater, will be doubled and added to the suit span measurement B. These measurements may be randomly checked throughout the competition at the discretion of the Chief Judge.",
+    imageSrc: "/numbers-to-fly-app/rules/addendum-d-measuring-wingsuit.png",
+    imageAlt: "FAI Addendum D diagram showing wingsuit measurement points.",  
     searchTerms: [
       "addendum d",
       "measure",

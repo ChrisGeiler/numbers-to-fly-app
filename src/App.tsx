@@ -3021,8 +3021,15 @@ if (activePage === "lane") {
             <h2>{rule.title}</h2>
             <p className="subtitle">{rule.id}</p>
             <p>{highlightSearchText(rule.text, rulesSearchQuery)}</p>
-          </section>
-        ))
+
+            {rule.imageSrc && (
+              <img
+                className="rule-result-image"
+                src={rule.imageSrc}
+                alt={rule.imageAlt ?? rule.title}
+              />
+            )}
+          </section>        ))
       )}
     </main>
   );
