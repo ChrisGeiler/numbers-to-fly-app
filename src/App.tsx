@@ -2340,6 +2340,7 @@ export default function App() {
   const [findHeightCm, setFindHeightCm] = useState("");
   const [findHeightFeet, setFindHeightFeet] = useState("");
   const [findHeightInches, setFindHeightInches] = useState("");
+  const [savedLaneAvailable, setSavedLaneAvailable] = useState(false);
   const [findSuitSetup, setFindSuitSetup] =
     useState<SuitSetup>("crplus-no-wingtips");
 
@@ -3025,6 +3026,26 @@ if (activePage === "lane") {
         />
       </section>
 
+      <section className="card">
+        <button
+          type="button"
+          className={
+            savedLaneAvailable
+              ? "primary-action-button saved-lane-button"
+              : "primary-action-button"
+          }
+          onClick={() => setSavedLaneAvailable(true)}
+        >
+          {savedLaneAvailable ? "Lane Saved ✓" : "Save my Lane"}
+        </button>
+
+        <p className="subtitle">
+          {savedLaneAvailable
+            ? "Your My Lane button is now available on the home page."
+            : "Adds a My Lane button to the home page so you can quickly return to this lane view with the latest winds."}
+        </p>
+      </section>
+      
       <BottomBackButton
         label="Back to Home"
         onClick={() => setActivePage("landing")}
@@ -3150,6 +3171,16 @@ if (activePage === "lane") {
             <button type="button" onClick={() => setActivePage("rules")}>
               FAI Rules Search
             </button>
+
+            {savedLaneAvailable && (
+              <button
+                type="button"
+                className="primary-action-button"
+                onClick={() => setActivePage("lane")}
+              >
+                My Lane
+              </button>
+            )}
           </div>
         </header>
       </main>
