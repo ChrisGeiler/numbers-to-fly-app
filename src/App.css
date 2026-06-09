@@ -649,7 +649,6 @@ button:disabled {
   text-align: left;
 }
 
-
 .rule-result-summary {
   cursor: pointer;
   list-style: none;
@@ -681,4 +680,15 @@ button:disabled {
 .rule-result-card[open] .rule-result-summary {
   padding-bottom: 12px;
   border-bottom: 1px solid rgba(34, 211, 238, 0.25);
+}
+
+.bottom-nav {
+  margin: 28px 0 12px;
+  display: flex;
+  justify-content: center;
+}
+
+.bottom-nav .primary-action-button {
+  width: 100%;
+  max-width: 460px;
 }

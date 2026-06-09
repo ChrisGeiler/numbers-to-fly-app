@@ -2316,6 +2316,22 @@ function ruleMatchesSearchWords(
   });
 }
 
+function BottomBackButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <section className="bottom-nav">
+      <button type="button" className="primary-action-button" onClick={onClick}>
+        {label}
+      </button>
+    </section>
+  );
+}
+
 export default function App() {
   const [activePage, setActivePage] = useState<AppPage>("landing");
   const [rulesSearchQuery, setRulesSearchQuery] = useState("");
@@ -3008,6 +3024,16 @@ if (activePage === "lane") {
           winds={winds}
         />
       </section>
+
+      <BottomBackButton
+        label="Back to Home"
+        onClick={() => setActivePage("landing")}
+      />
+
+      <BottomBackButton
+        label="Back to Fly the Numbers"
+        onClick={() => setActivePage("fly")}
+      />
     </main>
   );
 }
@@ -3087,6 +3113,11 @@ if (activePage === "lane") {
           </details>
         ))
       )}
+
+      <BottomBackButton
+        label="Back to Home"
+        onClick={() => setActivePage("landing")}
+      />
     </main>
   );
 }
@@ -3263,6 +3294,11 @@ if (activePage === "lane") {
             suit setup, FlySight data, and coaching feedback.
           </p>
         </section>
+
+        <BottomBackButton
+          label="Back to Home"
+          onClick={() => setActivePage("landing")}
+      />
       </main>
     );
   }
@@ -3699,6 +3735,11 @@ if (activePage === "lane") {
             readOnly
           />
         </section>
+
+        <BottomBackButton
+          label="Back to Home"
+          onClick={() => setActivePage("landing")}
+      />
       </main>
     );
   }
@@ -3820,7 +3861,16 @@ if (activePage === "lane") {
               showTemporaryFlightLine={showTemporaryFlightLine}
             />
 
-            <button
+        <HeadingSlider
+          runHeadingDeg={runHeadingDeg}
+          windAdvantage={windAdvantage}
+          windSourceUnavailable={fetchStatus.includes("Could not fetch")}
+          onInteractionStart={() => setShowTemporaryFlightLine(true)}
+          onInteractionEnd={() => setShowTemporaryFlightLine(false)}
+          onChange={updateHeadingFromSlider}
+        />
+
+        <button
               type="button"
               className="primary-action-button"
               onClick={() => setActivePage("lane")}
@@ -3830,14 +3880,6 @@ if (activePage === "lane") {
             </>
         )}
 
-        <HeadingSlider
-          runHeadingDeg={runHeadingDeg}
-          windAdvantage={windAdvantage}
-          windSourceUnavailable={fetchStatus.includes("Could not fetch")}
-          onInteractionStart={() => setShowTemporaryFlightLine(true)}
-          onInteractionEnd={() => setShowTemporaryFlightLine(false)}
-          onChange={updateHeadingFromSlider}
-        />
         {calculatedDropPoint && (
           <p className="subtitle">
             Drop/start point: {calculatedDropPoint.lat.toFixed(6)},{" "}
