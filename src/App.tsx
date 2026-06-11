@@ -3302,8 +3302,7 @@ if (activePage === "lane") {
               <h2>Track Summary</h2>
 
               <p className="subtitle">
-                Parsed {gpsTrackPoints.length} GPS points. Window uses 2500 m to
-                1500 m.
+                Window uses 2500 m to 1500 m.
               </p>
 
               <div className="result-grid">
