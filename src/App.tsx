@@ -16,7 +16,14 @@ import "leaflet/dist/leaflet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./App.css";
 
-type AppPage = "landing" | "find" | "fly" | "config" | "lane" | "rules";
+type AppPage =
+  | "landing"
+  | "find"
+  | "fly"
+  | "config"
+  | "lane"
+  | "rules"
+  | "gps";
 type TaskMode = "time" | "distance" | "speed";
 type WindSource = "manual" | "mark-schulze" | "open-meteo" | "windy";
 type SuitSetup =
@@ -2332,6 +2339,171 @@ function BottomBackButton({
   );
 }
 
+type GpsTrackPoint = {
+  time: string;
+  lat: number;
+  lon: number;
+  altitudeM: number;
+  horizontalSpeedMps: number;
+  verticalSpeedMps: number;
+  totalSpeedMps: number;
+  glideRatio: number | null;
+};
+
+function parseNumber(value: string | undefined) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return null;
+  }
+
+  return number;
+}
+
+function parseFlySightCsv(csvText: string): GpsTrackPoint[] {
+  const lines = csvText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) {
+    return [];
+  }
+
+  const headers = lines[0].split(",").map((header) => header.trim());
+
+  const getIndex = (...names: string[]) =>
+    headers.findIndex((header) =>
+      names.some((name) => header.toLowerCase() === name.toLowerCase())
+    );
+
+  const timeIndex = getIndex("time", "date", "timestamp");
+  const latIndex = getIndex("lat", "latitude");
+  const lonIndex = getIndex("lon", "lng", "longitude");
+  const altitudeIndex = getIndex("hMSL", "alt", "altitude", "height");
+  const velNIndex = getIndex("velN", "vn", "north");
+  const velEIndex = getIndex("velE", "ve", "east");
+  const velDIndex = getIndex("velD", "vd", "down");
+
+  if (
+    timeIndex === -1 ||
+    latIndex === -1 ||
+    lonIndex === -1 ||
+    altitudeIndex === -1 ||
+    velNIndex === -1 ||
+    velEIndex === -1 ||
+    velDIndex === -1
+  ) {
+    return [];
+  }
+
+  return lines.slice(1).flatMap((line) => {
+    const columns = line.split(",");
+
+    const lat = parseNumber(columns[latIndex]);
+    const lon = parseNumber(columns[lonIndex]);
+    const altitudeM = parseNumber(columns[altitudeIndex]);
+    const velN = parseNumber(columns[velNIndex]);
+    const velE = parseNumber(columns[velEIndex]);
+    const velD = parseNumber(columns[velDIndex]);
+
+    if (
+      lat === null ||
+      lon === null ||
+      altitudeM === null ||
+      velN === null ||
+      velE === null ||
+      velD === null
+    ) {
+      return [];
+    }
+
+    const horizontalSpeedMps = Math.sqrt(velN * velN + velE * velE);
+    const verticalSpeedMps = velD;
+    const totalSpeedMps = Math.sqrt(
+      horizontalSpeedMps * horizontalSpeedMps + verticalSpeedMps * verticalSpeedMps
+    );
+
+    const glideRatio =
+      verticalSpeedMps > 0 ? horizontalSpeedMps / verticalSpeedMps : null;
+
+    return [
+      {
+        time: columns[timeIndex] ?? "",
+        lat,
+        lon,
+        altitudeM,
+        horizontalSpeedMps,
+        verticalSpeedMps,
+        totalSpeedMps,
+        glideRatio,
+      },
+    ];
+  });
+}
+
+function distanceBetweenPointsM(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+) {
+  const earthRadiusM = 6371000;
+  const lat1Rad = (lat1 * Math.PI) / 180;
+  const lat2Rad = (lat2 * Math.PI) / 180;
+  const deltaLatRad = ((lat2 - lat1) * Math.PI) / 180;
+  const deltaLonRad = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(deltaLatRad / 2) * Math.sin(deltaLatRad / 2) +
+    Math.cos(lat1Rad) *
+      Math.cos(lat2Rad) *
+      Math.sin(deltaLonRad / 2) *
+      Math.sin(deltaLonRad / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return earthRadiusM * c;
+}
+
+function getWindowTrackPoints(points: GpsTrackPoint[]) {
+  return points.filter(
+    (point) => point.altitudeM <= 2500 && point.altitudeM >= 1500
+  );
+}
+
+function getTrackDistanceM(points: GpsTrackPoint[]) {
+  if (points.length < 2) {
+    return 0;
+  }
+
+  return points.slice(1).reduce((total, point, index) => {
+    const previousPoint = points[index];
+
+    return (
+      total +
+      distanceBetweenPointsM(
+        previousPoint.lat,
+        previousPoint.lon,
+        point.lat,
+        point.lon
+      )
+    );
+  }, 0);
+}
+
+function metresPerSecondToKmh(value: number) {
+  return value * 3.6;
+}
+
+function formatNumber(value: number | null | undefined, decimals = 1) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+
+  return value.toFixed(decimals);
+}
+
 export default function App() {
   const [activePage, setActivePage] = useState<AppPage>("landing");
   const [rulesSearchQuery, setRulesSearchQuery] = useState("");
@@ -2341,6 +2513,8 @@ export default function App() {
   const [findHeightFeet, setFindHeightFeet] = useState("");
   const [findHeightInches, setFindHeightInches] = useState("");
   const [savedLaneAvailable, setSavedLaneAvailable] = useState(false);
+  const [gpsFileName, setGpsFileName] = useState("");
+  const [gpsTrackPoints, setGpsTrackPoints] = useState<GpsTrackPoint[]>([]);
   const [findSuitSetup, setFindSuitSetup] =
     useState<SuitSetup>("crplus-no-wingtips");
 
@@ -3057,9 +3231,127 @@ if (activePage === "lane") {
       />
     </main>
   );
+
+      }
+
+        if (activePage === "gps") {
+        return (
+          <main className="app">
+            <header className="page-header">
+              <button type="button" onClick={() => setActivePage("landing")}>
+                Back to Home
+              </button>
+
+              <h1>GPS Track Analyzer</h1>
+              <p className="subtitle">
+                Import a FlySight CSV file to review wingsuit performance data.
+              </p>
+            </header>
+
+            <section className="card">
+              <h2>Import FlySight CSV</h2>
+
+              <label>
+                Choose GPS track file
+                <input
+                  type="file"
+                  accept=".csv,.CSV"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+
+                    if (!file) {
+                      setGpsFileName("");
+                      setGpsTrackPoints([]);
+                      return;
+                    }
+
+                    setGpsFileName(file.name);
+
+                    const csvText = await file.text();
+                    const parsedPoints = parseFlySightCsv(csvText);
+
+                    setGpsTrackPoints(parsedPoints);
+                  }}          />
+              </label>
+
+              {gpsFileName && (
+                <p className="subtitle">
+                  Selected file: <strong>{gpsFileName}</strong>
+                </p>
+              )}
+            </section>
+            
+      {gpsTrackPoints.length > 0 &&
+        (() => {
+          const windowTrackPoints = getWindowTrackPoints(gpsTrackPoints);
+          const windowDistanceM = getTrackDistanceM(windowTrackPoints);
+
+          const samplePeriodSeconds = 0.2;
+          const timeInWindowSeconds =
+            windowTrackPoints.length > 1
+              ? (windowTrackPoints.length - 1) * samplePeriodSeconds
+              : 0;
+
+          const averageHorizontalSpeedKmh =
+            timeInWindowSeconds > 0
+              ? metresPerSecondToKmh(windowDistanceM / timeInWindowSeconds)
+              : null;
+
+          return (
+            <section className="card">
+              <h2>Track Summary</h2>
+
+              <p className="subtitle">
+                Parsed {gpsTrackPoints.length} GPS points. Window uses 2500 m to
+                1500 m.
+              </p>
+
+              <div className="result-grid">
+                <div>
+                  <span>Exit Altitude: </span>
+                  <strong>
+                    {formatNumber(gpsTrackPoints[0]?.altitudeM, 0)} m
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Time in Window: </span>
+                  <strong>{formatNumber(timeInWindowSeconds, 1)} sec</strong>
+                </div>
+
+                <div>
+                  <span>Distance in Window: </span>
+                  <strong>{formatNumber(windowDistanceM, 0)} m</strong>
+                </div>
+
+                <div>
+                  <span>Avg. Horizontal Speed: </span>
+                  <strong>
+                    {formatNumber(averageHorizontalSpeedKmh, 1)} km/h
+                  </strong>
+                </div>
+              </div>
+            </section>
+          );
+        })()}
+
+      <section className="card">
+        <h2>Coming next</h2>
+        <p className="subtitle">
+          This page will calculate exit altitude, deployment altitude, speeds,
+          glide ratio, dive angle, scoring window results, and map track data.
+        </p>
+      </section>
+
+      <BottomBackButton
+        label="Back to Home"
+        onClick={() => setActivePage("landing")}
+      />
+    </main>
+  );
 }
 
-  if (activePage === "rules") {
+if (activePage === "rules") {
   const fuse = new Fuse(faiRuleSections, {
   keys: ["id", "title", "text", "searchTerms"],
   threshold: 0.4,
@@ -3168,6 +3460,10 @@ if (activePage === "lane") {
               Config your Flysight
             </button>
 
+            <button type="button" onClick={() => setActivePage("gps")}>
+              GPS Track Analyzer
+            </button>
+
             <button type="button" onClick={() => setActivePage("rules")}>
               FAI Rules Search
             </button>
@@ -3180,6 +3476,7 @@ if (activePage === "lane") {
               >
                 My Lane
               </button>
+
             )}
           </div>
         </header>
