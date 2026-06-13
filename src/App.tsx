@@ -2492,6 +2492,108 @@ function getTrackDistanceM(points: GpsTrackPoint[]) {
   }, 0);
 }
 
+const GPS_SAMPLE_PERIOD_SECONDS = 0.2;
+const MINIMUM_VALID_EXIT_ALTITUDE_M = 3000;
+const EXIT_VERTICAL_SPEED_TRIGGER_KMH = 9;
+const EXIT_CONFIRMATION_ALTITUDE_LOSS_M = 50;
+
+function kmhToMetresPerSecond(value: number) {
+  return value / 3.6;
+}
+
+function findDetectedExitIndex(points: GpsTrackPoint[]) {
+  const exitVerticalSpeedTriggerMps = kmhToMetresPerSecond(
+    EXIT_VERTICAL_SPEED_TRIGGER_KMH
+  );
+
+  return points.findIndex((point, index) => {
+    if (point.altitudeM < MINIMUM_VALID_EXIT_ALTITUDE_M) {
+      return false;
+    }
+
+    if (point.verticalSpeedMps < exitVerticalSpeedTriggerMps) {
+      return false;
+    }
+
+    const confirmationEndPoint = points
+      .slice(index)
+      .find(
+        (futurePoint) =>
+          point.altitudeM - futurePoint.altitudeM >=
+          EXIT_CONFIRMATION_ALTITUDE_LOSS_M
+      );
+
+    if (!confirmationEndPoint) {
+      return false;
+    }
+
+    return confirmationEndPoint.verticalSpeedMps > point.verticalSpeedMps;
+  });
+}
+
+function getValidatedJumpTrack(points: GpsTrackPoint[]) {
+  const exitIndex = findDetectedExitIndex(points);
+
+  if (exitIndex === -1) {
+    return {
+      isValidJump: false,
+      exitPoint: null,
+      jumpPoints: [],
+    };
+  }
+
+  return {
+    isValidJump: true,
+    exitPoint: points[exitIndex],
+    jumpPoints: points.slice(exitIndex),
+  };
+}
+
+function getTop100mFlareResult(  points: GpsTrackPoint[],
+  timeInWindowSeconds: number
+) {
+  if (timeInWindowSeconds <= 30) {
+    return null;
+  }
+
+  const flareStartIndex = points.findIndex(
+    (point) =>
+      point.altitudeM <= 2550 &&
+      point.altitudeM >= 2400 &&
+      point.glideRatio !== null &&
+      point.glideRatio >= 3
+  );
+
+  if (flareStartIndex === -1) {
+    return null;
+  }
+
+  const flareStartPoint = points[flareStartIndex];
+  const targetAltitudeM = flareStartPoint.altitudeM - 100;
+
+  const flareEndOffset = points
+    .slice(flareStartIndex)
+    .findIndex((point) => point.altitudeM <= targetAltitudeM);
+
+  if (flareEndOffset === -1) {
+    return null;
+  }
+
+  const flareEndIndex = flareStartIndex + flareEndOffset;
+  const flarePoints = points.slice(flareStartIndex, flareEndIndex + 1);
+
+  const samplePeriodSeconds = GPS_SAMPLE_PERIOD_SECONDS;
+  const flareTimeSeconds = (flarePoints.length - 1) * samplePeriodSeconds;
+  const flareDistanceM = getTrackDistanceM(flarePoints);
+
+  return {
+    startAltitudeM: flareStartPoint.altitudeM,
+    endAltitudeM: points[flareEndIndex].altitudeM,
+    timeSeconds: flareTimeSeconds,
+    distanceM: flareDistanceM,
+  };
+}
+
 function metresPerSecondToKmh(value: number) {
   return value * 3.6;
 }
@@ -3283,13 +3385,20 @@ if (activePage === "lane") {
             
       {gpsTrackPoints.length > 0 &&
         (() => {
-          const windowTrackPoints = getWindowTrackPoints(gpsTrackPoints);
+          const validatedJump = getValidatedJumpTrack(gpsTrackPoints);
+
+          if (!validatedJump.isValidJump) {
+            return null;
+          }
+
+          const jumpTrackPoints = validatedJump.jumpPoints;
+          const exitPoint = validatedJump.exitPoint;
+          const windowTrackPoints = getWindowTrackPoints(jumpTrackPoints);
           const windowDistanceM = getTrackDistanceM(windowTrackPoints);
 
-          const samplePeriodSeconds = 0.2;
           const timeInWindowSeconds =
             windowTrackPoints.length > 1
-              ? (windowTrackPoints.length - 1) * samplePeriodSeconds
+              ? (windowTrackPoints.length - 1) * GPS_SAMPLE_PERIOD_SECONDS
               : 0;
 
           const averageHorizontalSpeedKmh =
@@ -3297,20 +3406,21 @@ if (activePage === "lane") {
               ? metresPerSecondToKmh(windowDistanceM / timeInWindowSeconds)
               : null;
 
+          const top100mFlare = getTop100mFlareResult(
+            jumpTrackPoints,
+            timeInWindowSeconds
+          );
+
           return (
             <section className="card">
               <h2>Track Summary</h2>
 
-              <p className="subtitle">
-                Window uses 2500 m to 1500 m.
-              </p>
+              <p className="subtitle">Window uses 2500 m to 1500 m.</p>
 
               <div className="result-grid">
                 <div>
                   <span>Exit Altitude: </span>
-                  <strong>
-                    {formatNumber(gpsTrackPoints[0]?.altitudeM, 0)} m
-                  </strong>
+                  <strong>{formatNumber(exitPoint?.altitudeM, 0)} m</strong>
                 </div>
 
                 <div>
@@ -3329,11 +3439,36 @@ if (activePage === "lane") {
                     {formatNumber(averageHorizontalSpeedKmh, 1)} km/h
                   </strong>
                 </div>
+
+                {top100mFlare && (
+                  <>
+                    <div>
+                      <span>Top 100 m Flare Time: </span>
+                      <strong>
+                        {formatNumber(top100mFlare.timeSeconds, 1)} sec
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>Top 100 m Flare Distance: </span>
+                      <strong>
+                        {formatNumber(top100mFlare.distanceM, 0)} m
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>Top 100 m Flare Height: </span>
+                      <strong>
+                        {formatNumber(top100mFlare.startAltitudeM, 0)} m
+                      </strong>
+                    </div>
+                  </>
+                )}
               </div>
             </section>
           );
         })()}
-
+        
       <section className="card">
         <h2>Coming next</h2>
         <p className="subtitle">
