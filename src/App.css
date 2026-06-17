@@ -692,3 +692,39 @@ button:disabled {
   width: 100%;
   max-width: 460px;
 }
+
+.compact-heading-card {
+  margin-top: 8px;
+}
+
+.compact-heading-card h2,
+.compact-heading-card p {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.compact-heading-card input[type="range"] {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.compact-heading-card .heading-slider-scale {
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+
+@media (max-width: 700px) {
+  .reference-map-shell,
+  .reference-map-shell .leaflet-container {
+    width: 100% !important;
+    height: clamp(340px, 48dvh, 470px) !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+
+  .reference-map-shell {
+    overflow: hidden;
+    border-radius: 18px;
+  }
+}
+

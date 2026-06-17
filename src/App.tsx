@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
   Marker,
@@ -2608,7 +2608,22 @@ function formatNumber(value: number | null | undefined, decimals = 1) {
 
 export default function App() {
   const [activePage, setActivePage] = useState<AppPage>("landing");
-  const [rulesSearchQuery, setRulesSearchQuery] = useState("");
+useEffect(() => {
+  if (activePage !== "lane") {
+    return;
+  }
+
+  const timer = window.setTimeout(() => {
+    saveLaneButtonRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
+  }, 500);
+
+  return () => window.clearTimeout(timer);
+}, [activePage]);
+
+const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [findUnitSystem, setFindUnitSystem] = useState<UnitSystem>("metric");
   const [findWeight, setFindWeight] = useState("");
   const [findHeightCm, setFindHeightCm] = useState("");
@@ -2633,6 +2648,12 @@ export default function App() {
   const [runHeadingDeg, setRunHeadingDeg] = useState("");
   const [showTemporaryFlightLine, setShowTemporaryFlightLine] = useState(false);
   const [dropDistanceNm, setDropDistanceNm] = useState("");
+  const dropDistanceInputRef = useRef<HTMLInputElement | null>(null);
+  const referenceButtonRef = useRef<HTMLButtonElement | null>(null);
+  const mapPickerSectionRef = useRef<HTMLDivElement | null>(null);
+  const flyMyLaneButtonRef = useRef<HTMLButtonElement | null>(null);
+  const saveLaneButtonRef = useRef<HTMLButtonElement | null>(null);
+  
 
   const [globalWindFromDeg, setGlobalWindFromDeg] = useState("");
   const [globalWindSpeedKt, setGlobalWindSpeedKt] = useState("");
@@ -2646,6 +2667,26 @@ export default function App() {
   const [fetchStatus, setFetchStatus] = useState("");
   const [referenceStatus, setReferenceStatus] = useState("");
   const [showMapPicker, setShowMapPicker] = useState(false);
+  useEffect(() => {
+  if (!showMapPicker) {
+    return;
+  }
+
+  const timer = window.setTimeout(() => {
+    const elementTop =
+      mapPickerSectionRef.current?.getBoundingClientRect().top ?? 0;
+
+    const targetScrollY = window.scrollY + elementTop + 80;
+
+    window.scrollTo({
+      top: targetScrollY,
+      behavior: "smooth",
+    });
+  }, 150);
+
+  return () => window.clearTimeout(timer);
+}, [showMapPicker]);
+
   const [showRawWinds, setShowRawWinds] = useState(false);
   const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
 
@@ -3301,9 +3342,10 @@ if (activePage === "lane") {
           winds={winds}
         />
       </section>
-
+      
       <section className="card">
         <button
+          ref={saveLaneButtonRef}
           type="button"
           className={
             savedLaneAvailable
@@ -3604,6 +3646,7 @@ if (activePage === "rules") {
 
             {savedLaneAvailable && (
               <button
+                ref={flyMyLaneButtonRef}
                 type="button"
                 className="primary-action-button"
                 onClick={() => setActivePage("lane")}
@@ -4280,11 +4323,37 @@ if (activePage === "rules") {
         <label>
           Drop distance from reference point, NM
           <input
+            ref={dropDistanceInputRef}
             type="number"
             step="0.1"
             value={dropDistanceNm}
             placeholder="Example 3.0"
-            onChange={(e) => setDropDistanceNm(e.target.value)}
+            onChange={(event) => setDropDistanceNm(event.target.value)}
+            onBlur={() => {
+              if (Number(dropDistanceNm) <= 0) {
+                return;
+              }
+
+              const inputTop =
+                dropDistanceInputRef.current?.getBoundingClientRect().top;
+
+              const buttonTop =
+                referenceButtonRef.current?.getBoundingClientRect().top;
+
+              if (inputTop === undefined || buttonTop === undefined) {
+                return;
+              }
+
+              window.scrollBy({
+                top: buttonTop - inputTop,
+                behavior: "smooth",
+              });
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              }
+            }}
           />
         </label>
 
@@ -4295,6 +4364,7 @@ if (activePage === "rules") {
         </p>
 
         <button
+          ref={referenceButtonRef}
           type="button"
           className="primary-action-button"
           onClick={toggleMapPicker}
@@ -4305,13 +4375,14 @@ if (activePage === "rules") {
         {locationStatus && <p className="subtitle">{locationStatus}</p>}
 
         {showMapPicker && (
-          <>
+          <div ref={mapPickerSectionRef}>
             <p className="subtitle">
               Tap the map to set the reference point. Green is within 7.5° of
               the best tailwind heading, orange is within 15°, and red is
               outside that range.
             </p>
 
+          <div className="reference-map-shell">
             <MapClickPicker
               referenceLat={referenceLat}
               referenceLon={referenceLon}
@@ -4322,15 +4393,27 @@ if (activePage === "rules") {
               runHeadingDeg={runHeadingDeg}
               showTemporaryFlightLine={showTemporaryFlightLine}
             />
+          </div>
 
+      <div className="compact-heading-card">
         <HeadingSlider
           runHeadingDeg={runHeadingDeg}
           windAdvantage={windAdvantage}
           windSourceUnavailable={fetchStatus.includes("Could not fetch")}
           onInteractionStart={() => setShowTemporaryFlightLine(true)}
-          onInteractionEnd={() => setShowTemporaryFlightLine(false)}
+          onInteractionEnd={() => {
+            setShowTemporaryFlightLine(false);
+
+            window.setTimeout(() => {
+              flyMyLaneButtonRef.current?.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+              });
+            }, 100);
+          }}
           onChange={updateHeadingFromSlider}
         />
+        </div>
 
         <button
               type="button"
@@ -4339,7 +4422,7 @@ if (activePage === "rules") {
             >
               Fly my Lane
             </button>
-            </>
+            </div>
         )}
 
         {calculatedDropPoint && (
