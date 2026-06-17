@@ -3624,7 +3624,7 @@ if (activePage === "rules") {
             alt="Numbers to Fly logo"
           />
 
-          <p className="tagline">Performance knowledge in your pocket.</p>
+          <p className="tagline">Performance Wingsuiting App.</p>
         </div>
 
           <div className="mode-switch-wrap">

@@ -441,7 +441,7 @@ tr:last-child td {
 .landing-page {
   min-height: 100vh;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding-top: 0;
 }
@@ -464,7 +464,7 @@ tr:last-child td {
   display: grid;
   gap: 16px;
   width: min(420px, 92%);
-  margin: 28px auto 0;
+  margin: 8px auto 0;
 }
 
 .landing-actions button {
@@ -741,7 +741,7 @@ button:disabled {
 }
 
 .landing-brand-block .landing-logo {
-  margin-bottom: 0;
+  margin: -28px auto -28px;
 }
 
 .landing-brand-block .tagline {
@@ -755,7 +755,7 @@ button:disabled {
   justify-content: center;
   align-items: center;
   gap: 12px;
-  margin: 0 auto 8px;
+  margin: 0;
 }
 
 .mode-switch-label {
