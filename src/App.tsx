@@ -16,6 +16,7 @@ import "leaflet/dist/leaflet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./App.css";
 
+type AppMode = "phone" | "desktop";
 type AppPage =
   | "landing"
   | "find"
@@ -2608,6 +2609,7 @@ function formatNumber(value: number | null | undefined, decimals = 1) {
 
 export default function App() {
   const [activePage, setActivePage] = useState<AppPage>("landing");
+  const [appMode, setAppMode] = useState<AppMode>("phone");
 useEffect(() => {
   if (activePage !== "lane") {
     return;
@@ -3615,6 +3617,7 @@ if (activePage === "rules") {
     return (
       <main className="app landing-page">
         <header className="app-header landing-header">
+        <div className="landing-brand-block">
           <img
             className="app-logo landing-logo"
             src={`${import.meta.env.BASE_URL}numbers-to-fly-logo.png`}
@@ -3622,6 +3625,29 @@ if (activePage === "rules") {
           />
 
           <p className="tagline">Performance knowledge in your pocket.</p>
+        </div>
+
+          <div className="mode-switch-wrap">
+            <span className="mode-switch-label">Phone</span>
+
+            <button
+              type="button"
+              className={`mode-toggle ${
+                appMode === "desktop" ? "mode-toggle-desktop" : ""
+              }`}
+              aria-label="Switch between phone and desktop version"
+              aria-pressed={appMode === "desktop"}
+              onClick={() =>
+                setAppMode((currentMode) =>
+                  currentMode === "phone" ? "desktop" : "phone"
+                )
+              }
+            >
+              <span className="mode-toggle-knob" />
+            </button>
+
+            <span className="mode-switch-label">Desktop</span>
+          </div>        
 
           <div className="landing-actions">
             <button type="button" onClick={() => setActivePage("find")}>
