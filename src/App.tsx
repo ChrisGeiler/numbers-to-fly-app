@@ -2473,6 +2473,12 @@ function getWindowTrackPoints(points: GpsTrackPoint[]) {
   );
 }
 
+function getLast800mWindowPoints(points: GpsTrackPoint[]) {
+  return points.filter(
+    (point) => point.altitudeM <= 2300 && point.altitudeM >= 1500
+  );
+}
+
 function getTrackDistanceM(points: GpsTrackPoint[]) {
   if (points.length < 2) {
     return 0;
@@ -2633,6 +2639,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [findHeightInches, setFindHeightInches] = useState("");
   const [savedLaneAvailable, setSavedLaneAvailable] = useState(false);
   const [gpsFileName, setGpsFileName] = useState("");
+  const [dzElevationM, setDzElevationM] = useState("");
   const [gpsTrackPoints, setGpsTrackPoints] = useState<GpsTrackPoint[]>([]);
   const [findSuitSetup, setFindSuitSetup] =
     useState<SuitSetup>("crplus-no-wingtips");
@@ -3398,6 +3405,17 @@ if (activePage === "lane") {
               <h2>Import FlySight CSV</h2>
 
               <label>
+                DZ elevation (m)
+                <input
+                  type="number"
+                  step="1"
+                  value={dzElevationM}
+                  placeholder="Example 13"
+                  onChange={(event) => setDzElevationM(event.target.value)}
+                />
+              </label>
+
+              <label>
                 Choose GPS track file
                 <input
                   type="file"
@@ -3436,22 +3454,78 @@ if (activePage === "lane") {
           }
 
           const jumpTrackPoints = validatedJump.jumpPoints;
+          const dzElevationNumber = numberFromInput(dzElevationM, 0);
+
+          const jumpTrackPointsAgl = jumpTrackPoints.map((point) => ({
+            ...point,
+            altitudeM: point.altitudeM - dzElevationNumber,
+          }));
           const exitPoint = validatedJump.exitPoint;
-          const windowTrackPoints = getWindowTrackPoints(jumpTrackPoints);
+
+          const windowTrackPoints = getWindowTrackPoints(jumpTrackPointsAgl);
           const windowDistanceM = getTrackDistanceM(windowTrackPoints);
+
+          const last800mPoints = getLast800mWindowPoints(jumpTrackPointsAgl);
+          const last800mDistanceM = getTrackDistanceM(last800mPoints);
+
+          const last800mTimeSeconds =
+            last800mPoints.length > 1
+              ? (last800mPoints.length - 1) * GPS_SAMPLE_PERIOD_SECONDS
+              : 0;
+
+          const last800mAverageHorizontalSpeedKmh =
+            last800mTimeSeconds > 0
+              ? metresPerSecondToKmh(last800mDistanceM / last800mTimeSeconds)
+              : null;
+
+          const last800mAltitudeLossM =
+            last800mPoints.length > 1
+              ? last800mPoints[0].altitudeM -
+                last800mPoints[last800mPoints.length - 1].altitudeM
+              : 0;
+
+          const last800mAverageVerticalSpeedKmh =
+            last800mTimeSeconds > 0
+              ? metresPerSecondToKmh(
+                  last800mAltitudeLossM / last800mTimeSeconds
+                )
+              : null;
 
           const timeInWindowSeconds =
             windowTrackPoints.length > 1
-              ? (windowTrackPoints.length - 1) * GPS_SAMPLE_PERIOD_SECONDS
+              ? (windowTrackPoints.length - 1) *
+                GPS_SAMPLE_PERIOD_SECONDS
               : 0;
 
           const averageHorizontalSpeedKmh =
             timeInWindowSeconds > 0
-              ? metresPerSecondToKmh(windowDistanceM / timeInWindowSeconds)
+              ? metresPerSecondToKmh(
+                  windowDistanceM / timeInWindowSeconds
+                )
+              : null;
+
+                    const isSpeedRun =
+            timeInWindowSeconds > 0 && timeInWindowSeconds <= 30;
+
+          const windowEntryGlideRatio =
+            windowTrackPoints[0]?.glideRatio ?? null;
+
+          const windowExitGlideRatio =
+            windowTrackPoints[windowTrackPoints.length - 1]?.glideRatio ?? null;
+
+          const peakWindowHorizontalSpeedKmh =
+            windowTrackPoints.length > 0
+              ? metresPerSecondToKmh(
+                  Math.max(
+                    ...windowTrackPoints.map(
+                      (point) => point.horizontalSpeedMps
+                    )
+                  )
+                )
               : null;
 
           const top100mFlare = getTop100mFlareResult(
-            jumpTrackPoints,
+            jumpTrackPointsAgl,
             timeInWindowSeconds
           );
 
@@ -3459,60 +3533,156 @@ if (activePage === "lane") {
             <section className="card">
               <h2>Track Summary</h2>
 
-              <p className="subtitle">Window uses 2500 m to 1500 m.</p>
+              <p className="subtitle">
+                Window uses 2500 m to 1500 m.
+              </p>
 
-              <div className="result-grid">
-                <div>
-                  <span>Exit Altitude: </span>
-                  <strong>{formatNumber(exitPoint?.altitudeM, 0)} m</strong>
+              <div className="metric-section">
+                <h3>Main Scores</h3>
+
+                <div className="result-grid">
+                  <div>
+                    <span>Exit Altitude: </span>
+                    <strong>
+                      {formatNumber(
+                        exitPoint ? exitPoint.altitudeM - dzElevationNumber : null,
+                        0
+                      )} m AGL
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Time in Window: </span>
+                    <strong>
+                      {formatNumber(timeInWindowSeconds, 1)} sec
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Distance in Window: </span>
+                    <strong>
+                      {formatNumber(windowDistanceM, 0)} m
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Avg. Horizontal Speed: </span>
+                    <strong>
+                      {formatNumber(
+                        averageHorizontalSpeedKmh,
+                        1
+                      )}{" "}
+                      km/h
+                    </strong>
+                  </div>
                 </div>
-
-                <div>
-                  <span>Time in Window: </span>
-                  <strong>{formatNumber(timeInWindowSeconds, 1)} sec</strong>
-                </div>
-
-                <div>
-                  <span>Distance in Window: </span>
-                  <strong>{formatNumber(windowDistanceM, 0)} m</strong>
-                </div>
-
-                <div>
-                  <span>Avg. Horizontal Speed: </span>
-                  <strong>
-                    {formatNumber(averageHorizontalSpeedKmh, 1)} km/h
-                  </strong>
-                </div>
-
-                {top100mFlare && (
-                  <>
-                    <div>
-                      <span>Top 100 m Flare Time: </span>
-                      <strong>
-                        {formatNumber(top100mFlare.timeSeconds, 1)} sec
-                      </strong>
-                    </div>
-
-                    <div>
-                      <span>Top 100 m Flare Distance: </span>
-                      <strong>
-                        {formatNumber(top100mFlare.distanceM, 0)} m
-                      </strong>
-                    </div>
-
-                    <div>
-                      <span>Top 100 m Flare Height: </span>
-                      <strong>
-                        {formatNumber(top100mFlare.startAltitudeM, 0)} m
-                      </strong>
-                    </div>
-                  </>
-                )}
               </div>
+
+              {isSpeedRun ? (
+                <div className="metric-section">
+                  <h3>Speed Run</h3>
+
+                  <div className="result-grid">
+                    <div>
+                      <span>Window Entry GR: </span>
+                      <strong>
+                        {formatNumber(windowEntryGlideRatio, 2)}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>Window Exit GR: </span>
+                      <strong>
+                        {formatNumber(windowExitGlideRatio, 2)}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>Peak Horizontal Speed: </span>
+                      <strong>
+                        {formatNumber(peakWindowHorizontalSpeedKmh, 1)} km/h
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {top100mFlare && (
+                    <div className="metric-section">
+                      <h3>Top 100 m Flare</h3>
+
+                      <div className="result-grid">
+                        <div>
+                          <span>Time: </span>
+                          <strong>
+                            {formatNumber(top100mFlare.timeSeconds, 1)} sec
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>Distance: </span>
+                          <strong>
+                            {formatNumber(top100mFlare.distanceM, 0)} m
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>Flare Height: </span>
+                          <strong>
+                            {formatNumber(top100mFlare.startAltitudeM, 0)} m
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="metric-section">
+                    <h3>Last 800 m</h3>
+
+                    <div className="result-grid">
+                      <div>
+                        <span>Distance: </span>
+                        <strong>
+                          {formatNumber(last800mDistanceM, 0)} m
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>Time: </span>
+                        <strong>
+                          {formatNumber(last800mTimeSeconds, 1)} sec
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>Avg. Horizontal Speed: </span>
+                        <strong>
+                          {formatNumber(
+                            last800mAverageHorizontalSpeedKmh,
+                            1
+                          )}{" "}
+                          km/h
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>Avg. Vertical Speed: </span>
+                        <strong>
+                          {formatNumber(
+                            last800mAverageVerticalSpeedKmh,
+                            1
+                          )}{" "}
+                          km/h
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}            
             </section>
           );
         })()}
-        
+
       <section className="card">
         <h2>Coming next</h2>
         <p className="subtitle">

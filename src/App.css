@@ -798,3 +798,18 @@ button:disabled {
   transform: translateX(36px);
   background: #ffffff;
 }
+
+.metric-section {
+  margin-top: 20px;
+}
+
+.metric-section:first-of-type {
+  margin-top: 0;
+}
+
+.metric-section h3 {
+  margin: 0 0 10px;
+  color: #67e8f9;
+  text-align: center;
+  font-size: 1.1rem;
+}
