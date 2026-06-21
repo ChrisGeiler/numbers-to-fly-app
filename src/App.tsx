@@ -12,6 +12,16 @@ import Fuse from "fuse.js";
 import { faiRuleSections } from "./faiPerformanceRules.ts";
 import L from "leaflet";
 import maplibregl from "maplibre-gl";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import "leaflet/dist/leaflet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./App.css";
@@ -91,8 +101,171 @@ type OpenMeteoResponse = {
     wind_direction_850hPa?: number[];
     wind_speed_700hPa?: number[];
     wind_direction_700hPa?: number[];
-  };
+    };
 };
+
+  type HistoricalForecastResponse = {
+    hourly?: {
+      time?: string[];
+
+      wind_speed_925hPa?: number[];
+      wind_direction_925hPa?: number[];
+      geopotential_height_925hPa?: number[];
+
+      wind_speed_900hPa?: number[];
+      wind_direction_900hPa?: number[];
+      geopotential_height_900hPa?: number[];
+
+      wind_speed_850hPa?: number[];
+      wind_direction_850hPa?: number[];
+      geopotential_height_850hPa?: number[];
+
+      wind_speed_800hPa?: number[];
+      wind_direction_800hPa?: number[];
+      geopotential_height_800hPa?: number[];
+
+      wind_speed_700hPa?: number[];
+      wind_direction_700hPa?: number[];
+      geopotential_height_700hPa?: number[];
+
+      wind_speed_600hPa?: number[];
+      wind_direction_600hPa?: number[];
+      geopotential_height_600hPa?: number[];
+    };
+
+    hourly_units?: Record<string, string>;
+  };
+
+  async function fetchHistoricalWindProfile({
+  latitude,
+  longitude,
+  timestampMs,
+  dzElevationM,
+}: {
+  latitude: number;
+  longitude: number;
+  timestampMs: number;
+  dzElevationM: number;
+}): Promise<WindLayer[]> {
+  const jumpDate = new Date(timestampMs).toISOString().slice(0, 10);
+
+  const hourlyVariables = [
+    "wind_speed_925hPa",
+    "wind_direction_925hPa",
+    "geopotential_height_925hPa",
+    "wind_speed_900hPa",
+    "wind_direction_900hPa",
+    "geopotential_height_900hPa",
+    "wind_speed_850hPa",
+    "wind_direction_850hPa",
+    "geopotential_height_850hPa",
+    "wind_speed_800hPa",
+    "wind_direction_800hPa",
+    "geopotential_height_800hPa",
+    "wind_speed_700hPa",
+    "wind_direction_700hPa",
+    "geopotential_height_700hPa",
+    "wind_speed_600hPa",
+    "wind_direction_600hPa",
+    "geopotential_height_600hPa",
+  ];
+
+  const params = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+    start_date: jumpDate,
+    end_date: jumpDate,
+    hourly: hourlyVariables.join(","),
+    timezone: "UTC",
+    wind_speed_unit: "kmh",
+  });
+
+  const response = await fetch(
+    `https://historical-forecast-api.open-meteo.com/v1/forecast?${params.toString()}`
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Historical wind request failed with status ${response.status}.`
+    );
+  }
+
+  const data = (await response.json()) as HistoricalForecastResponse;
+  const hourly = data.hourly;
+
+  if (!hourly?.time || hourly.time.length === 0) {
+    throw new Error("Historical forecast did not contain hourly wind data.");
+  }
+
+  let nearestHourIndex = 0;
+  let nearestTimeDifferenceMs = Infinity;
+
+  hourly.time.forEach((time, index) => {
+    const hourlyTimestampMs = Date.parse(
+      time.endsWith("Z") ? time : `${time}Z`
+    );
+
+    const differenceMs = Math.abs(hourlyTimestampMs - timestampMs);
+
+    if (differenceMs < nearestTimeDifferenceMs) {
+      nearestTimeDifferenceMs = differenceMs;
+      nearestHourIndex = index;
+    }
+  });
+
+  const pressureLevels = [925, 900, 850, 800, 700, 600] as const;
+
+  const windLayers = pressureLevels.flatMap((pressureLevel) => {
+    const speedKey =
+      `wind_speed_${pressureLevel}hPa` as keyof NonNullable<
+        HistoricalForecastResponse["hourly"]
+      >;
+
+    const directionKey =
+      `wind_direction_${pressureLevel}hPa` as keyof NonNullable<
+        HistoricalForecastResponse["hourly"]
+      >;
+
+    const heightKey =
+      `geopotential_height_${pressureLevel}hPa` as keyof NonNullable<
+        HistoricalForecastResponse["hourly"]
+      >;
+
+    const speedValues = hourly[speedKey] as number[] | undefined;
+    const directionValues = hourly[directionKey] as number[] | undefined;
+    const heightValues = hourly[heightKey] as number[] | undefined;
+
+    const speedKmh = speedValues?.[nearestHourIndex];
+    const directionFromDeg = directionValues?.[nearestHourIndex];
+    const geopotentialHeightMslM = heightValues?.[nearestHourIndex];
+
+    if (
+      !Number.isFinite(speedKmh) ||
+      !Number.isFinite(directionFromDeg) ||
+      !Number.isFinite(geopotentialHeightMslM)
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        altitudeM: Math.round(
+          Number(geopotentialHeightMslM) - dzElevationM
+        ),
+        directionFromDeg: String(Number(directionFromDeg)),
+        speedKt: String(kmhToKt(Number(speedKmh))),
+      },
+    ];
+  });
+
+  if (windLayers.length < 2) {
+    throw new Error(
+      "Not enough historical pressure-level winds were returned."
+    );
+  }
+
+  return windLayers.sort((a, b) => a.altitudeM - b.altitudeM);
+}
 
 type LatLon = {
   lat: number;
@@ -2342,8 +2515,11 @@ function BottomBackButton({
 
 type GpsTrackPoint = {
   time: string;
+  timestampMs: number | null;
   lat: number;
   lon: number;
+  velNMps: number;
+  velEMps: number;
   altitudeM: number;
   horizontalSpeedMps: number;
   verticalSpeedMps: number;
@@ -2428,11 +2604,19 @@ function parseFlySightCsv(csvText: string): GpsTrackPoint[] {
     const glideRatio =
       verticalSpeedMps > 0 ? horizontalSpeedMps / verticalSpeedMps : null;
 
+    const time = columns[timeIndex] ?? "";
+    const parsedTimestampMs = Date.parse(time);
+
     return [
       {
-        time: columns[timeIndex] ?? "",
+        time,
+        timestampMs: Number.isFinite(parsedTimestampMs)
+          ? parsedTimestampMs
+          : null,
         lat,
         lon,
+        velNMps: velN,
+        velEMps: velE,
         altitudeM,
         horizontalSpeedMps,
         verticalSpeedMps,
@@ -2467,10 +2651,162 @@ function distanceBetweenPointsM(
   return earthRadiusM * c;
 }
 
-function getWindowTrackPoints(points: GpsTrackPoint[]) {
-  return points.filter(
-    (point) => point.altitudeM <= 2500 && point.altitudeM >= 1500
+function getScoringWindowResult(
+  points: GpsTrackPoint[],
+  windowOffsetM: number
+) {
+  const windowTopM = 2500 + windowOffsetM;
+  const windowBottomM = 1500 + windowOffsetM;
+
+  const startIndex = points.findIndex(
+    (point, index) =>
+      index > 0 &&
+      points[index - 1].altitudeM > windowTopM &&
+      point.altitudeM <= windowTopM
   );
+
+  if (startIndex === -1) {
+    return null;
+  }
+
+  const endIndex = points.findIndex(
+    (point, index) =>
+      index > startIndex &&
+      points[index - 1].altitudeM > windowBottomM &&
+      point.altitudeM <= windowBottomM
+  );
+
+  if (endIndex === -1) {
+    return null;
+  }
+
+  const startBefore = points[startIndex - 1];
+  const startAfter = points[startIndex];
+  const endBefore = points[endIndex - 1];
+  const endAfter = points[endIndex];
+
+  const interpolateFraction = (
+    altitudeBeforeM: number,
+    altitudeAfterM: number,
+    targetAltitudeM: number
+  ) => {
+    const altitudeChangeM = altitudeAfterM - altitudeBeforeM;
+
+    if (altitudeChangeM === 0) {
+      return 0;
+    }
+
+    return (
+      (targetAltitudeM - altitudeBeforeM) /
+      altitudeChangeM
+    );
+  };
+
+  const startFraction = interpolateFraction(
+    startBefore.altitudeM,
+    startAfter.altitudeM,
+    windowTopM
+  );
+
+  const endFraction = interpolateFraction(
+    endBefore.altitudeM,
+    endAfter.altitudeM,
+    windowBottomM
+  );
+
+  const interpolateValue = (
+    before: number,
+    after: number,
+    fraction: number
+  ) => before + (after - before) * fraction;
+
+  const entryLat = interpolateValue(
+    startBefore.lat,
+    startAfter.lat,
+    startFraction
+  );
+
+  const entryLon = interpolateValue(
+    startBefore.lon,
+    startAfter.lon,
+    startFraction
+  );
+
+  const exitLat = interpolateValue(
+    endBefore.lat,
+    endAfter.lat,
+    endFraction
+  );
+
+  const exitLon = interpolateValue(
+    endBefore.lon,
+    endAfter.lon,
+    endFraction
+  );
+
+  const elapsedSamples =
+    endIndex -
+    startIndex +
+    endFraction -
+    startFraction;
+
+  const timeSeconds =
+    elapsedSamples * GPS_SAMPLE_PERIOD_SECONDS;
+
+  const distanceM = distanceBetweenPointsM(
+    entryLat,
+    entryLon,
+    exitLat,
+    exitLon
+  );
+
+  return {
+    timeSeconds,
+    distanceM,
+    entryLat,
+    entryLon,
+    exitLat,
+    exitLon,
+    startIndex,
+    endIndex,
+    startFraction,
+    endFraction,
+  };
+}
+
+function getWindowTrackPoints(
+  points: GpsTrackPoint[],
+  windowOffsetM: number
+) {
+  const windowTopM = 2500 + windowOffsetM;
+  const windowBottomM = 1500 + windowOffsetM;
+
+  const windowStartIndex = points.findIndex(
+    (point, index) =>
+      index > 0 &&
+      points[index - 1].altitudeM > windowTopM &&
+      point.altitudeM <= windowTopM
+  );
+
+  if (windowStartIndex === -1) {
+    return [];
+  }
+
+  const windowEndOffset = points
+    .slice(windowStartIndex + 1)
+    .findIndex(
+      (point, index) =>
+        points[windowStartIndex + index].altitudeM > windowBottomM &&
+        point.altitudeM <= windowBottomM
+    );
+
+  if (windowEndOffset === -1) {
+    return [];
+  }
+
+  const windowEndIndex = windowStartIndex + 1 + windowEndOffset;
+
+  return points.slice(windowStartIndex, windowEndIndex + 1);
 }
 
 function getLast800mWindowPoints(points: GpsTrackPoint[]) {
@@ -2500,7 +2836,6 @@ function getTrackDistanceM(points: GpsTrackPoint[]) {
 }
 
 const GPS_SAMPLE_PERIOD_SECONDS = 0.2;
-const MINIMUM_VALID_EXIT_ALTITUDE_M = 3000;
 const EXIT_VERTICAL_SPEED_TRIGGER_KMH = 9;
 const EXIT_CONFIRMATION_ALTITUDE_LOSS_M = 50;
 
@@ -2509,33 +2844,85 @@ function kmhToMetresPerSecond(value: number) {
 }
 
 function findDetectedExitIndex(points: GpsTrackPoint[]) {
-  const exitVerticalSpeedTriggerMps = kmhToMetresPerSecond(
+  const triggerMps = kmhToMetresPerSecond(
     EXIT_VERTICAL_SPEED_TRIGGER_KMH
   );
 
-  return points.findIndex((point, index) => {
-    if (point.altitudeM < MINIMUM_VALID_EXIT_ALTITUDE_M) {
-      return false;
+  const maxConfirmationSeconds = 10;
+  const maxConfirmationSamples = Math.round(
+    maxConfirmationSeconds / GPS_SAMPLE_PERIOD_SECONDS
+  );
+
+  for (let index = 1; index < points.length; index += 1) {
+    const previousPoint = points[index - 1];
+    const exitCandidate = points[index];
+
+    const crossedTrigger =
+      previousPoint.verticalSpeedMps <= triggerMps &&
+      exitCandidate.verticalSpeedMps > triggerMps;
+
+    if (!crossedTrigger) {
+      continue;
     }
 
-    if (point.verticalSpeedMps < exitVerticalSpeedTriggerMps) {
-      return false;
+    const confirmationLimitIndex = Math.min(
+      points.length - 1,
+      index + maxConfirmationSamples
+    );
+
+    let confirmationEndIndex = -1;
+
+    for (
+      let futureIndex = index + 1;
+      futureIndex <= confirmationLimitIndex;
+      futureIndex += 1
+    ) {
+      const altitudeLossM =
+        exitCandidate.altitudeM - points[futureIndex].altitudeM;
+
+      if (altitudeLossM >= EXIT_CONFIRMATION_ALTITUDE_LOSS_M) {
+        confirmationEndIndex = futureIndex;
+        break;
+      }
     }
 
-    const confirmationEndPoint = points
-      .slice(index)
-      .find(
-        (futurePoint) =>
-          point.altitudeM - futurePoint.altitudeM >=
-          EXIT_CONFIRMATION_ALTITUDE_LOSS_M
-      );
-
-    if (!confirmationEndPoint) {
-      return false;
+    if (confirmationEndIndex === -1) {
+      continue;
     }
 
-    return confirmationEndPoint.verticalSpeedMps > point.verticalSpeedMps;
-  });
+    const confirmationPoints = points.slice(
+      index,
+      confirmationEndIndex + 1
+    );
+
+    const descendingPointRatio =
+      confirmationPoints.filter(
+        (point) => point.verticalSpeedMps > triggerMps
+      ).length / confirmationPoints.length;
+
+    const peakVerticalSpeedMps = Math.max(
+      ...confirmationPoints.map(
+        (point) => point.verticalSpeedMps
+      )
+    );
+
+    const acceleratedEnough =
+      peakVerticalSpeedMps >= exitCandidate.verticalSpeedMps + 5;
+
+    const finalSpeedHigher =
+      points[confirmationEndIndex].verticalSpeedMps >
+      exitCandidate.verticalSpeedMps;
+
+    if (
+      descendingPointRatio >= 0.8 &&
+      acceleratedEnough &&
+      finalSpeedHigher
+    ) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 function getValidatedJumpTrack(points: GpsTrackPoint[]) {
@@ -2592,13 +2979,22 @@ function getTop100mFlareResult(  points: GpsTrackPoint[],
   const samplePeriodSeconds = GPS_SAMPLE_PERIOD_SECONDS;
   const flareTimeSeconds = (flarePoints.length - 1) * samplePeriodSeconds;
   const flareDistanceM = getTrackDistanceM(flarePoints);
+  const peakFlareAltitudeM = Math.max(
+    ...flarePoints.map((point) => point.altitudeM)
+  );
 
-  return {
-    startAltitudeM: flareStartPoint.altitudeM,
-    endAltitudeM: points[flareEndIndex].altitudeM,
-    timeSeconds: flareTimeSeconds,
-    distanceM: flareDistanceM,
-  };
+  const altitudeGainM = Math.max(
+    0,
+    peakFlareAltitudeM - flareStartPoint.altitudeM
+  );
+
+return {
+  startAltitudeM: flareStartPoint.altitudeM,
+  altitudeGainM,
+  endAltitudeM: points[flareEndIndex].altitudeM,
+  timeSeconds: flareTimeSeconds,
+  distanceM: flareDistanceM,
+};
 }
 
 function metresPerSecondToKmh(value: number) {
@@ -2612,6 +3008,297 @@ function formatNumber(value: number | null | undefined, decimals = 1) {
 
   return value.toFixed(decimals);
 }
+
+function InteractiveTrackChart({
+  points,
+  windowOffsetM,
+  winds,
+}: {
+  points: GpsTrackPoint[];
+  windowOffsetM: number;
+  winds: WindLayer[];
+}) {
+const windAltitudes = winds.map((wind) => wind.altitudeM);
+
+const windDirectionsByAltitude = Object.fromEntries(
+  winds.map((wind) => [
+    String(wind.altitudeM),
+    numberFromInput(wind.directionFromDeg, 0),
+  ])
+);
+
+const windSpeedsByAltitude = Object.fromEntries(
+  winds.map((wind) => [
+    String(wind.altitudeM),
+    numberFromInput(wind.speedKt, 0),
+  ])
+);
+
+const chartData = points.map((point, index) => {
+  const diveAngleDeg =
+    point.horizontalSpeedMps > 0
+      ? Math.atan2(
+          point.verticalSpeedMps,
+          point.horizontalSpeedMps
+        ) *
+        (180 / Math.PI)
+      : 0;
+
+  const windDirectionFromDeg =
+    winds.length > 0
+      ? interpolateDirection(
+          point.altitudeM,
+          windAltitudes,
+          windDirectionsByAltitude
+        )
+      : 0;
+
+  const windSpeedKt =
+    winds.length > 0
+      ? interpolateNumber(
+          point.altitudeM,
+          windAltitudes,
+          windSpeedsByAltitude
+        )
+      : 0;
+
+  const windTowardDeg = normalizeDeg(windDirectionFromDeg + 180);
+  const windSpeedMps = windSpeedKt * 0.514444;
+  const windTowardRad = degToRad(windTowardDeg);
+
+  const windNorthMps = Math.cos(windTowardRad) * windSpeedMps;
+  const windEastMps = Math.sin(windTowardRad) * windSpeedMps;
+
+  const airNorthMps = point.velNMps - windNorthMps;
+  const airEastMps = point.velEMps - windEastMps;
+
+  const calculatedAirspeedMps = Math.sqrt(
+    airNorthMps * airNorthMps + airEastMps * airEastMps
+  );
+
+  return {
+    sample: index,
+    timeSeconds: index * GPS_SAMPLE_PERIOD_SECONDS,
+    altitudeM: point.altitudeM,
+    horizontalSpeedKmh: metresPerSecondToKmh(
+      point.horizontalSpeedMps
+    ),
+    verticalSpeedKmh: metresPerSecondToKmh(
+      point.verticalSpeedMps
+    ),
+    totalSpeedKmh: metresPerSecondToKmh(point.totalSpeedMps),
+    calculatedAirspeedKmh: metresPerSecondToKmh(
+      calculatedAirspeedMps
+    ),
+    glideRatio: point.glideRatio,
+    diveAngleDeg,
+    windDirectionFromDeg,
+    windSpeedKt,
+  };
+});
+
+  const windowTopM = 2500 + windowOffsetM;
+  const windowBottomM = 1500 + windowOffsetM;
+
+  return (
+    <section className="card">
+      <h2>Interactive Jump Graph</h2>
+
+      <p className="subtitle">
+        Touch or move over the graph to inspect your track.
+      </p>
+
+      <div className="interactive-chart-wrap">
+        <ResponsiveContainer width="100%" height={460} minWidth={0}>
+          <LineChart
+            data={chartData}
+            margin={{ top: 20, right: 28, bottom: 20, left: 12 }}
+          >
+            <CartesianGrid
+              stroke="rgba(148, 163, 184, 0.22)"
+              strokeDasharray="4 4"
+            />
+
+            <XAxis
+              dataKey="timeSeconds"
+              type="number"
+              domain={["dataMin", "dataMax"]}
+              tickFormatter={(value) => `${Number(value).toFixed(0)}s`}
+              stroke="#d1d5db"
+            />
+
+            <YAxis
+              yAxisId="altitude"
+              stroke="#d1d5db"
+              tickFormatter={(value) => `${Number(value).toFixed(0)} m`}
+            />
+
+            <YAxis
+              yAxisId="speed"
+              orientation="right"
+              stroke="#2563eb"
+              tickFormatter={(value) => `${Number(value).toFixed(0)}`}
+            />
+
+            <YAxis
+              yAxisId="glideRatio"
+              hide
+              type="number"
+              domain={[0, 8]}
+              allowDataOverflow
+            />
+
+            <YAxis
+              yAxisId="diveAngle"
+              hide
+              domain={[0, "auto"]}
+            />
+
+            <Tooltip
+              contentStyle={{
+                background: "#020617",
+                border: "1px solid #22d3ee",
+                borderRadius: "12px",
+                color: "#ffffff",
+              }}
+              labelFormatter={(value) =>
+                `Time: ${Number(value).toFixed(1)} sec`
+              }
+              formatter={(value, name) => {
+                const numericValue = Number(value);
+
+                const labels: Record<string, string> = {
+                  altitudeM: "Altitude",
+                  horizontalSpeedKmh: "Horizontal Speed",
+                  verticalSpeedKmh: "Vertical Speed",
+                  totalSpeedKmh: "Total Speed",
+                  glideRatio: "Glide Ratio",
+                  diveAngleDeg: "Dive Angle",
+                };
+
+                const units: Record<string, string> = {
+                  altitudeM: " m",
+                  horizontalSpeedKmh: " km/h",
+                  verticalSpeedKmh: " km/h",
+                  totalSpeedKmh: " km/h",
+                  glideRatio: "",
+                  diveAngleDeg: "°",
+                };
+
+                return [
+                  `${numericValue.toFixed(1)}${units[String(name)] ?? ""}`,
+                  labels[String(name)] ?? String(name),
+                ];
+              }}
+            />
+
+            <ReferenceLine
+              yAxisId="altitude"
+              y={windowTopM}
+              stroke="#22c55e"
+              strokeDasharray="6 4"
+              label={{
+                value: `${windowTopM} m`,
+                fill: "#22c55e",
+                position: "insideTopRight",
+              }}
+            />
+
+            <ReferenceLine
+              yAxisId="altitude"
+              y={windowBottomM}
+              stroke="#ef4444"
+              strokeDasharray="6 4"
+              label={{
+                value: `${windowBottomM} m`,
+                fill: "#ef4444",
+                position: "insideBottomRight",
+              }}
+            />
+
+<Line
+  yAxisId="altitude"
+  type="monotone"
+  dataKey="altitudeM"
+  name="Elevation"
+  stroke="#d1d5db"
+  strokeWidth={2.5}
+  dot={false}
+  activeDot={{ r: 5 }}
+/>
+
+<Line
+  yAxisId="speed"
+  type="monotone"
+  dataKey="horizontalSpeedKmh"
+  name="Horizontal Speed"
+  stroke="#ef4444"
+  strokeWidth={2.5}
+  dot={false}
+  activeDot={{ r: 5 }}
+/>
+
+<Line
+  yAxisId="speed"
+  type="monotone"
+  dataKey="verticalSpeedKmh"
+  name="Vertical Speed"
+  stroke="#22c55e"
+  strokeWidth={2.5}
+  dot={false}
+  activeDot={{ r: 5 }}
+/>
+
+<Line
+  yAxisId="speed"
+  type="monotone"
+  dataKey="totalSpeedKmh"
+  name="Total Speed"
+  stroke="#2563eb"
+  strokeWidth={2.5}
+  dot={false}
+  activeDot={{ r: 5 }}
+/>
+
+<Line
+  yAxisId="speed"
+  type="monotone"
+  dataKey="calculatedAirspeedKmh"
+  name="Calculated Airspeed"
+  stroke="#f97316"
+  strokeWidth={2.5}
+  dot={false}
+  activeDot={{ r: 5 }}
+/>
+
+<Line
+  yAxisId="glideRatio"
+  type="monotone"
+  dataKey="glideRatio"
+  name="Glide Ratio"
+  stroke="#0d9488"
+  strokeWidth={2.5}
+  dot={false}
+  connectNulls
+  activeDot={{ r: 5 }}
+/>
+
+<Line
+  yAxisId="diveAngle"
+  type="monotone"
+  dataKey="diveAngleDeg"
+  name="Dive Angle"
+  stroke="#f0f"
+  strokeWidth={2.5}
+  dot={false}
+  activeDot={{ r: 5 }}
+/>
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </section>
+              );
+            }
 
 export default function App() {
   const [activePage, setActivePage] = useState<AppPage>("landing");
@@ -2640,7 +3327,10 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [savedLaneAvailable, setSavedLaneAvailable] = useState(false);
   const [gpsFileName, setGpsFileName] = useState("");
   const [dzElevationM, setDzElevationM] = useState("");
+  const [windowOffsetM, setWindowOffsetM] = useState(0);
   const [gpsTrackPoints, setGpsTrackPoints] = useState<GpsTrackPoint[]>([]);
+  const [historicalWinds, setHistoricalWinds] = useState<WindLayer[]>([]);
+  const [historicalWindStatus, setHistoricalWindStatus] = useState("");
   const [findSuitSetup, setFindSuitSetup] =
     useState<SuitSetup>("crplus-no-wingtips");
 
@@ -3435,6 +4125,45 @@ if (activePage === "lane") {
                     const parsedPoints = parseFlySightCsv(csvText);
 
                     setGpsTrackPoints(parsedPoints);
+                    setHistoricalWinds([]);
+                    setHistoricalWindStatus("");
+
+                    const validatedJump = getValidatedJumpTrack(parsedPoints);
+                    const exitPoint = validatedJump.exitPoint;
+
+                    if (
+                      !validatedJump.isValidJump ||
+                      !exitPoint ||
+                      exitPoint.timestampMs === null
+                    ) {
+                      setHistoricalWindStatus(
+                        "Historical winds could not be loaded because no valid timestamped exit was detected."
+                      );
+                      return;
+                    }
+
+                    setHistoricalWindStatus("Loading historical winds...");
+
+                    try {
+                      const importedWinds = await fetchHistoricalWindProfile({
+                        latitude: exitPoint.lat,
+                        longitude: exitPoint.lon,
+                        timestampMs: exitPoint.timestampMs,
+                        dzElevationM: numberFromInput(dzElevationM, 0),
+                      });
+
+                      setHistoricalWinds(importedWinds);
+                      setHistoricalWindStatus(
+                        `Loaded ${importedWinds.length} historical wind levels.`
+                      );
+                    } catch (error) {
+                      const message =
+                        error instanceof Error
+                          ? error.message
+                          : "Unknown historical wind error.";
+
+                      setHistoricalWindStatus(`Could not load historical winds: ${message}`);
+                    }
                   }}          />
               </label>
 
@@ -3462,8 +4191,33 @@ if (activePage === "lane") {
           }));
           const exitPoint = validatedJump.exitPoint;
 
-          const windowTrackPoints = getWindowTrackPoints(jumpTrackPointsAgl);
-          const windowDistanceM = getTrackDistanceM(windowTrackPoints);
+          const windowTrackPoints = getWindowTrackPoints(
+            jumpTrackPointsAgl,
+            windowOffsetM
+          );
+
+          const scoringWindowResult = getScoringWindowResult(
+            jumpTrackPointsAgl,
+            windowOffsetM
+          );
+
+          const preWindowDivePoints =
+            scoringWindowResult !== null
+              ? jumpTrackPointsAgl.slice(
+                  0,
+                  scoringWindowResult.startIndex + 1
+                )
+              : [];
+
+          const windowDistanceM = scoringWindowResult?.distanceM ?? 0;
+            windowTrackPoints.length > 1
+              ? distanceBetweenPointsM(
+                  windowTrackPoints[0].lat,
+                  windowTrackPoints[0].lon,
+                  windowTrackPoints[windowTrackPoints.length - 1].lat,
+                  windowTrackPoints[windowTrackPoints.length - 1].lon
+                )
+              : 0;
 
           const last800mPoints = getLast800mWindowPoints(jumpTrackPointsAgl);
           const last800mDistanceM = getTrackDistanceM(last800mPoints);
@@ -3491,7 +4245,7 @@ if (activePage === "lane") {
                 )
               : null;
 
-          const timeInWindowSeconds =
+          const timeInWindowSeconds = scoringWindowResult?.timeSeconds ?? 0;
             windowTrackPoints.length > 1
               ? (windowTrackPoints.length - 1) *
                 GPS_SAMPLE_PERIOD_SECONDS
@@ -3513,17 +4267,58 @@ if (activePage === "lane") {
           const windowExitGlideRatio =
             windowTrackPoints[windowTrackPoints.length - 1]?.glideRatio ?? null;
 
-          const peakWindowHorizontalSpeedKmh =
-            windowTrackPoints.length > 0
+          const peakDiveHorizontalSpeedKmh =
+            preWindowDivePoints.length > 0
               ? metresPerSecondToKmh(
                   Math.max(
-                    ...windowTrackPoints.map(
+                    ...preWindowDivePoints.map(
                       (point) => point.horizontalSpeedMps
                     )
                   )
                 )
               : null;
 
+          const peakDiveVerticalSpeedKmh =
+            preWindowDivePoints.length > 0
+              ? metresPerSecondToKmh(
+                  Math.max(
+                    ...preWindowDivePoints.map(
+                      (point) => point.verticalSpeedMps
+                    )
+                  )
+                )
+              : null;
+
+          const peakDiveTotalSpeedKmh =
+            preWindowDivePoints.length > 0
+              ? metresPerSecondToKmh(
+                  Math.max(
+                    ...preWindowDivePoints.map(
+                      (point) => point.totalSpeedMps
+                    )
+                  )
+                )
+              : null;
+
+          const peakDiveAngleDeg =
+            preWindowDivePoints.length > 0
+              ? Math.max(
+                  ...preWindowDivePoints.map((point) => {
+                    if (point.horizontalSpeedMps <= 0) {
+                      return 0;
+                    }
+
+                    return (
+                      Math.atan2(
+                        Math.max(point.verticalSpeedMps, 0),
+                        point.horizontalSpeedMps
+                      ) *
+                      (180 / Math.PI)
+                    );
+                  })
+                )
+              : null;
+              
           const top100mFlare = getTop100mFlareResult(
             jumpTrackPointsAgl,
             timeInWindowSeconds
@@ -3533,36 +4328,96 @@ if (activePage === "lane") {
             <section className="card">
               <h2>Track Summary</h2>
 
-              <p className="subtitle">
-                Window uses 2500 m to 1500 m.
-              </p>
+            <p className="subtitle">
+              Window uses {2500 + windowOffsetM} m to {1500 + windowOffsetM} m.
+            </p>
 
+            <div className="window-adjust-controls">
+              <button
+                type="button"
+                onClick={() => setWindowOffsetM((current) => current - 10)}
+              >
+                -10 m
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWindowOffsetM(0)}
+              >
+                Reset
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWindowOffsetM((current) => current + 10)}
+              >
+                +10 m
+              </button>
+            </div>
               <div className="metric-section">
                 <h3>Main Scores</h3>
 
-                <div className="result-grid">
-                  <div>
-                    <span>Exit Altitude: </span>
-                    <strong>
-                      {formatNumber(
-                        exitPoint ? exitPoint.altitudeM - dzElevationNumber : null,
-                        0
-                      )} m AGL
-                    </strong>
+                <div className="main-score-columns">
+                  <div className="main-score-column">
+                    <div>
+                      <span>Jump Time: </span>
+                      <strong>
+                        {validatedJump.exitPoint?.timestampMs
+                          ? new Date(validatedJump.exitPoint.timestampMs).toLocaleString()
+                          : "Timestamp not detected"}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>Exit Location: </span>
+                      <strong>
+                        {validatedJump.exitPoint
+                          ? `${validatedJump.exitPoint.lat.toFixed(5)}, ${validatedJump.exitPoint.lon.toFixed(5)}`
+                          : "Location not detected"}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>Exit Altitude: </span>
+                      <strong>{formatNumber(exitPoint?.altitudeM, 0)} m</strong>
+                    </div>
+
+                    <div>
+                      <span>Time: </span>
+                      <strong>{formatNumber(timeInWindowSeconds, 3)} sec</strong>
+                    </div>
+
+                    <div>
+                      <span>Distance: </span>
+                      <strong>{formatNumber(windowDistanceM, 2)} m</strong>
+                    </div>
+
+                    <div>
+                      <span>Speed: </span>
+                      <strong>{formatNumber(averageHorizontalSpeedKmh, 3)} km/h</strong>
+                    </div>
                   </div>
 
-                  <div>
-                    <span>Time in Window: </span>
-                    <strong>
-                      {formatNumber(timeInWindowSeconds, 1)} sec
-                    </strong>
-                  </div>
+                  <div className="main-score-column">
+                    <div>
+                      <span>Peak Dive Angle: </span>
+                      <strong>{formatNumber(peakDiveAngleDeg, 1)}°</strong>
+                    </div>
 
-                  <div>
-                    <span>Distance in Window: </span>
-                    <strong>
-                      {formatNumber(windowDistanceM, 0)} m
-                    </strong>
+                    <div>
+                      <span>Peak Vert Speed: </span>
+                      <strong>{formatNumber(peakDiveVerticalSpeedKmh, 1)} km/h</strong>
+                    </div>
+
+                    <div>
+                      <span>Peak Total Speed: </span>
+                      <strong>{formatNumber(peakDiveTotalSpeedKmh, 1)} km/h</strong>
+                    </div>
+
+                    <div>
+                      <span>Peak Horizontal Speed: </span>
+                      <strong>{formatNumber(peakDiveHorizontalSpeedKmh, 1)} km/h</strong>
+                    </div>
                   </div>
 
                   <div>
@@ -3600,13 +4455,14 @@ if (activePage === "lane") {
                     <div>
                       <span>Peak Horizontal Speed: </span>
                       <strong>
-                        {formatNumber(peakWindowHorizontalSpeedKmh, 1)} km/h
+                        {formatNumber(peakDiveHorizontalSpeedKmh, 1)} km/h
                       </strong>
                     </div>
                   </div>
                 </div>
               ) : (
                 <>
+                <div className="comparison-metric-columns">
                   {top100mFlare && (
                     <div className="metric-section">
                       <h3>Top 100 m Flare</h3>
@@ -3627,9 +4483,16 @@ if (activePage === "lane") {
                         </div>
 
                         <div>
-                          <span>Flare Height: </span>
+                          <span>Flare Start: </span>
                           <strong>
                             {formatNumber(top100mFlare.startAltitudeM, 0)} m
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>Altitude Gain: </span>
+                          <strong>
+                            {formatNumber(top100mFlare.altitudeGainM, 0)} m
                           </strong>
                         </div>
                       </div>
@@ -3677,11 +4540,50 @@ if (activePage === "lane") {
                       </div>
                     </div>
                   </div>
+                </div>
                 </>
               )}            
             </section>
           );
         })()}
+        
+        {gpsTrackPoints.length > 0 &&
+    (() => {
+      const dzElevationNumber = numberFromInput(dzElevationM, 0);
+
+      const validatedJump = getValidatedJumpTrack(gpsTrackPoints);
+
+if (!validatedJump.isValidJump) {
+  return null;
+}
+
+const jumpTrackPoints = validatedJump.jumpPoints.map((point) => ({
+  ...point,
+  altitudeM: point.altitudeM - dzElevationNumber,
+}));
+
+      const scoringWindowResult = getScoringWindowResult(
+        jumpTrackPoints,
+        windowOffsetM
+      );
+
+      if (!scoringWindowResult) {
+        return null;
+      }
+
+      const competitionRunPoints = jumpTrackPoints.slice(
+        0,
+        scoringWindowResult.endIndex + 1
+      );
+
+      return (
+        <InteractiveTrackChart
+          points={competitionRunPoints}
+          windowOffsetM={windowOffsetM}
+          winds={historicalWinds}
+        />
+      );
+    })()}
 
       <section className="card">
         <h2>Coming next</h2>
