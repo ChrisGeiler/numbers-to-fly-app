@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "./supabase";
+import type { Session } from "@supabase/supabase-js";
 import {
   MapContainer,
   Marker,
@@ -3300,7 +3302,285 @@ const chartData = points.map((point, index) => {
               );
             }
 
-export default function App() {
+function App() {
+  const [supabaseSession, setSupabaseSession] = useState<Session | null>(null);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authStatus, setAuthStatus] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [saveJumpStatus, setSaveJumpStatus] = useState("");
+  const [saveJumpBusy, setSaveJumpBusy] = useState(false);
+  const [jumpLocationName, setJumpLocationName] = useState("");
+  const [jumpSuitName, setJumpSuitName] = useState("");
+  const [jumpNotes, setJumpNotes] = useState("");
+  type SavedJump = {
+  raw_csv: string | null;
+  exit_latitude: number | null;
+  exit_longitude: number | null;
+  dz_elevation_m: number | null;
+  id: string;
+  jump_date: string | null;
+  location_name: string | null;
+  suit_name: string | null;
+  notes: string | null;
+  window_time_s: number | null;
+  window_distance_m: number | null;
+  window_speed_kmh: number | null;
+};
+
+const [savedJumps, setSavedJumps] = useState<SavedJump[]>([]);
+const [logbookStatus, setLogbookStatus] = useState("");
+const [editingJumpId, setEditingJumpId] = useState<string | null>(null);
+const [editLocationName, setEditLocationName] = useState("");
+const [editSuitName, setEditSuitName] = useState("");
+const [editNotes, setEditNotes] = useState("");
+
+  useEffect(() => {
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        console.error("Supabase session error:", error.message);
+        return;
+      }
+
+      setSupabaseSession(data.session);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSupabaseSession(session);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+      useEffect(() => {
+    void loadSavedJumps();
+  }, [supabaseSession]);
+
+    async function handleSignUp() {
+    setAuthBusy(true);
+    setAuthStatus("");
+
+    const { error } = await supabase.auth.signUp({
+      email: authEmail.trim(),
+      password: authPassword,
+    });
+
+    if (error) {
+      setAuthStatus(error.message);
+    } else {
+      setAuthStatus(
+        "Account created. Check your email for the confirmation link."
+      );
+    }
+
+    setAuthBusy(false);
+  }
+
+    async function handleSignIn() {
+    setAuthBusy(true);
+    setAuthStatus("");
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: authEmail.trim(),
+      password: authPassword,
+    });
+
+    if (error) {
+      setAuthStatus(error.message);
+    } else {
+      setAuthStatus("Signed in successfully.");
+    }
+
+    setAuthBusy(false);
+  }
+
+    async function handleSignOut() {
+    setAuthBusy(true);
+    setAuthStatus("");
+
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      setAuthStatus(error.message);
+    } else {
+      setAuthStatus("Signed out.");
+      setAuthPassword("");
+    }
+
+    setAuthBusy(false);
+  }
+
+    async function handleSaveJump() {
+    if (!supabaseSession) {
+      setSaveJumpStatus("Please sign in before saving a jump.");
+      return;
+    }
+
+    if (!rawGpsCsv || gpsTrackPoints.length === 0) {
+      setSaveJumpStatus("Import a FlySight CSV before saving.");
+      return;
+    }
+
+    const validatedJump = getValidatedJumpTrack(gpsTrackPoints);
+    const exitPoint = validatedJump.exitPoint;
+
+    if (!validatedJump.isValidJump || !exitPoint) {
+      setSaveJumpStatus("A valid jump exit could not be detected.");
+      return;
+    }
+
+    const dzElevationNumber = numberFromInput(dzElevationM, 0);
+
+    const jumpTrackPointsAgl = validatedJump.jumpPoints.map((point) => ({
+      ...point,
+      altitudeM: point.altitudeM - dzElevationNumber,
+    }));
+
+    const scoringWindowResult = getScoringWindowResult(
+      jumpTrackPointsAgl,
+      windowOffsetM
+    );
+
+    if (!scoringWindowResult) {
+      setSaveJumpStatus("A complete scoring window could not be detected.");
+      return;
+    }
+
+    const windowSpeedKmh =
+      scoringWindowResult.timeSeconds > 0
+        ? metresPerSecondToKmh(
+            scoringWindowResult.distanceM /
+              scoringWindowResult.timeSeconds
+          )
+        : null;
+
+    setSaveJumpBusy(true);
+    setSaveJumpStatus("");
+
+    const { error } = await supabase.from("jumps").insert({
+      user_id: supabaseSession.user.id,
+      jump_date:
+        exitPoint.timestampMs !== null
+          ? new Date(exitPoint.timestampMs).toISOString()
+          : null,
+      location_name: jumpLocationName.trim() || null,
+      suit_name: jumpSuitName.trim() || null,
+      notes: jumpNotes.trim() || null,
+      exit_latitude: exitPoint.lat,
+      exit_longitude: exitPoint.lon,
+      dz_elevation_m: dzElevationNumber,
+      exit_altitude_m: exitPoint.altitudeM - dzElevationNumber,
+      window_time_s: scoringWindowResult.timeSeconds,
+      window_distance_m: scoringWindowResult.distanceM,
+      window_speed_kmh: windowSpeedKmh,
+      raw_csv: rawGpsCsv,
+    });
+
+    if (error) {
+      setSaveJumpStatus(`Could not save jump: ${error.message}`);
+    } else {
+      setSaveJumpStatus("Jump saved to your logbook.");
+      void loadSavedJumps();
+    }
+
+    setSaveJumpBusy(false);
+  }
+
+    async function loadSavedJumps() {
+    if (!supabaseSession) {
+      setSavedJumps([]);
+      setLogbookStatus("");
+      return;
+    }
+
+    setLogbookStatus("Loading logbook...");
+
+    const { data, error } = await supabase
+      .from("jumps")
+      .select(
+        "id, jump_date, location_name, suit_name, notes, window_time_s, window_distance_m, window_speed_kmh, exit_latitude, exit_longitude, dz_elevation_m, raw_csv"
+      ) 
+      .order("jump_date", { ascending: false });
+
+    if (error) {
+      setLogbookStatus(`Could not load logbook: ${error.message}`);
+      return;
+    }
+
+    setSavedJumps((data ?? []) as SavedJump[]);
+    setLogbookStatus(
+      data && data.length > 0
+        ? ""
+        : "No saved jumps yet."
+    );
+  }
+
+    function startEditingJump(jump: SavedJump) {
+    setEditingJumpId(jump.id);
+    setEditLocationName(jump.location_name ?? "");
+    setEditSuitName(jump.suit_name ?? "");
+    setEditNotes(jump.notes ?? "");
+    setLogbookStatus("");
+  }
+
+    function openSavedJump(jump: SavedJump) {
+    if (!jump.raw_csv) {
+      setLogbookStatus("This saved jump does not contain the original CSV.");
+      return;
+    }
+
+    const parsedPoints = parseFlySightCsv(jump.raw_csv);
+
+    setRawGpsCsv(jump.raw_csv);
+    setGpsTrackPoints(parsedPoints);
+    setGpsFileName(
+      jump.jump_date
+        ? `Saved jump ${new Date(jump.jump_date).toLocaleString()}`
+        : "Saved jump"
+    );
+
+    setJumpLocationName(jump.location_name ?? "");
+    setJumpSuitName(jump.suit_name ?? "");
+    setJumpNotes(jump.notes ?? "");
+
+    if (jump.dz_elevation_m !== null) {
+      setDzElevationM(String(jump.dz_elevation_m));
+    }
+
+    setSaveJumpStatus("");
+    setLogbookStatus("Saved jump loaded into Analyzer.");
+  }
+
+    async function saveEditedJump() {
+    if (!editingJumpId) {
+      return;
+    }
+
+    setLogbookStatus("Saving changes...");
+
+    const { error } = await supabase
+      .from("jumps")
+      .update({
+        location_name: editLocationName.trim() || null,
+        suit_name: editSuitName.trim() || null,
+        notes: editNotes.trim() || null,
+      })
+      .eq("id", editingJumpId);
+
+    if (error) {
+      setLogbookStatus(`Could not save changes: ${error.message}`);
+      return;
+    }
+
+    setEditingJumpId(null);
+    setLogbookStatus("Changes saved.");
+    void loadSavedJumps();
+  }
+
   const [activePage, setActivePage] = useState<AppPage>("landing");
   const [appMode, setAppMode] = useState<AppMode>("phone");
 useEffect(() => {
@@ -3329,6 +3609,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [dzElevationM, setDzElevationM] = useState("");
   const [windowOffsetM, setWindowOffsetM] = useState(0);
   const [gpsTrackPoints, setGpsTrackPoints] = useState<GpsTrackPoint[]>([]);
+  const [rawGpsCsv, setRawGpsCsv] = useState("");
   const [historicalWinds, setHistoricalWinds] = useState<WindLayer[]>([]);
   const [historicalWindStatus, setHistoricalWindStatus] = useState("");
   const [findSuitSetup, setFindSuitSetup] =
@@ -4122,6 +4403,8 @@ if (activePage === "lane") {
                     setGpsFileName(file.name);
 
                     const csvText = await file.text();
+                    setRawGpsCsv(csvText);
+
                     const parsedPoints = parseFlySightCsv(csvText);
 
                     setGpsTrackPoints(parsedPoints);
@@ -4174,6 +4457,115 @@ if (activePage === "lane") {
               )}
             </section>
             
+                        {supabaseSession && (
+              <section className="card">
+                <h2>My Logbook</h2>
+
+                {logbookStatus && (
+                  <p className="subtitle">{logbookStatus}</p>
+                )}
+
+                {savedJumps.map((jump) => (
+                  <div key={jump.id} className="metric-section">
+                    {editingJumpId === jump.id ? (
+                      <>
+                        <label>
+                          Location
+                          <input
+                            type="text"
+                            value={editLocationName}
+                            onChange={(event) => setEditLocationName(event.target.value)}
+                          />
+                        </label>
+
+                        <label>
+                          Suit
+                          <input
+                            type="text"
+                            value={editSuitName}
+                            onChange={(event) => setEditSuitName(event.target.value)}
+                          />
+                        </label>
+
+                        <label className="logbook-notes-field">
+                          <textarea
+                            value={editNotes}
+                            placeholder="Notes"
+                            rows={1}
+                            onChange={(event) => setEditNotes(event.target.value)}
+                          />
+                        </label>
+                        <div className="landing-actions">
+                          <button
+                            type="button"
+                            onClick={saveEditedJump}
+                          >
+                            Save changes
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setEditingJumpId(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="result-grid">
+                          <div>
+                            <span>Location: </span>
+                            <strong>{jump.location_name || "Not entered"}</strong>
+                          </div>
+
+                          <div>
+                            <span>Suit: </span>
+                            <strong>{jump.suit_name || "Not entered"}</strong>
+                          </div>
+
+                          <div>
+                            <span>Time: </span>
+                            <strong>{formatNumber(jump.window_time_s, 2)} sec</strong>
+                          </div>
+
+                          <div>
+                            <span>Distance: </span>
+                            <strong>{formatNumber(jump.window_distance_m, 0)} m</strong>
+                          </div>
+
+                          <div>
+                            <span>Speed: </span>
+                            <strong>{formatNumber(jump.window_speed_kmh, 1)} km/h</strong>
+                          </div>
+                        </div>
+
+                        {jump.notes && (
+                          <p className="subtitle">{jump.notes}</p>
+                        )}
+
+                        <div className="landing-actions">
+                          <button
+                            type="button"
+                            onClick={() => openSavedJump(jump)}
+                          >
+                            Open in Analyzer
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => startEditingJump(jump)}
+                          >
+                            Edit details
+                          </button>
+                        </div>                      </>
+                    )}
+                  </div>
+                ))}
+              </section>
+    )}
+
+
       {gpsTrackPoints.length > 0 &&
         (() => {
           const validatedJump = getValidatedJumpTrack(gpsTrackPoints);
@@ -4210,14 +4602,6 @@ if (activePage === "lane") {
               : [];
 
           const windowDistanceM = scoringWindowResult?.distanceM ?? 0;
-            windowTrackPoints.length > 1
-              ? distanceBetweenPointsM(
-                  windowTrackPoints[0].lat,
-                  windowTrackPoints[0].lon,
-                  windowTrackPoints[windowTrackPoints.length - 1].lat,
-                  windowTrackPoints[windowTrackPoints.length - 1].lon
-                )
-              : 0;
 
           const last800mPoints = getLast800mWindowPoints(jumpTrackPointsAgl);
           const last800mDistanceM = getTrackDistanceM(last800mPoints);
@@ -4246,10 +4630,6 @@ if (activePage === "lane") {
               : null;
 
           const timeInWindowSeconds = scoringWindowResult?.timeSeconds ?? 0;
-            windowTrackPoints.length > 1
-              ? (windowTrackPoints.length - 1) *
-                GPS_SAMPLE_PERIOD_SECONDS
-              : 0;
 
           const averageHorizontalSpeedKmh =
             timeInWindowSeconds > 0
@@ -4325,9 +4705,10 @@ if (activePage === "lane") {
           );
 
           return (
-            <section className="card">
-              <h2>Track Summary</h2>
+            <>
 
+    <section className="card">
+          <h2>Track Summary</h2>
             <p className="subtitle">
               Window uses {2500 + windowOffsetM} m to {1500 + windowOffsetM} m.
             </p>
@@ -4543,47 +4924,99 @@ if (activePage === "lane") {
                 </div>
                 </>
               )}            
-            </section>
+                        </section>
+          </>
           );
         })()}
         
-        {gpsTrackPoints.length > 0 &&
-    (() => {
-      const dzElevationNumber = numberFromInput(dzElevationM, 0);
+{gpsTrackPoints.length > 0 && (
+  <section className="card">
+    <label>
+      Location
+      <input
+        type="text"
+        value={jumpLocationName}
+        placeholder="Dropzone or event"
+        onChange={(event) => setJumpLocationName(event.target.value)}
+      />
+    </label>
 
-      const validatedJump = getValidatedJumpTrack(gpsTrackPoints);
+    <label>
+      Suit
+      <input
+        type="text"
+        value={jumpSuitName}
+        placeholder="Wingsuit model"
+        onChange={(event) => setJumpSuitName(event.target.value)}
+      />
+    </label>
 
-if (!validatedJump.isValidJump) {
-  return null;
-}
+    <label>
+      Notes
+      <textarea
+        value={jumpNotes}
+        placeholder="Jump notes"
+        rows={3}
+        onChange={(event) => setJumpNotes(event.target.value)}
+      />
+    </label>
+    <div className="landing-actions">
+      <button
+        type="button"
+        onClick={handleSaveJump}
+        disabled={
+          saveJumpBusy ||
+          !supabaseSession ||
+          !rawGpsCsv
+        }
+      >
+        {saveJumpBusy ? "Saving..." : "Save jump to logbook"}
+      </button>
+    </div>
 
-const jumpTrackPoints = validatedJump.jumpPoints.map((point) => ({
-  ...point,
-  altitudeM: point.altitudeM - dzElevationNumber,
-}));
+    {saveJumpStatus && (
+      <p className="subtitle">{saveJumpStatus}</p>
+    )}
+  </section>
+)}
 
-      const scoringWindowResult = getScoringWindowResult(
-        jumpTrackPoints,
-        windowOffsetM
-      );
+{gpsTrackPoints.length > 0 &&
+  (() => {
+    const dzElevationNumber = numberFromInput(dzElevationM, 0);
 
-      if (!scoringWindowResult) {
-        return null;
-      }
+    const validatedJump = getValidatedJumpTrack(gpsTrackPoints);
 
-      const competitionRunPoints = jumpTrackPoints.slice(
-        0,
-        scoringWindowResult.endIndex + 1
-      );
+    if (!validatedJump.isValidJump) {
+      return null;
+    }
 
-      return (
-        <InteractiveTrackChart
-          points={competitionRunPoints}
-          windowOffsetM={windowOffsetM}
-          winds={historicalWinds}
-        />
-      );
-    })()}
+    const jumpTrackPoints = validatedJump.jumpPoints.map((point) => ({
+      ...point,
+      altitudeM: point.altitudeM - dzElevationNumber,
+    }));
+
+    const scoringWindowResult = getScoringWindowResult(
+      jumpTrackPoints,
+      windowOffsetM
+    );
+
+    if (!scoringWindowResult) {
+      return null;
+    }
+
+    const competitionRunPoints = jumpTrackPoints.slice(
+      0,
+      scoringWindowResult.endIndex + 1
+    );
+
+    return (
+      <InteractiveTrackChart
+        points={competitionRunPoints}
+        windowOffsetM={windowOffsetM}
+        winds={historicalWinds}
+      />
+    );
+  })()}
 
       <section className="card">
         <h2>Coming next</h2>
@@ -4720,6 +5153,68 @@ if (activePage === "rules") {
 
             <span className="mode-switch-label">Desktop</span>
           </div>        
+          
+          <section className="card">
+            <h2>Logbook Account</h2>
+
+            {supabaseSession ? (
+              <>
+                <p className="subtitle">
+                  Signed in as <strong>{supabaseSession.user.email}</strong>
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  disabled={authBusy}
+                >
+                  {authBusy ? "Please wait..." : "Sign out"}
+                </button>
+              </>
+            ) : (
+              <>
+                <label>
+                  Email
+                  <input
+                    type="email"
+                    value={authEmail}
+                    autoComplete="email"
+                    onChange={(event) => setAuthEmail(event.target.value)}
+                  />
+                </label>
+
+                <label>
+                  Password
+                  <input
+                    type="password"
+                    value={authPassword}
+                    autoComplete="current-password"
+                    onChange={(event) => setAuthPassword(event.target.value)}
+                  />
+                </label>
+
+                <div className="landing-actions">
+                  <button
+                    type="button"
+                    onClick={handleSignIn}
+                    disabled={authBusy || !authEmail.trim() || !authPassword}
+                  >
+                    Sign in
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSignUp}
+                    disabled={authBusy || !authEmail.trim() || authPassword.length < 6}
+                  >
+                    Create account
+                  </button>
+                </div>
+              </>
+            )}
+
+            {authStatus && <p className="subtitle">{authStatus}</p>}
+          </section>
 
           <div className="landing-actions">
             <button type="button" onClick={() => setActivePage("find")}>
@@ -5695,3 +6190,5 @@ if (activePage === "rules") {
     </main>
   );
 }
+
+export default App;

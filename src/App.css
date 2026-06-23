@@ -908,3 +908,22 @@ button:disabled {
   height: 460px;
   overflow: hidden;
 }
+
+.logbook-notes-field {
+  display: block;
+  margin-top: 18px;
+}
+
+.logbook-notes-field textarea {
+  width: 100%;
+  min-height: 56px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  resize: vertical;
+  box-sizing: border-box;
+  font: inherit;
+}
+
+.logbook-notes-field textarea::placeholder {
+  color: #9ca3af;
+}
