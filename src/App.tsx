@@ -3316,6 +3316,7 @@ function App() {
   const [authPassword, setAuthPassword] = useState("");
   const [authStatus, setAuthStatus] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
+  const [showLogbookLogin, setShowLogbookLogin] = useState(false);
   const [saveJumpStatus, setSaveJumpStatus] = useState("");
   const [saveJumpBusy, setSaveJumpBusy] = useState(false);
   const [jumpLocationName, setJumpLocationName] = useState("");
@@ -5191,7 +5192,7 @@ if (activePage === "rules") {
 
   if (activePage === "landing") {
     return (
-      <main className="app landing-page">
+      <main className={`app landing-page app-mode-${appMode}`}>
         <header className="app-header landing-header">
         <div className="landing-brand-block">
           <img
@@ -5225,66 +5226,77 @@ if (activePage === "rules") {
             <span className="mode-switch-label">Desktop</span>
           </div>        
           
-          <section className="card">
-            <h2>Logbook Account</h2>
+          <section className="card logbook-account-compact">
+            <button
+              type="button"
+              className="logbook-account-toggle"
+              onClick={() => setShowLogbookLogin((current) => !current)}
+            >
+              <span>Logbook Account</span>
+              <span>{showLogbookLogin ? "▲" : "▼"}</span>
+            </button>
 
-            {supabaseSession ? (
-              <>
-                <p className="subtitle">
-                  Signed in as <strong>{supabaseSession.user.email}</strong>
-                </p>
+            {showLogbookLogin && (
+              <div className="logbook-account-content">
+                {supabaseSession ? (
+                  <>
+                    <p className="subtitle">
+                      Signed in as <strong>{supabaseSession.user.email}</strong>
+                    </p>
 
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  disabled={authBusy}
-                >
-                  {authBusy ? "Please wait..." : "Sign out"}
-                </button>
-              </>
-            ) : (
-              <>
-                <label>
-                  Email
-                  <input
-                    type="email"
-                    value={authEmail}
-                    autoComplete="email"
-                    onChange={(event) => setAuthEmail(event.target.value)}
-                  />
-                </label>
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      disabled={authBusy}
+                    >
+                      {authBusy ? "Please wait..." : "Sign out"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <label>
+                      Email
+                      <input
+                        type="email"
+                        value={authEmail}
+                        autoComplete="email"
+                        onChange={(event) => setAuthEmail(event.target.value)}
+                      />
+                    </label>
 
-                <label>
-                  Password
-                  <input
-                    type="password"
-                    value={authPassword}
-                    autoComplete="current-password"
-                    onChange={(event) => setAuthPassword(event.target.value)}
-                  />
-                </label>
+                    <label>
+                      Password
+                      <input
+                        type="password"
+                        value={authPassword}
+                        autoComplete="current-password"
+                        onChange={(event) => setAuthPassword(event.target.value)}
+                      />
+                    </label>
 
-                <div className="landing-actions">
-                  <button
-                    type="button"
-                    onClick={handleSignIn}
-                    disabled={authBusy || !authEmail.trim() || !authPassword}
-                  >
-                    Sign in
-                  </button>
+                    <div className="landing-actions">
+                      <button
+                        type="button"
+                        onClick={handleSignIn}
+                        disabled={authBusy || !authEmail.trim() || !authPassword}
+                      >
+                        Sign in
+                      </button>
 
-                  <button
-                    type="button"
-                    onClick={handleSignUp}
-                    disabled={authBusy || !authEmail.trim() || authPassword.length < 6}
-                  >
-                    Create account
-                  </button>
-                </div>
-              </>
+                      <button
+                        type="button"
+                        onClick={handleSignUp}
+                        disabled={authBusy || !authEmail.trim() || authPassword.length < 6}
+                      >
+                        Create account
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {authStatus && <p className="subtitle">{authStatus}</p>}
+              </div>
             )}
-
-            {authStatus && <p className="subtitle">{authStatus}</p>}
           </section>
 
           <div className="landing-actions">

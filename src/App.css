@@ -989,3 +989,155 @@ button {
     margin-top: 4px;
   }
 }
+
+@media (min-width: 900px) {
+  .app-shell {
+    max-width: none;
+    width: 100%;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+
+  .app-mode-desktop .phone-frame,
+  .app-mode-desktop .phone-shell,
+  .app-mode-desktop .phone-border {
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+    max-width: none;
+    width: 100%;
+  }
+
+  .app-mode-desktop .landing-actions {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 16px;
+    align-items: stretch;
+  }
+
+  .app-mode-desktop .landing-actions > button,
+  .app-mode-desktop .landing-actions > a {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (min-width: 900px) {
+  .app-mode-desktop {
+    width: calc(100% - 48px);
+    max-width: 1400px;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .app-mode-desktop .landing-header {
+    width: 100%;
+  }
+
+  .app-mode-desktop .landing-header > .landing-actions {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px;
+    width: 100%;
+  }
+
+  .app-mode-desktop .landing-header > .landing-actions > button {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (min-width: 900px) {
+  .app-mode-desktop {
+    width: calc(100% - 48px);
+    max-width: 1400px;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .app-mode-desktop .landing-header {
+    width: 100%;
+  }
+
+  .app-mode-desktop .landing-header > .landing-actions {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px;
+    width: 100%;
+  }
+
+  .app-mode-desktop .landing-header > .landing-actions > button {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+.logbook-account-compact {
+  padding: 0;
+  overflow: hidden;
+}
+
+.logbook-account-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+}
+
+.logbook-account-content {
+  padding: 0 16px 16px;
+}
+
+.logbook-account-compact {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+}
+
+.logbook-account-toggle {
+  border: 1px solid #155e75;
+  border-radius: 18px;
+  background: #0f172a;
+}
+
+.mode-toggle {
+  width: 74px !important;
+  min-width: 74px !important;
+  max-width: 74px !important;
+  flex: 0 0 74px;
+}
+
+.mode-toggle.mode-toggle-desktop .mode-toggle-knob {
+  transform: translateX(36px);
+}
+
+.mode-toggle {
+  background: #0f172a;
+}
+
+.mode-toggle.mode-toggle-desktop {
+  background: #22c7e8;
+}
+
+@media (min-width: 900px) {
+  .app-mode-desktop .logbook-account-content .landing-actions {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+  }
+
+  .app-mode-desktop .logbook-account-content .landing-actions button {
+    width: auto;
+    min-width: 150px;
+    padding: 10px 24px;
+    white-space: nowrap;
+  }
+}
