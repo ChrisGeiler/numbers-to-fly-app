@@ -5226,18 +5226,34 @@ if (activePage === "rules") {
             <span className="mode-switch-label">Desktop</span>
           </div>        
           
-          <section className="card logbook-account-compact">
-            <button
-              type="button"
-              className="logbook-account-toggle"
-              onClick={() => setShowLogbookLogin((current) => !current)}
-            >
-              <span>Logbook Account</span>
-              <span>{showLogbookLogin ? "▲" : "▼"}</span>
-            </button>
+          <button
+            type="button"
+            className="logbook-account-toggle"
+            onClick={() => setShowLogbookLogin(true)}
+          >
+            Logbook Account
+          </button>
 
-            {showLogbookLogin && (
-              <div className="logbook-account-content">
+          {showLogbookLogin && (
+            <div
+              className="auth-modal-backdrop"
+              onClick={() => setShowLogbookLogin(false)}
+            >
+              <section
+                className="auth-modal"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="auth-modal-close"
+                  onClick={() => setShowLogbookLogin(false)}
+                  aria-label="Close sign-in window"
+                >
+                  ×
+                </button>
+
+                <h2>Logbook Account</h2>
+
                 {supabaseSession ? (
                   <>
                     <p className="subtitle">
@@ -5274,7 +5290,7 @@ if (activePage === "rules") {
                       />
                     </label>
 
-                    <div className="landing-actions">
+                    <div className="auth-modal-actions">
                       <button
                         type="button"
                         onClick={handleSignIn}
@@ -5286,7 +5302,11 @@ if (activePage === "rules") {
                       <button
                         type="button"
                         onClick={handleSignUp}
-                        disabled={authBusy || !authEmail.trim() || authPassword.length < 6}
+                        disabled={
+                          authBusy ||
+                          !authEmail.trim() ||
+                          authPassword.length < 6
+                        }
                       >
                         Create account
                       </button>
@@ -5294,11 +5314,12 @@ if (activePage === "rules") {
                   </>
                 )}
 
-                {authStatus && <p className="subtitle">{authStatus}</p>}
-              </div>
-            )}
-          </section>
-
+                {authStatus && (
+                  <p className="subtitle">{authStatus}</p>
+                )}
+              </section>
+            </div>
+          )}
           <div className="landing-actions">
             <button type="button" onClick={() => setActivePage("find")}>
               Find your Numbers to fly

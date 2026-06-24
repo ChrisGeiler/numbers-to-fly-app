@@ -1141,3 +1141,83 @@ button {
     white-space: nowrap;
   }
 }
+
+.auth-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 6, 23, 0.78);
+  backdrop-filter: blur(4px);
+}
+
+.auth-modal {
+  position: relative;
+  width: min(100%, 460px);
+  padding: 24px;
+  border: 1px solid #155e75;
+  border-radius: 20px;
+  background: #0f172a;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+}
+
+.auth-modal h2 {
+  margin: 0 0 18px;
+}
+
+.auth-modal label {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.auth-modal input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.auth-modal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.auth-modal-actions button {
+  min-width: 140px;
+  white-space: nowrap;
+}
+
+.auth-modal-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.logbook-account-toggle {
+  width: auto;
+  min-width: 0;
+  padding: 9px 16px;
+  align-self: center;
+}
+
+@media (max-width: 899px) {
+  .logbook-account-toggle {
+    width: min(100%, 365px);
+  }
+}
+
+@media (min-width: 900px) {
+  .app-mode-desktop .logbook-account-toggle {
+    width: 200px;
+    justify-content: center;
+  }
+}
