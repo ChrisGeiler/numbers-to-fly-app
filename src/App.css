@@ -927,3 +927,65 @@ button:disabled {
 .logbook-notes-field textarea::placeholder {
   color: #9ca3af;
 }
+
+.compact-heading-card,
+.compact-wind-card {
+  margin-top: 10px;
+}
+
+.compact-heading-card .heading-slider-panel {
+  padding: 12px 14px;
+}
+
+.compact-heading-card p,
+.compact-wind-card p {
+  margin: 6px 0;
+}
+
+.compact-wind-card h2 {
+  margin: 0 0 8px;
+}
+
+.compact-wind-card label {
+  margin-bottom: 8px;
+}
+
+.compact-wind-card .window-adjust-controls {
+  margin: 8px 0;
+  gap: 8px;
+}
+
+.compact-wind-card select,
+.compact-wind-card input {
+  margin-top: 4px;
+  margin-bottom: 6px;
+}
+
+.primary-action-button {
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+button {
+  padding: 9px 14px;
+  min-height: 40px;
+  font-size: 0.92rem;
+}
+
+@media (max-width: 700px) {
+  body,
+  #root {
+    margin: 0;
+    padding: 0;
+  }
+
+  .app-shell,
+  main {
+    padding-top: 2px;
+    padding-bottom: calc(140px + env(safe-area-inset-bottom));
+  }
+
+  .card:first-child {
+    margin-top: 4px;
+  }
+}

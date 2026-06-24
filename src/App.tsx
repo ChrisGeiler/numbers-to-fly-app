@@ -1376,20 +1376,25 @@ const openMeteoPressureAltitudeM: Record<string, number> = {
   "700": 3000,
 };
 
-function getOpenMeteoHourlyIndex(data: OpenMeteoResponse): number {
+function getOpenMeteoHourlyIndex(
+  data: OpenMeteoResponse,
+  forecastHourOffset: number
+): number {
   const times = data.hourly?.time;
 
   if (!times || times.length === 0) {
     return 0;
   }
 
-  const now = new Date();
+  const targetTimeMs =
+    Date.now() + forecastHourOffset * 60 * 60 * 1000;
+
   let closestIndex = 0;
   let closestDifferenceMs = Infinity;
 
   times.forEach((time, index) => {
-    const forecastTime = new Date(time);
-    const differenceMs = Math.abs(forecastTime.getTime() - now.getTime());
+    const forecastTimeMs = new Date(time).getTime();
+    const differenceMs = Math.abs(forecastTimeMs - targetTimeMs);
 
     if (differenceMs < closestDifferenceMs) {
       closestDifferenceMs = differenceMs;
@@ -1400,14 +1405,17 @@ function getOpenMeteoHourlyIndex(data: OpenMeteoResponse): number {
   return closestIndex;
 }
 
-function mapOpenMeteoToWindLayers(data: OpenMeteoResponse): WindLayer[] {
+function mapOpenMeteoToWindLayers(
+  data: OpenMeteoResponse,
+  forecastHourOffset: number
+): WindLayer[] {
   const hourly = data.hourly;
 
   if (!hourly) {
     throw new Error("Open-Meteo response did not include hourly data.");
   }
 
-  const index = getOpenMeteoHourlyIndex(data);
+  const index = getOpenMeteoHourlyIndex(data, forecastHourOffset);
 
   const altitudeLevels = Object.values(openMeteoPressureAltitudeM);
 
@@ -3616,7 +3624,11 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     useState<SuitSetup>("crplus-no-wingtips");
 
   const [taskMode, setTaskMode] = useState<TaskMode>("distance");
-  const [windSource, setWindSource] = useState<WindSource>("mark-schulze");
+
+  const [windSource, setWindSource] =
+    useState<WindSource>("open-meteo");
+
+  const [forecastHourOffset, setForecastHourOffset] = useState(0);
 
   const [zeroWindSpeedKph, setZeroWindSpeedKph] = useState("");
   const [startGR, setStartGR] = useState("");
@@ -3640,6 +3652,27 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
 
   const [referenceLat, setReferenceLat] = useState("");
   const [referenceLon, setReferenceLon] = useState("");
+
+      useEffect(() => {
+      if (windSource !== "open-meteo") {
+        return;
+      }
+
+      const lat = optionalNumberFromInput(referenceLat);
+      const lon = optionalNumberFromInput(referenceLon);
+
+      if (lat === null || lon === null) {
+        return;
+      }
+
+      void fetchOpenMeteoWindsForLocation(lat, lon);
+    }, [
+      windSource,
+      referenceLat,
+      referenceLon,
+      forecastHourOffset,
+    ]);
+
 
   const [userMapLocation, setUserMapLocation] = useState<LatLon | null>(null);
   const [locationStatus, setLocationStatus] = useState("");
@@ -4209,7 +4242,7 @@ function downloadGeneratedConfig() {
     }
 
     const data = (await response.json()) as OpenMeteoResponse;
-    const importedWinds = mapOpenMeteoToWindLayers(data);
+    const importedWinds = mapOpenMeteoToWindLayers(data, forecastHourOffset);
 
     setWinds(importedWinds);
     setFetchStatus("Loaded Open-Meteo forecast winds.");
@@ -4311,6 +4344,44 @@ if (activePage === "lane") {
           Flight lane based on your reference point, heading, and drop distance.
         </p>
       </header>
+
+      <section className="card">
+        <div className="window-adjust-controls">
+          <button
+            type="button"
+            onClick={() =>
+              setForecastHourOffset((current) => current - 1)
+            }
+          >
+            -1 hour
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setForecastHourOffset(0)}
+          >
+            Now
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setForecastHourOffset((current) => current + 1)
+            }
+          >
+            +1 hour
+          </button>
+        </div>
+
+        <p className="subtitle">
+          Forecast time:{" "}
+          <strong>
+            {new Date(
+              Date.now() + forecastHourOffset * 60 * 60 * 1000
+            ).toLocaleString()}
+          </strong>
+        </p>
+      </section>
 
       <section className="card">
         <LaneViewMap
@@ -5970,7 +6041,7 @@ if (activePage === "rules") {
         {showMapPicker && (
           <div ref={mapPickerSectionRef}>
             <p className="subtitle">
-              Tap the map to set the reference point. Green is within 7.5° of
+              Green is within 7.5° of
               the best tailwind heading, orange is within 15°, and red is
               outside that range.
             </p>
@@ -6008,6 +6079,152 @@ if (activePage === "rules") {
         />
         </div>
 
+              <div className="compact-wind-card">
+                <h2>Wind Forecasts</h2>
+
+                <label>
+                  <select
+                    value={windSource}
+                    onChange={(e) => handleWindSourceChange(e.target.value as WindSource)}
+                  >
+                    <option value="mark-schulze">Mark Schulze</option>
+                    <option value="open-meteo">Open-Meteo</option>
+                    <option value="manual">Manual</option>
+                    <option value="windy">Windy visual check</option>
+                  </select>
+                  <div className="window-adjust-controls">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForecastHourOffset((current) => current - 1)
+                      }
+                    >
+                      -1 hour
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setForecastHourOffset(0)}
+                    >
+                      Now
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForecastHourOffset((current) => current + 1)
+                      }
+                    >
+                      +1 hour
+                    </button>
+                  </div>
+
+                  <p className="subtitle">
+                    Forecast time:{" "}
+                    <strong>
+                      {new Date(
+                        Date.now() + forecastHourOffset * 60 * 60 * 1000
+                      ).toLocaleString()}
+                    </strong>
+                  </p>
+                </label>
+
+                {windSource === "windy" && (
+                  <button type="button" onClick={openWindyVisualCheck}>
+                    Open Windy visual check
+                  </button>
+                )}
+
+                {fetchStatus && <p className="subtitle">{fetchStatus}</p>}
+
+                <button
+                  type="button"
+                  onClick={() => setShowRawWinds((current) => !current)}
+                >
+                  {showRawWinds ? "Hide raw winds" : "Show raw winds"}
+                </button>
+
+                {showRawWinds && (
+                  <>
+                    <p className="subtitle">
+                      Raw winds used by the calculator. You can edit these manually if
+                      needed.
+                    </p>
+
+                    <div className="manual-wind-controls">
+                      <label>
+                        Set all wind from, degrees
+                        <input
+                          type="number"
+                          value={globalWindFromDeg}
+                          placeholder="Example 270"
+                          onChange={(e) => setGlobalWindFromDeg(e.target.value)}
+                        />
+                      </label>
+
+                      <label>
+                        Set all wind speed, kt
+                        <input
+                          type="number"
+                          value={globalWindSpeedKt}
+                          placeholder="Example 20"
+                          onChange={(e) => setGlobalWindSpeedKt(e.target.value)}
+                        />
+                      </label>
+
+                      <button type="button" onClick={applyGlobalWindToAll}>
+                        Apply to all altitudes
+                      </button>
+                    </div>
+
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Altitude</th>
+                          <th>Wind from</th>
+                          <th>Speed</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {winds.map((wind) => (
+                          <tr key={wind.altitudeM}>
+                            <td>{wind.altitudeM} m</td>
+                            <td>
+                              <input
+                                className="table-input"
+                                type="number"
+                                value={wind.directionFromDeg}
+                                placeholder="270"
+                                onChange={(e) =>
+                                  updateWind(
+                                    wind.altitudeM,
+                                    "directionFromDeg",
+                                    e.target.value
+                                  )
+                                }
+                              />
+                            </td>
+                            <td>
+                              <input
+                                className="table-input"
+                                type="number"
+                                value={wind.speedKt}
+                                placeholder="20"
+                                onChange={(e) =>
+                                  updateWind(wind.altitudeM, "speedKt", e.target.value)
+                                }
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+              </div>
+
+
         <button
               type="button"
               className="primary-action-button"
@@ -6026,117 +6243,6 @@ if (activePage === "rules") {
         )}
 
         {referenceStatus && <p className="subtitle">{referenceStatus}</p>}
-      </section>
-
-      <section className="card">
-        <h2>Wind</h2>
-
-        <label>
-          Source
-          <select
-            value={windSource}
-            onChange={(e) => handleWindSourceChange(e.target.value as WindSource)}
-          >
-            <option value="mark-schulze">Mark Schulze</option>
-            <option value="open-meteo">Open-Meteo</option>
-            <option value="manual">Manual</option>
-            <option value="windy">Windy visual check</option>
-          </select>
-        </label>
-
-        {windSource === "windy" && (
-          <button type="button" onClick={openWindyVisualCheck}>
-            Open Windy visual check
-          </button>
-        )}
-
-        {fetchStatus && <p className="subtitle">{fetchStatus}</p>}
-
-        <button
-          type="button"
-          onClick={() => setShowRawWinds((current) => !current)}
-        >
-          {showRawWinds ? "Hide raw winds" : "Show raw winds"}
-        </button>
-
-        {showRawWinds && (
-          <>
-            <p className="subtitle">
-              Raw winds used by the calculator. You can edit these manually if
-              needed.
-            </p>
-
-            <div className="manual-wind-controls">
-              <label>
-                Set all wind from, degrees
-                <input
-                  type="number"
-                  value={globalWindFromDeg}
-                  placeholder="Example 270"
-                  onChange={(e) => setGlobalWindFromDeg(e.target.value)}
-                />
-              </label>
-
-              <label>
-                Set all wind speed, kt
-                <input
-                  type="number"
-                  value={globalWindSpeedKt}
-                  placeholder="Example 20"
-                  onChange={(e) => setGlobalWindSpeedKt(e.target.value)}
-                />
-              </label>
-
-              <button type="button" onClick={applyGlobalWindToAll}>
-                Apply to all altitudes
-              </button>
-            </div>
-
-            <table>
-              <thead>
-                <tr>
-                  <th>Altitude</th>
-                  <th>Wind from</th>
-                  <th>Speed</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {winds.map((wind) => (
-                  <tr key={wind.altitudeM}>
-                    <td>{wind.altitudeM} m</td>
-                    <td>
-                      <input
-                        className="table-input"
-                        type="number"
-                        value={wind.directionFromDeg}
-                        placeholder="270"
-                        onChange={(e) =>
-                          updateWind(
-                            wind.altitudeM,
-                            "directionFromDeg",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="table-input"
-                        type="number"
-                        value={wind.speedKt}
-                        placeholder="20"
-                        onChange={(e) =>
-                          updateWind(wind.altitudeM, "speedKt", e.target.value)
-                        }
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
       </section>
 
       <section className="card">
