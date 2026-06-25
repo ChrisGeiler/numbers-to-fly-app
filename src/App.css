@@ -1221,3 +1221,48 @@ button {
     justify-content: center;
   }
 }
+
+.logbook-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.logbook-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 980px;
+}
+
+.logbook-table th,
+.logbook-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(34, 211, 238, 0.22);
+  text-align: left;
+  vertical-align: top;
+}
+
+.logbook-table th {
+  color: #22d3ee;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.logbook-table td {
+  color: #f8fafc;
+}
+
+.logbook-notes-cell {
+  min-width: 220px;
+  max-width: 320px;
+  white-space: normal;
+}
+
+.logbook-table-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.logbook-table-actions button {
+  min-width: 72px;
+  padding: 7px 10px;
+}

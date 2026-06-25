@@ -4541,106 +4541,68 @@ if (activePage === "lane") {
                   <p className="subtitle">{logbookStatus}</p>
                 )}
 
-                {savedJumps.map((jump) => (
-                  <div key={jump.id} className="metric-section">
-                    {editingJumpId === jump.id ? (
-                      <>
-                        <label>
-                          Location
-                          <input
-                            type="text"
-                            value={editLocationName}
-                            onChange={(event) => setEditLocationName(event.target.value)}
-                          />
-                        </label>
+<div className="logbook-table-wrap">
+  <table className="logbook-table">
+    <thead>
+      <tr>
+        <th>Actions</th>
+        <th>Date / Time</th>
+        <th>Location</th>
+        <th>Suit</th>
+        <th>Time</th>
+        <th>Distance</th>
+        <th>Speed</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
 
-                        <label>
-                          Suit
-                          <input
-                            type="text"
-                            value={editSuitName}
-                            onChange={(event) => setEditSuitName(event.target.value)}
-                          />
-                        </label>
+    <tbody>
+      {savedJumps.map((jump) => (
+        <tr key={jump.id}>
+          <td>
+            <div className="logbook-table-actions">
+              <button
+                type="button"
+                onClick={() => openSavedJump(jump)}
+              >
+                Open
+              </button>
 
-                        <label className="logbook-notes-field">
-                          <textarea
-                            value={editNotes}
-                            placeholder="Notes"
-                            rows={1}
-                            onChange={(event) => setEditNotes(event.target.value)}
-                          />
-                        </label>
-                        <div className="landing-actions">
-                          <button
-                            type="button"
-                            onClick={saveEditedJump}
-                          >
-                            Save changes
-                          </button>
+              <button
+                type="button"
+                onClick={() => startEditingJump(jump)}
+              >
+                Edit
+              </button>
+            </div>
+          </td>
 
-                          <button
-                            type="button"
-                            onClick={() => setEditingJumpId(null)}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="result-grid">
-                          <div>
-                            <span>Location: </span>
-                            <strong>{jump.location_name || "Not entered"}</strong>
-                          </div>
+          <td>
+            {jump.jump_date
+              ? new Date(jump.jump_date).toLocaleString()
+              : "Not available"}
+          </td>
 
-                          <div>
-                            <span>Suit: </span>
-                            <strong>{jump.suit_name || "Not entered"}</strong>
-                          </div>
+          <td>{jump.location_name || "Not entered"}</td>
 
-                          <div>
-                            <span>Time: </span>
-                            <strong>{formatNumber(jump.window_time_s, 2)} sec</strong>
-                          </div>
+          <td>{jump.suit_name || "Not entered"}</td>
 
-                          <div>
-                            <span>Distance: </span>
-                            <strong>{formatNumber(jump.window_distance_m, 0)} m</strong>
-                          </div>
+          <td>{formatNumber(jump.window_time_s, 2)} sec</td>
 
-                          <div>
-                            <span>Speed: </span>
-                            <strong>{formatNumber(jump.window_speed_kmh, 1)} km/h</strong>
-                          </div>
-                        </div>
+          <td>{formatNumber(jump.window_distance_m, 0)} m</td>
 
-                        {jump.notes && (
-                          <p className="subtitle">{jump.notes}</p>
-                        )}
+          <td>{formatNumber(jump.window_speed_kmh, 1)} km/h</td>
 
-                        <div className="landing-actions">
-                          <button
-                            type="button"
-                            onClick={() => openSavedJump(jump)}
-                          >
-                            Open in Analyzer
-                          </button>
+          <td className="logbook-notes-cell">
+            {jump.notes || "—"}
+          </td>
 
-                          <button
-                            type="button"
-                            onClick={() => startEditingJump(jump)}
-                          >
-                            Edit details
-                          </button>
-                        </div>                      </>
-                    )}
-                  </div>
-                ))}
-              </section>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>              </section>
     )}
-
 
       {gpsTrackPoints.length > 0 &&
         (() => {
