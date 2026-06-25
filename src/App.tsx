@@ -3166,7 +3166,7 @@ const chartData = points.map((point, index) => {
 
             <Tooltip
               contentStyle={{
-                background: "#020617",
+                background: "rgba(2, 6, 23, 0.5)",
                 border: "1px solid #22d3ee",
                 borderRadius: "12px",
                 color: "#ffffff",
