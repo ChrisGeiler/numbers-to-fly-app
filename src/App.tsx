@@ -4522,6 +4522,10 @@ if (activePage === "lane") {
                   }}          />
               </label>
 
+              {historicalWindStatus && (
+                <p className="subtitle">{historicalWindStatus}</p>
+              )}
+
               {gpsFileName && (
                 <p className="subtitle">
                   Selected file: <strong>{gpsFileName}</strong>
