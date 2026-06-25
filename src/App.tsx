@@ -3166,7 +3166,7 @@ const chartData = points.map((point, index) => {
 
             <Tooltip
               contentStyle={{
-                background: "rgba(2, 6, 23, 0.5)",
+                background: "rgba(2, 6, 23, 0.2)",
                 border: "1px solid #22d3ee",
                 borderRadius: "12px",
                 color: "#ffffff",
@@ -3340,6 +3340,11 @@ function App() {
 const [savedJumps, setSavedJumps] = useState<SavedJump[]>([]);
 const [logbookStatus, setLogbookStatus] = useState("");
 const [editingJumpId, setEditingJumpId] = useState<string | null>(null);
+const [notesPopover, setNotesPopover] = useState<{
+  text: string;
+  left: number;
+  top: number;
+} | null>(null);
 const [editLocationName, setEditLocationName] = useState("");
 const [editSuitName, setEditSuitName] = useState("");
 const [editNotes, setEditNotes] = useState("");
@@ -4533,440 +4538,185 @@ if (activePage === "lane") {
               )}
             </section>
             
-                        {supabaseSession && (
-              <section className="card">
-                <h2>My Logbook</h2>
+{supabaseSession && (
+  <section className="card logbook-card">
+    <h2>My Logbook</h2>
 
-                {logbookStatus && (
-                  <p className="subtitle">{logbookStatus}</p>
-                )}
-
-<div className="logbook-table-wrap">
-  <table className="logbook-table">
-    <thead>
-      <tr>
-        <th>Actions</th>
-        <th>Date / Time</th>
-        <th>Location</th>
-        <th>Suit</th>
-        <th>Time</th>
-        <th>Distance</th>
-        <th>Speed</th>
-        <th>Notes</th>
-      </tr>
-    </thead>
-
-    <tbody>
-      {savedJumps.map((jump) => (
-        <tr key={jump.id}>
-          <td>
-            <div className="logbook-table-actions">
-              <button
-                type="button"
-                onClick={() => openSavedJump(jump)}
-              >
-                Open
-              </button>
-
-              <button
-                type="button"
-                onClick={() => startEditingJump(jump)}
-              >
-                Edit
-              </button>
-            </div>
-          </td>
-
-          <td>
-            {jump.jump_date
-              ? new Date(jump.jump_date).toLocaleString()
-              : "Not available"}
-          </td>
-
-          <td>{jump.location_name || "Not entered"}</td>
-
-          <td>{jump.suit_name || "Not entered"}</td>
-
-          <td>{formatNumber(jump.window_time_s, 2)} sec</td>
-
-          <td>{formatNumber(jump.window_distance_m, 0)} m</td>
-
-          <td>{formatNumber(jump.window_speed_kmh, 1)} km/h</td>
-
-          <td className="logbook-notes-cell">
-            {jump.notes || "—"}
-          </td>
-
-        </tr>
-      ))}
-    </tbody>
-  </table>
-</div>              </section>
+    {logbookStatus && (
+      <p className="subtitle">{logbookStatus}</p>
     )}
 
-      {gpsTrackPoints.length > 0 &&
-        (() => {
-          const validatedJump = getValidatedJumpTrack(gpsTrackPoints);
+    <div className="logbook-table-wrap">
+      <table className="logbook-table">
+        <thead>
+          <tr>
+            <th>Actions</th>
+            <th>Date / Time</th>
+            <th>Location</th>
+            <th>Suit</th>
+            <th>Time</th>
+            <th>Distance</th>
+            <th>Speed</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
 
-          if (!validatedJump.isValidJump) {
-            return null;
-          }
+        <tbody>
+          {savedJumps.map((jump) => (
+            <tr key={jump.id}>
+              <td>
+                {editingJumpId === jump.id ? (
+                  <div className="logbook-table-actions">
+                    <button
+                      type="button"
+                      onClick={saveEditedJump}
+                    >
+                      Save
+                    </button>
 
-          const jumpTrackPoints = validatedJump.jumpPoints;
-          const dzElevationNumber = numberFromInput(dzElevationM, 0);
+                    <button
+                      type="button"
+                      onClick={() => setEditingJumpId(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="logbook-table-actions">
+                    <button
+                      type="button"
+                      onClick={() => openSavedJump(jump)}
+                    >
+                      Open
+                    </button>
 
-          const jumpTrackPointsAgl = jumpTrackPoints.map((point) => ({
-            ...point,
-            altitudeM: point.altitudeM - dzElevationNumber,
-          }));
-          const exitPoint = validatedJump.exitPoint;
+                    <button
+                      type="button"
+                      onClick={() => startEditingJump(jump)}
+                    >
+                      Edit
+                    </button>
+                  </div>
+                )}
+              </td>
 
-          const windowTrackPoints = getWindowTrackPoints(
-            jumpTrackPointsAgl,
-            windowOffsetM
-          );
+              <td>
+                {jump.jump_date
+                  ? new Date(jump.jump_date).toLocaleString()
+                  : "Not available"}
+              </td>
 
-          const scoringWindowResult = getScoringWindowResult(
-            jumpTrackPointsAgl,
-            windowOffsetM
-          );
-
-          const preWindowDivePoints =
-            scoringWindowResult !== null
-              ? jumpTrackPointsAgl.slice(
-                  0,
-                  scoringWindowResult.startIndex + 1
-                )
-              : [];
-
-          const windowDistanceM = scoringWindowResult?.distanceM ?? 0;
-
-          const last800mPoints = getLast800mWindowPoints(jumpTrackPointsAgl);
-          const last800mDistanceM = getTrackDistanceM(last800mPoints);
-
-          const last800mTimeSeconds =
-            last800mPoints.length > 1
-              ? (last800mPoints.length - 1) * GPS_SAMPLE_PERIOD_SECONDS
-              : 0;
-
-          const last800mAverageHorizontalSpeedKmh =
-            last800mTimeSeconds > 0
-              ? metresPerSecondToKmh(last800mDistanceM / last800mTimeSeconds)
-              : null;
-
-          const last800mAltitudeLossM =
-            last800mPoints.length > 1
-              ? last800mPoints[0].altitudeM -
-                last800mPoints[last800mPoints.length - 1].altitudeM
-              : 0;
-
-          const last800mAverageVerticalSpeedKmh =
-            last800mTimeSeconds > 0
-              ? metresPerSecondToKmh(
-                  last800mAltitudeLossM / last800mTimeSeconds
-                )
-              : null;
-
-          const timeInWindowSeconds = scoringWindowResult?.timeSeconds ?? 0;
-
-          const averageHorizontalSpeedKmh =
-            timeInWindowSeconds > 0
-              ? metresPerSecondToKmh(
-                  windowDistanceM / timeInWindowSeconds
-                )
-              : null;
-
-                    const isSpeedRun =
-            timeInWindowSeconds > 0 && timeInWindowSeconds <= 30;
-
-          const windowEntryGlideRatio =
-            windowTrackPoints[0]?.glideRatio ?? null;
-
-          const windowExitGlideRatio =
-            windowTrackPoints[windowTrackPoints.length - 1]?.glideRatio ?? null;
-
-          const peakDiveHorizontalSpeedKmh =
-            preWindowDivePoints.length > 0
-              ? metresPerSecondToKmh(
-                  Math.max(
-                    ...preWindowDivePoints.map(
-                      (point) => point.horizontalSpeedMps
-                    )
-                  )
-                )
-              : null;
-
-          const peakDiveVerticalSpeedKmh =
-            preWindowDivePoints.length > 0
-              ? metresPerSecondToKmh(
-                  Math.max(
-                    ...preWindowDivePoints.map(
-                      (point) => point.verticalSpeedMps
-                    )
-                  )
-                )
-              : null;
-
-          const peakDiveTotalSpeedKmh =
-            preWindowDivePoints.length > 0
-              ? metresPerSecondToKmh(
-                  Math.max(
-                    ...preWindowDivePoints.map(
-                      (point) => point.totalSpeedMps
-                    )
-                  )
-                )
-              : null;
-
-          const peakDiveAngleDeg =
-            preWindowDivePoints.length > 0
-              ? Math.max(
-                  ...preWindowDivePoints.map((point) => {
-                    if (point.horizontalSpeedMps <= 0) {
-                      return 0;
+              <td>
+                {editingJumpId === jump.id ? (
+                  <input
+                    type="text"
+                    value={editLocationName}
+                    onChange={(event) =>
+                      setEditLocationName(event.target.value)
                     }
+                  />
+                ) : (
+                  jump.location_name || "Not entered"
+                )}
+              </td>
 
-                    return (
-                      Math.atan2(
-                        Math.max(point.verticalSpeedMps, 0),
-                        point.horizontalSpeedMps
-                      ) *
-                      (180 / Math.PI)
-                    );
-                  })
-                )
-              : null;
-              
-          const top100mFlare = getTop100mFlareResult(
-            jumpTrackPointsAgl,
-            timeInWindowSeconds
-          );
+              <td>
+                {editingJumpId === jump.id ? (
+                  <input
+                    type="text"
+                    value={editSuitName}
+                    onChange={(event) =>
+                      setEditSuitName(event.target.value)
+                    }
+                  />
+                ) : (
+                  jump.suit_name || "Not entered"
+                )}
+              </td>
 
-          return (
-            <>
+              <td>
+                {formatNumber(jump.window_time_s, 2)} sec
+              </td>
 
-    <section className="card">
-          <h2>Track Summary</h2>
-            <p className="subtitle">
-              Window uses {2500 + windowOffsetM} m to {1500 + windowOffsetM} m.
-            </p>
+              <td>
+                {formatNumber(jump.window_distance_m, 0)} m
+              </td>
 
-            <div className="window-adjust-controls">
-              <button
-                type="button"
-                onClick={() => setWindowOffsetM((current) => current - 10)}
-              >
-                -10 m
-              </button>
+              <td>
+                {formatNumber(jump.window_speed_kmh, 1)} km/h
+              </td>
 
-              <button
-                type="button"
-                onClick={() => setWindowOffsetM(0)}
-              >
-                Reset
-              </button>
+              <td className="logbook-notes-cell">
+                {editingJumpId === jump.id ? (
+                  <textarea
+                    value={editNotes}
+                    placeholder="Notes"
+                    rows={3}
+                    onChange={(event) =>
+                      setEditNotes(event.target.value)
+                    }
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="logbook-notes-label"
+                    onContextMenu={(event) => event.preventDefault()}
+                    onPointerEnter={(event) => {
+                      const rect =
+                        event.currentTarget.getBoundingClientRect();
 
-              <button
-                type="button"
-                onClick={() => setWindowOffsetM((current) => current + 10)}
-              >
-                +10 m
-              </button>
-            </div>
-              <div className="metric-section">
-                <h3>Main Scores</h3>
+                      setNotesPopover({
+                        text:
+                          jump.notes || "No notes entered.",
+                        left: rect.left,
+                        top: rect.top - 8,
+                      });
+                    }}
+                    onPointerLeave={() =>
+                      setNotesPopover(null)
+                    }
+                    onPointerDown={(event) => {
+                      const rect =
+                        event.currentTarget.getBoundingClientRect();
 
-                <div className="main-score-columns">
-                  <div className="main-score-column">
-                    <div>
-                      <span>Jump Time: </span>
-                      <strong>
-                        {validatedJump.exitPoint?.timestampMs
-                          ? new Date(validatedJump.exitPoint.timestampMs).toLocaleString()
-                          : "Timestamp not detected"}
-                      </strong>
-                    </div>
+                      setNotesPopover({
+                        text:
+                          jump.notes || "No notes entered.",
+                        left: rect.left,
+                        top: rect.top - 8,
+                      });
+                    }}
+                    onPointerUp={() =>
+                      setNotesPopover(null)
+                    }
+                    onPointerCancel={() =>
+                      setNotesPopover(null)
+                    }
+                  >
+                    Show note
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
 
-                    <div>
-                      <span>Exit Location: </span>
-                      <strong>
-                        {validatedJump.exitPoint
-                          ? `${validatedJump.exitPoint.lat.toFixed(5)}, ${validatedJump.exitPoint.lon.toFixed(5)}`
-                          : "Location not detected"}
-                      </strong>
-                    </div>
+    {notesPopover && (
+      <div
+        className="logbook-fixed-notes-popover"
+        style={{
+          left: notesPopover.left,
+          top: notesPopover.top,
+        }}
+      >
+        {notesPopover.text}
+      </div>
+    )}
+  </section>
+)}
 
-                    <div>
-                      <span>Exit Altitude: </span>
-                      <strong>{formatNumber(exitPoint?.altitudeM, 0)} m</strong>
-                    </div>
-
-                    <div>
-                      <span>Time: </span>
-                      <strong>{formatNumber(timeInWindowSeconds, 3)} sec</strong>
-                    </div>
-
-                    <div>
-                      <span>Distance: </span>
-                      <strong>{formatNumber(windowDistanceM, 2)} m</strong>
-                    </div>
-
-                    <div>
-                      <span>Speed: </span>
-                      <strong>{formatNumber(averageHorizontalSpeedKmh, 3)} km/h</strong>
-                    </div>
-                  </div>
-
-                  <div className="main-score-column">
-                    <div>
-                      <span>Peak Dive Angle: </span>
-                      <strong>{formatNumber(peakDiveAngleDeg, 1)}°</strong>
-                    </div>
-
-                    <div>
-                      <span>Peak Vert Speed: </span>
-                      <strong>{formatNumber(peakDiveVerticalSpeedKmh, 1)} km/h</strong>
-                    </div>
-
-                    <div>
-                      <span>Peak Total Speed: </span>
-                      <strong>{formatNumber(peakDiveTotalSpeedKmh, 1)} km/h</strong>
-                    </div>
-
-                    <div>
-                      <span>Peak Horizontal Speed: </span>
-                      <strong>{formatNumber(peakDiveHorizontalSpeedKmh, 1)} km/h</strong>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span>Avg. Horizontal Speed: </span>
-                    <strong>
-                      {formatNumber(
-                        averageHorizontalSpeedKmh,
-                        1
-                      )}{" "}
-                      km/h
-                    </strong>
-                  </div>
-                </div>
-              </div>
-
-              {isSpeedRun ? (
-                <div className="metric-section">
-                  <h3>Speed Run</h3>
-
-                  <div className="result-grid">
-                    <div>
-                      <span>Window Entry GR: </span>
-                      <strong>
-                        {formatNumber(windowEntryGlideRatio, 2)}
-                      </strong>
-                    </div>
-
-                    <div>
-                      <span>Window Exit GR: </span>
-                      <strong>
-                        {formatNumber(windowExitGlideRatio, 2)}
-                      </strong>
-                    </div>
-
-                    <div>
-                      <span>Peak Horizontal Speed: </span>
-                      <strong>
-                        {formatNumber(peakDiveHorizontalSpeedKmh, 1)} km/h
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <>
-                <div className="comparison-metric-columns">
-                  {top100mFlare && (
-                    <div className="metric-section">
-                      <h3>Top 100 m Flare</h3>
-
-                      <div className="result-grid">
-                        <div>
-                          <span>Time: </span>
-                          <strong>
-                            {formatNumber(top100mFlare.timeSeconds, 1)} sec
-                          </strong>
-                        </div>
-
-                        <div>
-                          <span>Distance: </span>
-                          <strong>
-                            {formatNumber(top100mFlare.distanceM, 0)} m
-                          </strong>
-                        </div>
-
-                        <div>
-                          <span>Flare Start: </span>
-                          <strong>
-                            {formatNumber(top100mFlare.startAltitudeM, 0)} m
-                          </strong>
-                        </div>
-
-                        <div>
-                          <span>Altitude Gain: </span>
-                          <strong>
-                            {formatNumber(top100mFlare.altitudeGainM, 0)} m
-                          </strong>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="metric-section">
-                    <h3>Last 800 m</h3>
-
-                    <div className="result-grid">
-                      <div>
-                        <span>Distance: </span>
-                        <strong>
-                          {formatNumber(last800mDistanceM, 0)} m
-                        </strong>
-                      </div>
-
-                      <div>
-                        <span>Time: </span>
-                        <strong>
-                          {formatNumber(last800mTimeSeconds, 1)} sec
-                        </strong>
-                      </div>
-
-                      <div>
-                        <span>Avg. Horizontal Speed: </span>
-                        <strong>
-                          {formatNumber(
-                            last800mAverageHorizontalSpeedKmh,
-                            1
-                          )}{" "}
-                          km/h
-                        </strong>
-                      </div>
-
-                      <div>
-                        <span>Avg. Vertical Speed: </span>
-                        <strong>
-                          {formatNumber(
-                            last800mAverageVerticalSpeedKmh,
-                            1
-                          )}{" "}
-                          km/h
-                        </strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                </>
-              )}            
-                        </section>
-          </>
-          );
-        })()}
-        
 {gpsTrackPoints.length > 0 && (
   <section className="card">
     <label>
@@ -5055,14 +4805,6 @@ if (activePage === "lane") {
       />
     );
   })()}
-
-      <section className="card">
-        <h2>Coming next</h2>
-        <p className="subtitle">
-          This page will calculate exit altitude, deployment altitude, speeds,
-          glide ratio, dive angle, scoring window results, and map track data.
-        </p>
-      </section>
 
       <BottomBackButton
         label="Back to Home"

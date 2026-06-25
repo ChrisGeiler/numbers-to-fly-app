@@ -1266,3 +1266,207 @@ button {
   min-width: 72px;
   padding: 7px 10px;
 }
+
+.logbook-notes-toggle {
+  min-width: 110px;
+  white-space: nowrap;
+}
+
+.logbook-notes-hover {
+  position: relative;
+  display: inline-block;
+}
+
+.logbook-notes-label {
+  display: inline-block;
+  padding: 7px 10px;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.logbook-notes-tooltip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  top: auto;
+  z-index: 50;
+  width: 260px;
+  max-width: 70vw;
+  padding: 10px 12px;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.95);
+  color: #f8fafc;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease,
+    visibility 0.15s ease;
+}
+
+.logbook-notes-hover:hover .logbook-notes-tooltip,
+.logbook-notes-tooltip.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.logbook-table-wrap {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.logbook-table,
+.logbook-table tbody,
+.logbook-table tr,
+.logbook-table td {
+  overflow: visible;
+}
+
+.logbook-notes-cell {
+  position: relative;
+  overflow: visible;
+}
+
+.logbook-notes-tooltip {
+  z-index: 9999;
+}
+
+.logbook-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
+
+.logbook-table {
+  min-width: 1100px;
+}
+
+.logbook-card {
+  overflow: visible;
+}
+
+.logbook-card {
+  overflow: visible;
+}
+
+.logbook-notes-label {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+
+@media (max-width: 700px) {
+  .logbook-table th,
+  .logbook-table td {
+    padding: 6px 8px;
+    font-size: 0.82rem;
+    line-height: 1.2;
+  }
+
+  .logbook-table-actions {
+    gap: 6px;
+  }
+
+  .logbook-table-actions button {
+    min-width: 58px;
+    min-height: 32px;
+    padding: 5px 8px;
+    font-size: 0.78rem;
+    border-radius: 10px;
+  }
+
+  .logbook-notes-label {
+    min-height: 32px;
+    padding: 5px 8px;
+    font-size: 0.78rem;
+    border-radius: 10px;
+  }
+}
+
+.logbook-table th,
+.logbook-table td {
+  padding: 6px 8px;
+  font-size: 0.84rem;
+  line-height: 1.2;
+}
+
+.logbook-table-actions {
+  gap: 6px;
+}
+
+.logbook-table-actions button,
+.logbook-notes-label {
+  min-width: 58px;
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  border-radius: 10px;
+}
+
+.logbook-table th,
+.logbook-table td {
+  padding: 4px 6px;
+  font-size: 0.8rem;
+  line-height: 1.1;
+}
+
+.logbook-table-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.logbook-table-actions button,
+.logbook-notes-label {
+  min-width: 0;
+  min-height: 0;
+  height: 26px;
+  padding: 2px 7px;
+  font-size: 0.72rem;
+  line-height: 1;
+  border-radius: 8px;
+}
+
+.logbook-table td {
+  vertical-align: top;
+}
+
+.logbook-table-actions {
+  align-items: flex-start;
+}
+
+.logbook-table td {
+  vertical-align: top !important;
+}
+
+.logbook-table-actions {
+  display: flex;
+  align-items: flex-start !important;
+  justify-content: flex-start;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.logbook-table-actions button {
+  margin: 0 !important;
+  align-self: flex-start;
+}
+
+.logbook-notes-cell {
+  vertical-align: top !important;
+}
+
+.logbook-notes-label {
+  margin: 0 !important;
+  align-self: flex-start;
+  vertical-align: top;
+}
