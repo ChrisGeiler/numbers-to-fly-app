@@ -2557,7 +2557,11 @@ function parseFlySightCsv(csvText: string): GpsTrackPoint[] {
     return [];
   }
 
-  const headers = lines[0].split(",").map((header) => header.trim());
+  const delimiter = lines[0].includes("\t") ? "\t" : ",";
+
+  const headers = lines[0]
+    .split(delimiter)
+    .map((header) => header.trim());
 
   const getIndex = (...names: string[]) =>
     headers.findIndex((header) =>
@@ -2585,7 +2589,7 @@ function parseFlySightCsv(csvText: string): GpsTrackPoint[] {
   }
 
   return lines.slice(1).flatMap((line) => {
-    const columns = line.split(",");
+    const columns = line.split(delimiter);
 
     const lat = parseNumber(columns[latIndex]);
     const lon = parseNumber(columns[lonIndex]);
@@ -2614,12 +2618,23 @@ function parseFlySightCsv(csvText: string): GpsTrackPoint[] {
     const glideRatio =
       verticalSpeedMps > 0 ? horizontalSpeedMps / verticalSpeedMps : null;
 
-    const time = columns[timeIndex] ?? "";
-    const parsedTimestampMs = Date.parse(time);
+    const rawTime = columns[timeIndex] ?? "";
+
+    const time = rawTime
+      .trim()
+      .replace(/^\uFEFF/, "")
+      .replace(/^["']|["']$/g, "");
+
+    const normalizedTime = time.replace(
+      /\.(\d{1,2})Z$/,
+      (_, fraction: string) => `.${fraction.padEnd(3, "0")}Z`
+    );
+
+    const parsedTimestampMs = Date.parse(normalizedTime);
 
     return [
       {
-        time,
+        time: normalizedTime,
         timestampMs: Number.isFinite(parsedTimestampMs)
           ? parsedTimestampMs
           : null,
@@ -2858,57 +2873,77 @@ function findDetectedExitIndex(points: GpsTrackPoint[]) {
     EXIT_VERTICAL_SPEED_TRIGGER_KMH
   );
 
-  const maxConfirmationSeconds = 10;
-  const maxConfirmationSamples = Math.round(
-    maxConfirmationSeconds / GPS_SAMPLE_PERIOD_SECONDS
+  const confirmationSeconds = 10;
+  const confirmationSamples = Math.round(
+    confirmationSeconds / GPS_SAMPLE_PERIOD_SECONDS
   );
 
-  for (let index = 1; index < points.length; index += 1) {
-    const previousPoint = points[index - 1];
+  const baselineSeconds = 1.5;
+  const baselineSamples = Math.round(
+    baselineSeconds / GPS_SAMPLE_PERIOD_SECONDS
+  );
+
+  const transitionSeconds = 1;
+  const transitionSamples = Math.round(
+    transitionSeconds / GPS_SAMPLE_PERIOD_SECONDS
+  );
+
+  const median = (values: number[]) => {
+    if (values.length === 0) {
+      return null;
+    }
+
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+
+    return sorted.length % 2 === 0
+      ? (sorted[middle - 1] + sorted[middle]) / 2
+      : sorted[middle];
+  };
+
+  const getDiveAngleDeg = (point: GpsTrackPoint) =>
+    Math.atan2(
+      point.verticalSpeedMps,
+      Math.max(point.horizontalSpeedMps, 0.01)
+    ) *
+    (180 / Math.PI);
+
+  for (
+    let index = baselineSamples;
+    index <
+    points.length -
+      Math.max(confirmationSamples, transitionSamples);
+    index += 1
+  ) {
     const exitCandidate = points[index];
 
-    const crossedTrigger =
-      previousPoint.verticalSpeedMps <= triggerMps &&
-      exitCandidate.verticalSpeedMps > triggerMps;
-
-    if (!crossedTrigger) {
-      continue;
-    }
-
-    const confirmationLimitIndex = Math.min(
-      points.length - 1,
-      index + maxConfirmationSamples
+    const baselinePoints = points.slice(
+      index - baselineSamples,
+      index
     );
 
-    let confirmationEndIndex = -1;
-
-    for (
-      let futureIndex = index + 1;
-      futureIndex <= confirmationLimitIndex;
-      futureIndex += 1
-    ) {
-      const altitudeLossM =
-        exitCandidate.altitudeM - points[futureIndex].altitudeM;
-
-      if (altitudeLossM >= EXIT_CONFIRMATION_ALTITUDE_LOSS_M) {
-        confirmationEndIndex = futureIndex;
-        break;
-      }
-    }
-
-    if (confirmationEndIndex === -1) {
-      continue;
-    }
+    const transitionPoints = points.slice(
+      index,
+      index + transitionSamples + 1
+    );
 
     const confirmationPoints = points.slice(
       index,
-      confirmationEndIndex + 1
+      index + confirmationSamples + 1
     );
 
-    const descendingPointRatio =
-      confirmationPoints.filter(
-        (point) => point.verticalSpeedMps > triggerMps
-      ).length / confirmationPoints.length;
+    const baselineVerticalSpeedMps =
+      baselinePoints.reduce(
+        (total, point) => total + point.verticalSpeedMps,
+        0
+      ) / baselinePoints.length;
+
+    const finalConfirmationPoint =
+      confirmationPoints[confirmationPoints.length - 1];
+
+    const altitudeLossM =
+      exitCandidate.altitudeM -
+      finalConfirmationPoint.altitudeM;
 
     const peakVerticalSpeedMps = Math.max(
       ...confirmationPoints.map(
@@ -2916,17 +2951,90 @@ function findDetectedExitIndex(points: GpsTrackPoint[]) {
       )
     );
 
-    const acceleratedEnough =
-      peakVerticalSpeedMps >= exitCandidate.verticalSpeedMps + 5;
+    const descendingPointRatio =
+      confirmationPoints.filter(
+        (point) => point.verticalSpeedMps > triggerMps
+      ).length / confirmationPoints.length;
 
-    const finalSpeedHigher =
-      points[confirmationEndIndex].verticalSpeedMps >
-      exitCandidate.verticalSpeedMps;
+    const acceleratedFromAircraft =
+      peakVerticalSpeedMps >=
+      baselineVerticalSpeedMps + 7;
+
+    const reachedJumpVerticalSpeed =
+      peakVerticalSpeedMps >= 12;
+
+    const accelerationExitDetected =
+      altitudeLossM >=
+        EXIT_CONFIRMATION_ALTITUDE_LOSS_M &&
+      descendingPointRatio >= 0.6 &&
+      acceleratedFromAircraft &&
+      reachedJumpVerticalSpeed;
+
+    const baselineGlideRatio = median(
+      baselinePoints
+        .map((point) => point.glideRatio)
+        .filter(
+          (value): value is number =>
+            value !== null &&
+            Number.isFinite(value) &&
+            value > 0
+        )
+    );
+
+    const transitionGlideRatio = median(
+      transitionPoints
+        .map((point) => point.glideRatio)
+        .filter(
+          (value): value is number =>
+            value !== null &&
+            Number.isFinite(value) &&
+            value > 0
+        )
+    );
+
+    const baselineDiveAngleDeg = median(
+      baselinePoints.map(getDiveAngleDeg)
+    );
+
+    const transitionDiveAngleDeg = median(
+      transitionPoints.map(getDiveAngleDeg)
+    );
+
+    const glideRatioDrop =
+      baselineGlideRatio !== null &&
+      transitionGlideRatio !== null
+        ? baselineGlideRatio - transitionGlideRatio
+        : 0;
+
+    const glideRatioDropRatio =
+      baselineGlideRatio !== null &&
+      transitionGlideRatio !== null &&
+      baselineGlideRatio > 0
+        ? transitionGlideRatio / baselineGlideRatio
+        : 1;
+
+    const diveAngleIncreaseDeg =
+      baselineDiveAngleDeg !== null &&
+      transitionDiveAngleDeg !== null
+        ? transitionDiveAngleDeg -
+          baselineDiveAngleDeg
+        : 0;
+
+    const aerodynamicExitDetected =
+      baselineGlideRatio !== null &&
+      transitionGlideRatio !== null &&
+      baselineGlideRatio >= 8 &&
+      glideRatioDrop >= 5 &&
+      glideRatioDropRatio <= 0.55 &&
+      diveAngleIncreaseDeg >= 5 &&
+      exitCandidate.horizontalSpeedMps >= 20 &&
+      altitudeLossM >=
+        EXIT_CONFIRMATION_ALTITUDE_LOSS_M &&
+      descendingPointRatio >= 0.5;
 
     if (
-      descendingPointRatio >= 0.8 &&
-      acceleratedEnough &&
-      finalSpeedHigher
+      accelerationExitDetected ||
+      aerodynamicExitDetected
     ) {
       return index;
     }
@@ -2935,8 +3043,123 @@ function findDetectedExitIndex(points: GpsTrackPoint[]) {
   return -1;
 }
 
+function refineExitByGlideRatio(
+  points: GpsTrackPoint[],
+  roughExitIndex: number
+) {
+  const searchSeconds = 15;
+  const searchSamples = Math.round(
+    searchSeconds / GPS_SAMPLE_PERIOD_SECONDS
+  );
+
+  const baselineSamples = Math.round(
+    1 / GPS_SAMPLE_PERIOD_SECONDS
+  );
+
+  const transitionSamples = Math.round(
+    0.8 / GPS_SAMPLE_PERIOD_SECONDS
+  );
+
+  const searchEndIndex = Math.min(
+    points.length - transitionSamples - 1,
+    roughExitIndex + searchSamples
+  );
+
+  for (
+    let index = Math.max(roughExitIndex, baselineSamples);
+    index <= searchEndIndex;
+    index += 1
+  ) {
+    const beforePoints = points.slice(
+      index - baselineSamples,
+      index
+    );
+
+    const afterPoints = points.slice(
+      index,
+      index + transitionSamples + 1
+    );
+
+    const beforeRatios = beforePoints
+      .map((point) => point.glideRatio)
+      .filter(
+        (value): value is number =>
+          value !== null &&
+          Number.isFinite(value) &&
+          value > 0
+      );
+
+    const afterRatios = afterPoints
+      .map((point) => point.glideRatio)
+      .filter(
+        (value): value is number =>
+          value !== null &&
+          Number.isFinite(value) &&
+          value > 0
+      );
+
+    if (
+      beforeRatios.length === 0 ||
+      afterRatios.length === 0
+    ) {
+      continue;
+    }
+
+    const beforeGlideRatio =
+      beforeRatios.reduce((sum, value) => sum + value, 0) /
+      beforeRatios.length;
+
+    const afterGlideRatio =
+      afterRatios.reduce((sum, value) => sum + value, 0) /
+      afterRatios.length;
+
+    const beforeDiveAngle =
+      beforePoints.reduce(
+        (sum, point) =>
+          sum +
+          Math.atan2(
+            point.verticalSpeedMps,
+            Math.max(point.horizontalSpeedMps, 0.01)
+          ) *
+            (180 / Math.PI),
+        0
+      ) / beforePoints.length;
+
+    const afterDiveAngle =
+      afterPoints.reduce(
+        (sum, point) =>
+          sum +
+          Math.atan2(
+            point.verticalSpeedMps,
+            Math.max(point.horizontalSpeedMps, 0.01)
+          ) *
+            (180 / Math.PI),
+        0
+      ) / afterPoints.length;
+
+    const glideRatioCollapsed =
+      beforeGlideRatio >= 8 &&
+      afterGlideRatio <= beforeGlideRatio * 0.5 &&
+      beforeGlideRatio - afterGlideRatio >= 5;
+
+    const diveAngleIncreased =
+      afterDiveAngle - beforeDiveAngle >= 5;
+
+    if (glideRatioCollapsed && diveAngleIncreased) {
+      return index;
+    }
+  }
+
+  return roughExitIndex;
+}
+
 function getValidatedJumpTrack(points: GpsTrackPoint[]) {
-  const exitIndex = findDetectedExitIndex(points);
+  const roughExitIndex = findDetectedExitIndex(points);
+
+const exitIndex =
+  roughExitIndex === -1
+    ? -1
+    : refineExitByGlideRatio(points, roughExitIndex);
 
   if (exitIndex === -1) {
     return {
@@ -2951,6 +3174,42 @@ function getValidatedJumpTrack(points: GpsTrackPoint[]) {
     exitPoint: points[exitIndex],
     jumpPoints: points.slice(exitIndex),
   };
+}
+
+function trimTrackAfterLanding(points: GpsTrackPoint[]) {
+  const minimumFlightSeconds = 60;
+  const minimumFlightSamples = Math.round(
+    minimumFlightSeconds / GPS_SAMPLE_PERIOD_SECONDS
+  );
+
+  const landingConfirmationSeconds = 10;
+  const landingConfirmationSamples = Math.round(
+    landingConfirmationSeconds / GPS_SAMPLE_PERIOD_SECONDS
+  );
+
+  for (
+    let index = minimumFlightSamples;
+    index < points.length - landingConfirmationSamples;
+    index += 1
+  ) {
+    const confirmationPoints = points.slice(
+      index,
+      index + landingConfirmationSamples
+    );
+
+    const slowPointRatio =
+      confirmationPoints.filter(
+        (point) =>
+          point.horizontalSpeedMps < 3 &&
+          Math.abs(point.verticalSpeedMps) < 2
+      ).length / confirmationPoints.length;
+
+    if (slowPointRatio >= 0.9) {
+      return points.slice(0, index);
+    }
+  }
+
+  return points;
 }
 
 function getTop100mFlareResult(  points: GpsTrackPoint[],
@@ -3112,7 +3371,7 @@ const chartData = points.map((point, index) => {
 
   return (
     <section className="card">
-      <h2>Interactive Jump Graph</h2>
+      <h2>Interactive Flight Graph</h2>
 
       <p className="subtitle">
         Touch or move over the graph to inspect your track.
@@ -3316,6 +3575,7 @@ function App() {
   const [authPassword, setAuthPassword] = useState("");
   const [authStatus, setAuthStatus] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
+  const [graphView, setGraphView] = useState<"comp" | "full">("comp");
   const [showLogbookLogin, setShowLogbookLogin] = useState(false);
   const [saveJumpStatus, setSaveJumpStatus] = useState("");
   const [saveJumpBusy, setSaveJumpBusy] = useState(false);
@@ -4871,7 +5131,7 @@ if (activePage === "lane") {
 
     const isSpeedRun =
       timeInWindowSeconds > 0 &&
-      timeInWindowSeconds <= 30;
+      timeInWindowSeconds <= 40;
 
     const windowEntryGlideRatio =
       windowTrackPoints[0]?.glideRatio ?? null;
@@ -5293,18 +5553,75 @@ if (activePage === "lane") {
       return null;
     }
 
-    const competitionRunPoints = jumpTrackPoints.slice(
-      0,
-      scoringWindowResult.endIndex + 1
+    const fullJumpPoints = trimTrackAfterLanding(jumpTrackPoints);
+
+    const scoringWindowEndAltitudeM =
+      jumpTrackPoints[scoringWindowResult.endIndex].altitudeM;
+
+    const compGraphEndAltitudeM =
+      scoringWindowEndAltitudeM - 50;
+
+    const compGraphEndOffset = fullJumpPoints
+      .slice(scoringWindowResult.endIndex)
+      .findIndex(
+        (point) => point.altitudeM <= compGraphEndAltitudeM
+      );
+
+    const compGraphEndIndex =
+      compGraphEndOffset === -1
+        ? scoringWindowResult.endIndex
+        : scoringWindowResult.endIndex + compGraphEndOffset;
+
+    const maximumExitAltitudeIndex = fullJumpPoints.reduce(
+      (highestIndex, point, index, array) =>
+        point.altitudeM > array[highestIndex].altitudeM
+          ? index
+          : highestIndex,
+      0
     );
 
+    const competitionRunPoints = fullJumpPoints.slice(
+      maximumExitAltitudeIndex,
+      compGraphEndIndex + 1
+    );
+
+    const displayedGraphPoints =
+      graphView === "comp"
+        ? competitionRunPoints
+        : fullJumpPoints;
+
     return (
+    <div className="graph-view-container">
+      <button
+        type="button"
+        className={`graph-view-button graph-view-button-left ${
+          graphView === "comp" ? "active" : ""
+        }`}
+        onClick={() => setGraphView("comp")}
+        aria-pressed={graphView === "comp"}
+      >
+        Comp run
+      </button>
+
+      <button
+        type="button"
+        className={`graph-view-button graph-view-button-right ${
+          graphView === "full" ? "active" : ""
+        }`}
+        onClick={() => setGraphView("full")}
+        aria-pressed={graphView === "full"}
+      >
+        Full Jump
+      </button>
+
       <InteractiveTrackChart
-        points={competitionRunPoints}
+        points={displayedGraphPoints}
         windowOffsetM={windowOffsetM}
         winds={historicalWinds}
       />
+    </div>
     );
+
   })()}
 
       <BottomBackButton
