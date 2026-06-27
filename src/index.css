@@ -51,11 +51,11 @@
 }
 
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   text-align: center;
-  border-inline: 1px solid var(--border);
+  border: none;
   min-height: 100svh;
   display: flex;
   flex-direction: column;
@@ -134,4 +134,42 @@ code,
   border-radius: 0;
   padding: 0;
   font-weight: 800;
+}
+
+.save-jump-card textarea {
+  width: 100%;
+  min-height: 56px;
+  margin-top: 8px;
+  padding: 13px 14px;
+  border: 1px solid #38bdf8;
+  border-radius: 12px;
+  background: #020617;
+  color: #ecfeff;
+  box-sizing: border-box;
+  resize: vertical;
+  font: inherit;
+}
+
+.save-jump-card textarea::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
+.save-jump-card textarea:focus {
+  outline: none;
+  border-color: #67e8f9;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.28);
+}
+
+.save-jump-card .primary-action-button,
+.save-jump-card button {
+  display: flex;
+  width: min(460px, 100%);
+  margin: 12px auto 0;
+}
+
+.save-jump-card textarea {
+  min-height: 0;
+  height: 56px;
+  resize: none;
 }

@@ -1587,3 +1587,116 @@ button {
     right: 8px;
   }
 }
+
+@media (min-width: 900px) {
+  main.app.gps-analyzer-page.gps-analyzer-desktop {
+    width: min(1600px, calc(100vw - 64px)) !important;
+    max-width: 1600px !important;
+    margin: 0 auto !important;
+    padding: 4px 20px 48px;
+    position: static;
+    left: auto;
+    transform: none;
+
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "header header"
+      "upload save"
+      "logbook summary"
+      "graph graph"
+      "back back";
+    gap: 20px;
+
+    border-left: 1px solid rgba(255, 255, 255, 0.65);
+    border-right: 1px solid rgba(255, 255, 255, 0.65);
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+
+  .gps-analyzer-desktop > * {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .gps-analyzer-desktop > .page-header {
+    grid-area: header;
+  }
+
+  .gps-analyzer-desktop > .gps-upload-card {
+    grid-area: upload;
+  }
+
+  .gps-analyzer-desktop > .save-jump-card {
+    grid-area: save;
+  }
+
+  .gps-analyzer-desktop > .logbook-card {
+    grid-area: logbook;
+  }
+
+  .gps-analyzer-desktop > .track-summary-card {
+    grid-area: summary;
+  }
+
+  .gps-analyzer-desktop > .graph-placeholder-card,
+  .gps-analyzer-desktop > .graph-view-container {
+    grid-area: graph;
+  }
+
+  .gps-analyzer-desktop > :last-child {
+    grid-area: back;
+    justify-self: center;
+    width: min(460px, 100%);
+  }
+
+  .gps-analyzer-desktop .card,
+  .gps-analyzer-desktop .graph-view-container {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin: 0;
+    box-sizing: border-box;
+  }
+
+  .gps-analyzer-desktop .logbook-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .gps-analyzer-desktop .logbook-table {
+    width: 100%;
+    min-width: 760px;
+  }
+
+  .gps-analyzer-desktop
+    .track-summary-card
+    .window-adjust-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .gps-analyzer-desktop
+    .track-summary-card
+    .window-adjust-controls
+    button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  body:has(.gps-analyzer-desktop) .phone-frame,
+  body:has(.gps-analyzer-desktop) .phone-shell,
+  body:has(.gps-analyzer-desktop) .phone-border {
+    border: none !important;
+    box-shadow: none !important;
+  }
+}
+
+@media (min-width: 900px) {
+  main.app.gps-analyzer-page.gps-analyzer-desktop {
+    border-left: 0 !important;
+    border-right: 0 !important;
+    outline: 0 !important;
+    box-shadow: none !important;
+  }
+}

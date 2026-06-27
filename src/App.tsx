@@ -4763,7 +4763,11 @@ if (activePage === "lane") {
 
         if (activePage === "gps") {
         return (
-          <main className="app">
+          <main
+            className={`app gps-analyzer-page ${
+              appMode === "desktop" ? "gps-analyzer-desktop" : ""
+            }`}
+          >
             <header className="page-header">
               <button type="button" onClick={() => setActivePage("landing")}>
                 Back to Home
@@ -4775,7 +4779,7 @@ if (activePage === "lane") {
               </p>
             </header>
 
-            <section className="card">
+            <section className="card gps-upload-card">
               <h2>Import FlySight CSV</h2>
 
               <label>
@@ -5051,6 +5055,82 @@ if (activePage === "lane") {
   </section>
 )}
 
+{gpsTrackPoints.length === 0 && (
+  <section className="card track-summary-card">
+    <h2>Track Summary</h2>
+
+    <p className="subtitle">
+      Window uses {2500 + windowOffsetM} m to{" "}
+      {1500 + windowOffsetM} m.
+    </p>
+
+    <div className="window-adjust-controls">
+      <button
+        type="button"
+        onClick={() =>
+          setWindowOffsetM((current) => current - 10)
+        }
+      >
+        -10 m
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setWindowOffsetM(0)}
+      >
+        Reset
+      </button>
+
+      <button
+        type="button"
+        onClick={() =>
+          setWindowOffsetM((current) => current + 10)
+        }
+      >
+        +10 m
+      </button>
+    </div>
+
+    <div className="metric-section">
+      <h3>Main Scores</h3>
+
+      <div className="main-score-columns">
+        <div className="main-score-column">
+          <div><span>Jump Time: </span><strong>—</strong></div>
+          <div><span>Exit Location: </span><strong>—</strong></div>
+          <div><span>Exit Altitude: </span><strong>—</strong></div>
+          <div><span>Time: </span><strong>—</strong></div>
+          <div><span>Distance: </span><strong>—</strong></div>
+          <div><span>Speed: </span><strong>—</strong></div>
+        </div>
+
+        <div className="main-score-column">
+          <div><span>Peak Dive Angle: </span><strong>—</strong></div>
+          <div><span>Peak Vertical Speed: </span><strong>—</strong></div>
+          <div><span>Peak Total Speed: </span><strong>—</strong></div>
+          <div><span>Peak Horizontal Speed: </span><strong>—</strong></div>
+          <div><span>Entry Glide Ratio: </span><strong>—</strong></div>
+          <div><span>Exit Glide Ratio: </span><strong>—</strong></div>
+        </div>
+      </div>
+    </div>
+  </section>
+)}
+
+{gpsTrackPoints.length === 0 && (
+  <section className="card graph-placeholder-card">
+    <h2>Interactive Jump Graph</h2>
+
+    <p className="subtitle">
+      Import a FlySight CSV to display the jump graph.
+    </p>
+
+    <div className="graph-placeholder">
+      No track loaded
+    </div>
+  </section>
+)}
+
 {gpsTrackPoints.length > 0 &&
   (() => {
     const validatedJump = getValidatedJumpTrack(gpsTrackPoints);
@@ -5198,7 +5278,7 @@ if (activePage === "lane") {
     );
 
     return (
-      <section className="card">
+      <section className="card track-summary-card">
         <h2>Track Summary</h2>
 
         <p className="subtitle">
@@ -5478,8 +5558,7 @@ if (activePage === "lane") {
   })()}
 
 
-{gpsTrackPoints.length > 0 && (
-  <section className="card">
+<section className="card save-jump-card">
     <label>
       Location
       <input
@@ -5527,7 +5606,6 @@ if (activePage === "lane") {
       <p className="subtitle">{saveJumpStatus}</p>
     )}
   </section>
-)}
 
 {gpsTrackPoints.length > 0 &&
   (() => {
