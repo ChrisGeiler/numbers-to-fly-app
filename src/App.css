@@ -1594,8 +1594,11 @@ button {
   padding-right: 4px;
 }
 
-.graph-view-container {
+.graph-view-container,
+.competition-lane-card {
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .graph-view-button {
@@ -1641,6 +1644,14 @@ button {
     padding: 3px 8px;
     font-size: 0.72rem;
   }
+
+  .competition-reference-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .competition-lane-map {
+    height: 520px;
+  }
 }
 
 @media (min-width: 900px) {
@@ -1660,6 +1671,7 @@ button {
       "upload save"
       "logbook summary"
       "graph graph"
+      "lane lane"
       "back back";
     gap: 20px;
 
@@ -1698,6 +1710,10 @@ button {
   .gps-analyzer-desktop > .graph-placeholder-card,
   .gps-analyzer-desktop > .graph-view-container {
     grid-area: graph;
+  }
+
+  .gps-analyzer-desktop > .competition-lane-card {
+    grid-area: lane;
   }
 
   .gps-analyzer-desktop > :last-child {

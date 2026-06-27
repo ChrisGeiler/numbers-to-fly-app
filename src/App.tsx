@@ -1011,6 +1011,24 @@ function nmToMetres(distanceNm: number): number {
   return distanceNm * 1852;
 }
 
+function bearingBetweenPointsDeg(
+  startLatDeg: number,
+  startLonDeg: number,
+  endLatDeg: number,
+  endLonDeg: number
+) {
+  const startLatRad = degToRad(startLatDeg);
+  const endLatRad = degToRad(endLatDeg);
+  const deltaLonRad = degToRad(endLonDeg - startLonDeg);
+
+  const y = Math.sin(deltaLonRad) * Math.cos(endLatRad);
+  const x =
+    Math.cos(startLatRad) * Math.sin(endLatRad) -
+    Math.sin(startLatRad) * Math.cos(endLatRad) * Math.cos(deltaLonRad);
+
+  return normalizeDeg(radToDeg(Math.atan2(y, x)));
+}
+
 function destinationPoint(
   startLatDeg: number,
   startLonDeg: number,
@@ -1693,18 +1711,16 @@ function MapClickPicker({
   referenceLon,
   userMapLocation,
   dropPoint,
-  flightLineColor,
   runHeadingDeg,
-  showTemporaryFlightLine,
+  trackPoints = [],
   onPick,
 }: {
   referenceLat: string;
   referenceLon: string;
   userMapLocation: LatLon | null;
   dropPoint: LatLon | null;
-  flightLineColor: string;
   runHeadingDeg: string;
-  showTemporaryFlightLine: boolean;
+  trackPoints?: GpsTrackPoint[];
   onPick: (lat: number, lon: number) => void;
 }) {
   const lat = optionalNumberFromInput(referenceLat);
@@ -1731,13 +1747,11 @@ function MapClickPicker({
     return null;
   }
 
-  const linePositions: [number, number][] =
-    lat !== null && lon !== null && dropPoint !== null
-      ? [
-          [dropPoint.lat, dropPoint.lon],
-          [lat, lon],
-        ]
-      : [];
+
+  const trackPositions: [number, number][] = trackPoints.map((point) => [
+    point.lat,
+    point.lon,
+  ]);
 
   const headingNumber = optionalNumberFromInput(runHeadingDeg);
 
@@ -1893,16 +1907,17 @@ function MapClickPicker({
           <Marker position={[lat, lon]} icon={referencePointIcon} />
         )}
 
-        {showTemporaryFlightLine && linePositions.length === 2 && (
+        {trackPositions.length > 1 && (
           <Polyline
-            positions={linePositions}
+            positions={trackPositions}
             pathOptions={{
-              color: flightLineColor,
-              weight: 5,
+              color: "#22d3ee",
+              weight: 4,
               opacity: 0.95,
             }}
           />
         )}
+
       </MapContainer>
     </div>
   );
@@ -2237,6 +2252,234 @@ function LaneViewMap({
 ]);
 
   return <div ref={mapContainerRef} className="lane-view-map" />;
+}
+
+
+function CompetitionLaneAnalysisMap({
+  pointA,
+  pointB,
+  trackPoints,
+}: {
+  pointA: LatLon;
+  pointB: LatLon;
+  trackPoints: GpsTrackPoint[];
+}) {
+  const mapContainerRef = useMemo(
+    () => ({ current: null as HTMLDivElement | null }),
+    []
+  );
+
+  useEffect(() => {
+    if (mapContainerRef.current === null) {
+      return;
+    }
+
+    const headingDeg = bearingBetweenPointsDeg(
+      pointA.lat,
+      pointA.lon,
+      pointB.lat,
+      pointB.lon
+    );
+
+    function toMapLibrePosition(point: LatLon) {
+      return [point.lon, point.lat];
+    }
+
+    function toMapLibrePolygon(points: [number, number][]) {
+      return points.map(([pointLat, pointLon]) => [pointLon, pointLat]);
+    }
+
+    function makePolygonFeature(points: [number, number][]) {
+      return {
+        type: "Feature",
+        properties: {},
+        geometry: {
+          type: "Polygon",
+          coordinates: [[...toMapLibrePolygon(points), toMapLibrePolygon(points)[0]]],
+        },
+      };
+    }
+
+    function makeLineFeature(points: LatLon[]) {
+      return {
+        type: "Feature",
+        properties: {},
+        geometry: {
+          type: "LineString",
+          coordinates: points.map(toMapLibrePosition),
+        },
+      };
+    }
+
+    const greenLanePolygon = buildLanePolygon(pointA, pointB, headingDeg, 300);
+    const leftYellowLanePolygon = buildLaneStripPolygon(
+      pointA,
+      pointB,
+      headingDeg,
+      300,
+      450,
+      "left"
+    );
+    const rightYellowLanePolygon = buildLaneStripPolygon(
+      pointA,
+      pointB,
+      headingDeg,
+      300,
+      450,
+      "right"
+    );
+    const leftRedLanePolygon = buildLaneStripPolygon(
+      pointA,
+      pointB,
+      headingDeg,
+      450,
+      600,
+      "left"
+    );
+    const rightRedLanePolygon = buildLaneStripPolygon(
+      pointA,
+      pointB,
+      headingDeg,
+      450,
+      600,
+      "right"
+    );
+
+    const trackLine = trackPoints.map((point) => ({
+      lat: point.lat,
+      lon: point.lon,
+    }));
+
+    const map = new maplibregl.Map({
+      container: mapContainerRef.current,
+      style: {
+        version: 8,
+        sources: {
+          satellite: {
+            type: "raster",
+            tiles: [
+              "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            ],
+            tileSize: 256,
+            attribution:
+              "Tiles © Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+          },
+        },
+        layers: [
+          {
+            id: "satellite",
+            type: "raster",
+            source: "satellite",
+          },
+        ],
+      },
+      center: [pointA.lon, pointA.lat],
+      zoom: 12,
+      bearing: headingDeg,
+      pitch: 0,
+    });
+
+    map.on("load", () => {
+      const bounds = new maplibregl.LngLatBounds();
+
+      [
+        ...greenLanePolygon,
+        ...leftYellowLanePolygon,
+        ...rightYellowLanePolygon,
+        ...leftRedLanePolygon,
+        ...rightRedLanePolygon,
+      ].forEach(([pointLat, pointLon]) => bounds.extend([pointLon, pointLat]));
+
+      trackLine.forEach((point) => bounds.extend([point.lon, point.lat]));
+
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds, {
+          padding: 48,
+          duration: 0,
+        });
+        map.setBearing(headingDeg);
+        map.setPitch(0);
+      }
+
+      map.addSource("competition-lane-green", {
+        type: "geojson",
+        data: makePolygonFeature(greenLanePolygon) as GeoJSON.Feature,
+      });
+      map.addSource("competition-lane-yellow-left", {
+        type: "geojson",
+        data: makePolygonFeature(leftYellowLanePolygon) as GeoJSON.Feature,
+      });
+      map.addSource("competition-lane-yellow-right", {
+        type: "geojson",
+        data: makePolygonFeature(rightYellowLanePolygon) as GeoJSON.Feature,
+      });
+      map.addSource("competition-lane-red-left", {
+        type: "geojson",
+        data: makePolygonFeature(leftRedLanePolygon) as GeoJSON.Feature,
+      });
+      map.addSource("competition-lane-red-right", {
+        type: "geojson",
+        data: makePolygonFeature(rightRedLanePolygon) as GeoJSON.Feature,
+      });
+      map.addSource("competition-track", {
+        type: "geojson",
+        data: makeLineFeature(trackLine) as GeoJSON.Feature,
+      });
+
+      [
+        ["competition-lane-red-left-fill", "competition-lane-red-left", "#ef4444", 0.18],
+        ["competition-lane-red-right-fill", "competition-lane-red-right", "#ef4444", 0.18],
+        ["competition-lane-yellow-left-fill", "competition-lane-yellow-left", "#facc15", 0.22],
+        ["competition-lane-yellow-right-fill", "competition-lane-yellow-right", "#facc15", 0.22],
+      ].forEach(([id, source, color, opacity]) => {
+        map.addLayer({
+          id: String(id),
+          type: "fill",
+          source: String(source),
+          paint: {
+            "fill-color": String(color),
+            "fill-opacity": Number(opacity),
+          },
+        });
+      });
+
+      map.addLayer({
+        id: "competition-lane-green-line",
+        type: "line",
+        source: "competition-lane-green",
+        paint: {
+          "line-color": "#22c55e",
+          "line-width": 3,
+          "line-opacity": 0.95,
+        },
+      });
+
+
+      map.addLayer({
+        id: "competition-track-line",
+        type: "line",
+        source: "competition-track",
+        paint: {
+          "line-color": "#22d3ee",
+          "line-width": 4,
+          "line-opacity": 0.96,
+        },
+      });
+
+      new maplibregl.Marker({ color: "#facc15" })
+        .setLngLat([pointA.lon, pointA.lat])
+        .addTo(map);
+      new maplibregl.Marker({ color: "#22d3ee" })
+        .setLngLat([pointB.lon, pointB.lat])
+        .addTo(map);
+    });
+
+    return () => {
+      map.remove();
+    };
+  }, [pointA, pointB, trackPoints, mapContainerRef]);
+
+  return <div ref={mapContainerRef} className="competition-lane-map" />;
 }
 
 function TargetGraph({
@@ -2802,6 +3045,14 @@ function getScoringWindowResult(
     startFraction,
     endFraction,
   };
+}
+
+function getValidationStartPoint(points: GpsTrackPoint[]) {
+  const validationOffsetSamples = Math.round(
+    9 / GPS_SAMPLE_PERIOD_SECONDS
+  );
+
+  return points[Math.min(validationOffsetSamples, points.length - 1)] ?? null;
 }
 
 function getWindowTrackPoints(
@@ -3566,7 +3817,8 @@ const chartData = points.map((point, index) => {
 
     event.preventDefault();
     const centerTime = getTimeFromChartPosition(event.clientX, event.currentTarget);
-    const scale = Math.exp(event.deltaY * 0.002);
+    const wheelStep = Math.max(-1, Math.min(1, event.deltaY / 100));
+    const scale = 1 + wheelStep * 0.035;
     zoomAround(centerTime, scale);
   }
 
@@ -4387,7 +4639,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [savedTimeSpeedKph, setSavedTimeSpeedKph] = useState("");
 
   const [runHeadingDeg, setRunHeadingDeg] = useState("");
-  const [showTemporaryFlightLine, setShowTemporaryFlightLine] = useState(false);
+  const [, setShowTemporaryFlightLine] = useState(false);
   const [dropDistanceNm, setDropDistanceNm] = useState("");
   const dropDistanceInputRef = useRef<HTMLInputElement | null>(null);
   const referenceButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -4402,6 +4654,10 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
 
   const [referenceLat, setReferenceLat] = useState("");
   const [referenceLon, setReferenceLon] = useState("");
+  const [competitionReferenceLat, setCompetitionReferenceLat] = useState("");
+  const [competitionReferenceLon, setCompetitionReferenceLon] = useState("");
+  const [showCompetitionReferencePicker, setShowCompetitionReferencePicker] =
+    useState(false);
 
       useEffect(() => {
       if (windSource !== "open-meteo") {
@@ -6086,16 +6342,141 @@ if (activePage === "lane") {
         ? competitionRunPoints
         : fullJumpPoints;
 
+    const pointA = getValidationStartPoint(jumpTrackPoints);
+    const pointBLat = optionalNumberFromInput(competitionReferenceLat);
+    const pointBLon = optionalNumberFromInput(competitionReferenceLon);
+    const pointB =
+      pointBLat !== null && pointBLon !== null
+        ? { lat: pointBLat, lon: pointBLon }
+        : null;
+    const laneHeadingDeg =
+      pointA !== null && pointB !== null
+        ? String(
+            bearingBetweenPointsDeg(
+              pointA.lat,
+              pointA.lon,
+              pointB.lat,
+              pointB.lon
+            )
+          )
+        : "";
+
     return (
-    <div className="graph-view-container">
-      <InteractiveTrackChart
-        points={displayedGraphPoints}
-        windowOffsetM={windowOffsetM}
-        winds={historicalWinds}
-        graphView={graphView}
-        onGraphViewChange={setGraphView}
-      />
-    </div>
+    <>
+      <div className="graph-view-container">
+        <InteractiveTrackChart
+          points={displayedGraphPoints}
+          windowOffsetM={windowOffsetM}
+          winds={historicalWinds}
+          graphView={graphView}
+          onGraphViewChange={setGraphView}
+        />
+      </div>
+
+      <section className="card competition-lane-card">
+        <h2>Competition Lane</h2>
+
+        <p className="subtitle">
+          Point A is estimated from the imported track at 9 seconds after detected exit.
+          Enter or choose the competition reference point to draw the flown lane.
+        </p>
+
+        <div className="competition-lane-point-readout">
+          <span>Point A</span>
+          <strong>
+            {pointA
+              ? pointA.lat.toFixed(6) + ", " + pointA.lon.toFixed(6)
+              : "Not detected"}
+          </strong>
+        </div>
+
+        <div className="competition-reference-grid">
+          <label>
+            Reference Point latitude
+            <input
+              type="number"
+              step="0.000001"
+              value={competitionReferenceLat}
+              placeholder="Example -33.123456"
+              onChange={(event) => setCompetitionReferenceLat(event.target.value)}
+            />
+          </label>
+
+          <label>
+            Reference Point longitude
+            <input
+              type="number"
+              step="0.000001"
+              value={competitionReferenceLon}
+              placeholder="Example 151.123456"
+              onChange={(event) => setCompetitionReferenceLon(event.target.value)}
+            />
+          </label>
+        </div>
+
+        <div className="window-adjust-controls">
+          <button
+            type="button"
+            onClick={() => {
+              const openingMap = !showCompetitionReferencePicker;
+              setShowCompetitionReferencePicker(openingMap);
+
+              if (openingMap && userMapLocation === null) {
+                requestUserMapLocation();
+              }
+            }}
+          >
+            {showCompetitionReferencePicker ? "Hide map" : "Choose Reference Point on map"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setCompetitionReferenceLat("");
+              setCompetitionReferenceLon("");
+            }}
+          >
+            Clear Reference Point
+          </button>
+        </div>
+
+        {showCompetitionReferencePicker && pointA && (
+          <MapClickPicker
+            referenceLat={competitionReferenceLat}
+            referenceLon={competitionReferenceLon}
+            userMapLocation={userMapLocation ?? pointA}
+            dropPoint={pointA}
+            runHeadingDeg={laneHeadingDeg}
+            trackPoints={fullJumpPoints}
+            onPick={(lat, lon) => {
+              setCompetitionReferenceLat(lat.toFixed(6));
+              setCompetitionReferenceLon(lon.toFixed(6));
+            }}
+          />
+        )}
+
+        {pointA && pointB ? (
+          <>
+            <div className="competition-lane-point-readout">
+              <span>Reference Point</span>
+              <strong>
+                {pointB.lat.toFixed(6) + ", " + pointB.lon.toFixed(6)}
+              </strong>
+            </div>
+
+            <CompetitionLaneAnalysisMap
+              pointA={pointA}
+              pointB={pointB}
+              trackPoints={fullJumpPoints}
+            />
+          </>
+        ) : (
+          <p className="subtitle">
+            Add a reference point to populate the 600 m lane and overlay the flown track.
+          </p>
+        )}
+      </section>
+    </>
     );
 
   })()}
@@ -7065,10 +7446,8 @@ if (activePage === "rules") {
               referenceLon={referenceLon}
               userMapLocation={userMapLocation}
               dropPoint={calculatedDropPoint}
-              flightLineColor={windAdvantage.color}
               onPick={pickReferenceFromMap}
               runHeadingDeg={runHeadingDeg}
-              showTemporaryFlightLine={showTemporaryFlightLine}
             />
           </div>
 
