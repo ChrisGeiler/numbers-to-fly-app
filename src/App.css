@@ -1470,3 +1470,73 @@ button {
   align-self: flex-start;
   vertical-align: top;
 }
+
+.delete-jump-button {
+  background: #b91c1c;
+  border-color: #ef4444;
+  color: white;
+}
+
+.delete-jump-button:hover {
+  background: #dc2626;
+}
+
+.logbook-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: auto;
+}
+
+.logbook-table th,
+.logbook-table td {
+  padding-left: 4px;
+  padding-right: 4px;
+  white-space: nowrap;
+}
+
+.logbook-table th:nth-child(2),
+.logbook-table td:nth-child(2) {
+  width: 150px;
+}
+
+.logbook-table th:nth-child(5),
+.logbook-table td:nth-child(5) {
+  width: 72px;
+}
+
+.logbook-table th:nth-child(6),
+.logbook-table td:nth-child(6) {
+  width: 72px;
+}
+
+.logbook-table th:nth-child(7),
+.logbook-table td:nth-child(7) {
+  width: 78px;
+}
+
+.logbook-table-wrap {
+  overflow-x: auto;
+}
+
+.logbook-table-actions {
+  gap: 3px;
+}
+
+.logbook-table-actions button,
+.logbook-notes-label {
+  min-width: 0;
+  width: auto;
+  padding-left: 5px;
+  padding-right: 5px;
+  font-size: 0.68rem;
+}
+
+.logbook-table-actions button:first-child {
+  padding-left: 3px;
+  padding-right: 3px;
+}
+
+.logbook-notes-label {
+  padding-left: 4px;
+  padding-right: 4px;
+}

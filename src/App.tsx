@@ -3541,33 +3541,73 @@ const [editNotes, setEditNotes] = useState("");
     setLogbookStatus("");
   }
 
-    function openSavedJump(jump: SavedJump) {
-    if (!jump.raw_csv) {
-      setLogbookStatus("This saved jump does not contain the original CSV.");
-      return;
+    async function openSavedJump(jump: SavedJump) {
+      if (!jump.raw_csv) {
+        setLogbookStatus(
+          "This saved jump does not contain the original CSV."
+        );
+        return;
+      }
+
+      const parsedPoints = parseFlySightCsv(jump.raw_csv);
+      const dzElevationNumber = jump.dz_elevation_m ?? 0;
+
+      setRawGpsCsv(jump.raw_csv);
+      setGpsTrackPoints(parsedPoints);
+      setHistoricalWinds([]);
+      setHistoricalWindStatus("Loading historical winds...");
+
+      setGpsFileName(
+        jump.jump_date
+          ? `Saved jump ${new Date(jump.jump_date).toLocaleString()}`
+          : "Saved jump"
+      );
+
+      setJumpLocationName(jump.location_name ?? "");
+      setJumpSuitName(jump.suit_name ?? "");
+      setJumpNotes(jump.notes ?? "");
+      setDzElevationM(String(dzElevationNumber));
+
+      setSaveJumpStatus("");
+      setLogbookStatus("Saved jump loaded into Analyzer.");
+
+      const validatedJump = getValidatedJumpTrack(parsedPoints);
+      const exitPoint = validatedJump.exitPoint;
+
+      if (
+        !validatedJump.isValidJump ||
+        !exitPoint ||
+        exitPoint.timestampMs === null
+      ) {
+        setHistoricalWindStatus(
+          "Historical winds could not be loaded because no valid timestamped exit was detected."
+        );
+        return;
+      }
+
+      try {
+        const importedWinds = await fetchHistoricalWindProfile({
+          latitude: exitPoint.lat,
+          longitude: exitPoint.lon,
+          timestampMs: exitPoint.timestampMs,
+          dzElevationM: dzElevationNumber,
+        });
+
+        setHistoricalWinds(importedWinds);
+        setHistoricalWindStatus(
+          `Loaded ${importedWinds.length} historical wind levels.`
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unknown historical wind error.";
+
+        setHistoricalWindStatus(
+          `Could not load historical winds: ${message}`
+        );
+      }
     }
-
-    const parsedPoints = parseFlySightCsv(jump.raw_csv);
-
-    setRawGpsCsv(jump.raw_csv);
-    setGpsTrackPoints(parsedPoints);
-    setGpsFileName(
-      jump.jump_date
-        ? `Saved jump ${new Date(jump.jump_date).toLocaleString()}`
-        : "Saved jump"
-    );
-
-    setJumpLocationName(jump.location_name ?? "");
-    setJumpSuitName(jump.suit_name ?? "");
-    setJumpNotes(jump.notes ?? "");
-
-    if (jump.dz_elevation_m !== null) {
-      setDzElevationM(String(jump.dz_elevation_m));
-    }
-
-    setSaveJumpStatus("");
-    setLogbookStatus("Saved jump loaded into Analyzer.");
-  }
 
     async function saveEditedJump() {
     if (!editingJumpId) {
@@ -3592,6 +3632,32 @@ const [editNotes, setEditNotes] = useState("");
 
     setEditingJumpId(null);
     setLogbookStatus("Changes saved.");
+    void loadSavedJumps();
+  }
+
+  async function deleteSavedJump(jumpId: string) {
+    const confirmed = window.confirm(
+      "Delete this saved jump? This cannot be undone."
+    );
+
+  if (!confirmed) {
+    return;
+  }
+
+    setLogbookStatus("Deleting jump...");
+
+    const { error } = await supabase
+      .from("jumps")
+      .delete()
+      .eq("id", jumpId);
+
+    if (error) {
+      setLogbookStatus(`Could not delete jump: ${error.message}`);
+      return;
+    }
+
+    setEditingJumpId(null);
+    setLogbookStatus("Jump deleted.");
     void loadSavedJumps();
   }
 
@@ -4580,6 +4646,14 @@ if (activePage === "lane") {
                     >
                       Cancel
                     </button>
+
+                    <button
+                      type="button"
+                      className="delete-jump-button"
+                      onClick={() => deleteSavedJump(jump.id)}
+                    >
+                      Delete
+                    </button>
                   </div>
                 ) : (
                   <div className="logbook-table-actions">
@@ -4693,7 +4767,7 @@ if (activePage === "lane") {
                       setNotesPopover(null)
                     }
                   >
-                    Show note
+                    Show notes
                   </button>
                 )}
               </td>
@@ -4716,6 +4790,433 @@ if (activePage === "lane") {
     )}
   </section>
 )}
+
+{gpsTrackPoints.length > 0 &&
+  (() => {
+    const validatedJump = getValidatedJumpTrack(gpsTrackPoints);
+
+    if (!validatedJump.isValidJump) {
+      return null;
+    }
+
+    const dzElevationNumber = numberFromInput(dzElevationM, 0);
+
+    const jumpTrackPointsAgl = validatedJump.jumpPoints.map((point) => ({
+      ...point,
+      altitudeM: point.altitudeM - dzElevationNumber,
+    }));
+
+    const exitPoint = validatedJump.exitPoint;
+
+    const windowTrackPoints = getWindowTrackPoints(
+      jumpTrackPointsAgl,
+      windowOffsetM
+    );
+
+    const scoringWindowResult = getScoringWindowResult(
+      jumpTrackPointsAgl,
+      windowOffsetM
+    );
+
+    if (!scoringWindowResult) {
+      return null;
+    }
+
+    const preWindowDivePoints = jumpTrackPointsAgl.slice(
+      0,
+      scoringWindowResult.startIndex + 1
+    );
+
+    const windowDistanceM = scoringWindowResult.distanceM;
+    const timeInWindowSeconds = scoringWindowResult.timeSeconds;
+
+    const averageHorizontalSpeedKmh =
+      timeInWindowSeconds > 0
+        ? metresPerSecondToKmh(
+            windowDistanceM / timeInWindowSeconds
+          )
+        : null;
+
+    const last800mPoints =
+      getLast800mWindowPoints(jumpTrackPointsAgl);
+
+    const last800mDistanceM =
+      getTrackDistanceM(last800mPoints);
+
+    const last800mTimeSeconds =
+      last800mPoints.length > 1
+        ? (last800mPoints.length - 1) *
+          GPS_SAMPLE_PERIOD_SECONDS
+        : 0;
+
+    const last800mAverageHorizontalSpeedKmh =
+      last800mTimeSeconds > 0
+        ? metresPerSecondToKmh(
+            last800mDistanceM / last800mTimeSeconds
+          )
+        : null;
+
+    const last800mAltitudeLossM =
+      last800mPoints.length > 1
+        ? last800mPoints[0].altitudeM -
+          last800mPoints[last800mPoints.length - 1].altitudeM
+        : 0;
+
+    const last800mAverageVerticalSpeedKmh =
+      last800mTimeSeconds > 0
+        ? metresPerSecondToKmh(
+            last800mAltitudeLossM / last800mTimeSeconds
+          )
+        : null;
+
+    const isSpeedRun =
+      timeInWindowSeconds > 0 &&
+      timeInWindowSeconds <= 30;
+
+    const windowEntryGlideRatio =
+      windowTrackPoints[0]?.glideRatio ?? null;
+
+    const windowExitGlideRatio =
+      windowTrackPoints[windowTrackPoints.length - 1]
+        ?.glideRatio ?? null;
+
+    const peakDiveHorizontalSpeedKmh =
+      preWindowDivePoints.length > 0
+        ? metresPerSecondToKmh(
+            Math.max(
+              ...preWindowDivePoints.map(
+                (point) => point.horizontalSpeedMps
+              )
+            )
+          )
+        : null;
+
+    const peakDiveVerticalSpeedKmh =
+      preWindowDivePoints.length > 0
+        ? metresPerSecondToKmh(
+            Math.max(
+              ...preWindowDivePoints.map(
+                (point) => point.verticalSpeedMps
+              )
+            )
+          )
+        : null;
+
+    const peakDiveTotalSpeedKmh =
+      preWindowDivePoints.length > 0
+        ? metresPerSecondToKmh(
+            Math.max(
+              ...preWindowDivePoints.map(
+                (point) => point.totalSpeedMps
+              )
+            )
+          )
+        : null;
+
+    const peakDiveAngleDeg =
+      preWindowDivePoints.length > 0
+        ? Math.max(
+            ...preWindowDivePoints.map((point) => {
+              if (point.horizontalSpeedMps <= 0) {
+                return 0;
+              }
+
+              return (
+                Math.atan2(
+                  point.verticalSpeedMps,
+                  point.horizontalSpeedMps
+                ) *
+                (180 / Math.PI)
+              );
+            })
+          )
+        : null;
+
+    const top100mFlare = getTop100mFlareResult(
+      jumpTrackPointsAgl,
+      timeInWindowSeconds
+    );
+
+    return (
+      <section className="card">
+        <h2>Track Summary</h2>
+
+        <p className="subtitle">
+          Window uses {2500 + windowOffsetM} m to{" "}
+          {1500 + windowOffsetM} m.
+        </p>
+
+        <div className="window-adjust-controls">
+          <button
+            type="button"
+            onClick={() =>
+              setWindowOffsetM((current) => current - 10)
+            }
+          >
+            -10 m
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setWindowOffsetM(0)}
+          >
+            Reset
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setWindowOffsetM((current) => current + 10)
+            }
+          >
+            +10 m
+          </button>
+        </div>
+
+        <div className="metric-section">
+          <h3>Main Scores</h3>
+
+          <div className="main-score-columns">
+            <div className="main-score-column">
+              <div>
+                <span>Jump Time: </span>
+                <strong>
+                  {exitPoint?.timestampMs
+                    ? new Date(
+                        exitPoint.timestampMs
+                      ).toLocaleString()
+                    : "Timestamp not detected"}
+                </strong>
+              </div>
+
+              <div>
+                <span>Exit Location: </span>
+                <strong>
+                  {exitPoint
+                    ? `${exitPoint.lat.toFixed(5)}, ${exitPoint.lon.toFixed(5)}`
+                    : "Location not detected"}
+                </strong>
+              </div>
+
+              <div>
+                <span>Exit Altitude: </span>
+                <strong>
+                  {formatNumber(
+                    exitPoint
+                      ? exitPoint.altitudeM - dzElevationNumber
+                      : null,
+                    0
+                  )}{" "}
+                  m
+                </strong>
+              </div>
+
+              <div>
+                <span>Time: </span>
+                <strong>
+                  {formatNumber(timeInWindowSeconds, 3)} sec
+                </strong>
+              </div>
+
+              <div>
+                <span>Distance: </span>
+                <strong>
+                  {formatNumber(windowDistanceM, 2)} m
+                </strong>
+              </div>
+
+              <div>
+                <span>Speed: </span>
+                <strong>
+                  {formatNumber(
+                    averageHorizontalSpeedKmh,
+                    3
+                  )}{" "}
+                  km/h
+                </strong>
+              </div>
+            </div>
+
+            <div className="main-score-column">
+              <div>
+                <span>Peak Dive Angle: </span>
+                <strong>
+                  {formatNumber(peakDiveAngleDeg, 1)}°
+                </strong>
+              </div>
+
+              <div>
+                <span>Peak Vert Speed: </span>
+                <strong>
+                  {formatNumber(
+                    peakDiveVerticalSpeedKmh,
+                    1
+                  )}{" "}
+                  km/h
+                </strong>
+              </div>
+
+              <div>
+                <span>Peak Total Speed: </span>
+                <strong>
+                  {formatNumber(
+                    peakDiveTotalSpeedKmh,
+                    1
+                  )}{" "}
+                  km/h
+                </strong>
+              </div>
+
+              <div>
+                <span>Peak Horizontal Speed: </span>
+                <strong>
+                  {formatNumber(
+                    peakDiveHorizontalSpeedKmh,
+                    1
+                  )}{" "}
+                  km/h
+                </strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {isSpeedRun ? (
+          <div className="metric-section">
+            <h3>Speed Run</h3>
+
+            <div className="result-grid">
+              <div>
+                <span>Window Entry GR: </span>
+                <strong>
+                  {formatNumber(windowEntryGlideRatio, 2)}
+                </strong>
+              </div>
+
+              <div>
+                <span>Window Exit GR: </span>
+                <strong>
+                  {formatNumber(windowExitGlideRatio, 2)}
+                </strong>
+              </div>
+
+              <div>
+                <span>Peak Horizontal Speed: </span>
+                <strong>
+                  {formatNumber(
+                    peakDiveHorizontalSpeedKmh,
+                    1
+                  )}{" "}
+                  km/h
+                </strong>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="comparison-metric-columns">
+            {top100mFlare && (
+              <div className="metric-section">
+                <h3>Top 100 m Flare</h3>
+
+                <div className="result-grid">
+                  <div>
+                    <span>Time: </span>
+                    <strong>
+                      {formatNumber(
+                        top100mFlare.timeSeconds,
+                        1
+                      )}{" "}
+                      sec
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Distance: </span>
+                    <strong>
+                      {formatNumber(
+                        top100mFlare.distanceM,
+                        0
+                      )}{" "}
+                      m
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Flare Start: </span>
+                    <strong>
+                      {formatNumber(
+                        top100mFlare.startAltitudeM,
+                        0
+                      )}{" "}
+                      m
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Altitude Gain: </span>
+                    <strong>
+                      {formatNumber(
+                        top100mFlare.altitudeGainM,
+                        0
+                      )}{" "}
+                      m
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="metric-section">
+              <h3>Last 800 m</h3>
+
+              <div className="result-grid">
+                <div>
+                  <span>Distance: </span>
+                  <strong>
+                    {formatNumber(last800mDistanceM, 0)} m
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Time: </span>
+                  <strong>
+                    {formatNumber(
+                      last800mTimeSeconds,
+                      1
+                    )}{" "}
+                    sec
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Avg. Horizontal Speed: </span>
+                  <strong>
+                    {formatNumber(
+                      last800mAverageHorizontalSpeedKmh,
+                      1
+                    )}{" "}
+                    km/h
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Avg. Vertical Speed: </span>
+                  <strong>
+                    {formatNumber(
+                      last800mAverageVerticalSpeedKmh,
+                      1
+                    )}{" "}
+                    km/h
+                  </strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+    );
+  })()}
+
 
 {gpsTrackPoints.length > 0 && (
   <section className="card">
