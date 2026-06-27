@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  PointerEvent as ReactPointerEvent,
+  WheelEvent as ReactWheelEvent,
+} from "react";
 import { supabase } from "./supabase";
 import type { Session } from "@supabase/supabase-js";
 import {
@@ -18,6 +22,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -3282,10 +3287,14 @@ function InteractiveTrackChart({
   points,
   windowOffsetM,
   winds,
+  graphView,
+  onGraphViewChange,
 }: {
   points: GpsTrackPoint[];
   windowOffsetM: number;
   winds: WindLayer[];
+  graphView: "comp" | "full";
+  onGraphViewChange: (view: "comp" | "full") => void;
 }) {
 const windAltitudes = winds.map((wind) => wind.altitudeM);
 
@@ -3366,22 +3375,391 @@ const chartData = points.map((point, index) => {
   };
 });
 
+  type ChartMouseState = {
+    activeLabel?: string | number;
+  };
+
+  type TouchPoint = {
+    x: number;
+    y: number;
+  };
+
+  const totalMinTime = chartData[0]?.timeSeconds ?? 0;
+  const lastTime = chartData.at(-1)?.timeSeconds ?? totalMinTime;
+  const totalMaxTime = lastTime > totalMinTime ? lastTime : totalMinTime + 1;
+  const totalTimeSpan = totalMaxTime - totalMinTime;
+  const PINCH_ZOOM_SENSITIVITY = 2.6;
+  const minimumZoomSpan = Math.max(totalTimeSpan / 500, GPS_SAMPLE_PERIOD_SECONDS * 8);
+  const [visibleDomain, setVisibleDomain] = useState<[number, number] | null>(null);
+  const [selectionStart, setSelectionStart] = useState<number | null>(null);
+  const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
+  const [isPinching, setIsPinching] = useState(false);
+  const touchPointsRef = useRef<Map<number, TouchPoint>>(new Map());
+  const pinchStartDistanceRef = useRef<number | null>(null);
+  const pinchStartDomainRef = useRef<[number, number] | null>(null);
+  const pendingPinchDomainRef = useRef<[number, number] | null>(null);
+
+  const trackRangeKey =
+    String(points.length) + ":" +
+    String(points[0]?.timestampMs ?? "start") + ":" +
+    String(points.at(-1)?.timestampMs ?? "end");
+
+  useEffect(() => {
+    setVisibleDomain(null);
+    setSelectionStart(null);
+    setSelectionEnd(null);
+    setIsPinching(false);
+    touchPointsRef.current.clear();
+    pinchStartDistanceRef.current = null;
+    pinchStartDomainRef.current = null;
+    pendingPinchDomainRef.current = null;
+  }, [trackRangeKey]);
+
+  const activeDomain = visibleDomain ?? [totalMinTime, totalMaxTime];
+  const isZoomed =
+    activeDomain[0] > totalMinTime || activeDomain[1] < totalMaxTime;
+
+  function clampDomain(start: number, end: number): [number, number] {
+    let nextStart = Math.max(totalMinTime, Math.min(start, totalMaxTime));
+    let nextEnd = Math.max(totalMinTime, Math.min(end, totalMaxTime));
+
+    if (nextEnd - nextStart < minimumZoomSpan) {
+      const center = (nextStart + nextEnd) / 2;
+      nextStart = center - minimumZoomSpan / 2;
+      nextEnd = center + minimumZoomSpan / 2;
+    }
+
+    if (nextStart < totalMinTime) {
+      nextEnd += totalMinTime - nextStart;
+      nextStart = totalMinTime;
+    }
+
+    if (nextEnd > totalMaxTime) {
+      nextStart -= nextEnd - totalMaxTime;
+      nextEnd = totalMaxTime;
+    }
+
+    return [
+      Math.max(totalMinTime, nextStart),
+      Math.min(totalMaxTime, nextEnd),
+    ];
+  }
+
+  function getZoomDomain(
+    centerTime: number,
+    scale: number,
+    domain: [number, number] = activeDomain
+  ): [number, number] {
+    const [currentStart, currentEnd] = domain;
+    const currentSpan = currentEnd - currentStart;
+    const nextSpan = Math.max(
+      minimumZoomSpan,
+      Math.min(totalTimeSpan, currentSpan * scale)
+    );
+    const centerRatio =
+      currentSpan > 0 ? (centerTime - currentStart) / currentSpan : 0.5;
+    const nextStart = centerTime - nextSpan * centerRatio;
+    const nextEnd = nextStart + nextSpan;
+    return clampDomain(nextStart, nextEnd);
+  }
+
+  function zoomAround(centerTime: number, scale: number) {
+    setVisibleDomain(getZoomDomain(centerTime, scale));
+  }
+
+  function getChartPlotBounds(chartElement: HTMLDivElement) {
+    const svg = chartElement.querySelector("svg");
+    const gridLine = chartElement.querySelector(
+      ".recharts-cartesian-grid-horizontal line"
+    );
+
+    if (!(svg instanceof SVGSVGElement) || !(gridLine instanceof SVGLineElement)) {
+      const rect = chartElement.getBoundingClientRect();
+      return { left: rect.left, width: rect.width };
+    }
+
+    const svgRect = svg.getBoundingClientRect();
+    const viewBoxWidth = svg.viewBox.baseVal.width || svgRect.width;
+    const scaleX = svgRect.width / viewBoxWidth;
+    const x1 = Number(gridLine.getAttribute("x1"));
+    const x2 = Number(gridLine.getAttribute("x2"));
+
+    if (!Number.isFinite(x1) || !Number.isFinite(x2) || x2 <= x1) {
+      return { left: svgRect.left, width: svgRect.width };
+    }
+
+    return {
+      left: svgRect.left + x1 * scaleX,
+      width: (x2 - x1) * scaleX,
+    };
+  }
+
+  function getTimeFromChartPosition(
+    clientX: number,
+    chartElement: HTMLDivElement,
+    domain: [number, number] = activeDomain
+  ) {
+    const plotBounds = getChartPlotBounds(chartElement);
+    const progress = Math.max(
+      0,
+      Math.min(1, (clientX - plotBounds.left) / plotBounds.width)
+    );
+    return domain[0] + progress * (domain[1] - domain[0]);
+  }
+
+  function getNumericLabel(state: ChartMouseState | undefined) {
+    const value = Number(state?.activeLabel);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function handleChartMouseDown(state: ChartMouseState | undefined) {
+    const label = getNumericLabel(state);
+
+    if (label === null) {
+      return;
+    }
+
+    setSelectionStart(label);
+    setSelectionEnd(label);
+  }
+
+  function handleChartMouseMove(state: ChartMouseState | undefined) {
+    if (selectionStart === null) {
+      return;
+    }
+
+    const label = getNumericLabel(state);
+
+    if (label !== null) {
+      setSelectionEnd(label);
+    }
+  }
+
+  function finishChartSelection() {
+    if (selectionStart === null || selectionEnd === null) {
+      setSelectionStart(null);
+      setSelectionEnd(null);
+      return;
+    }
+
+    const nextStart = Math.min(selectionStart, selectionEnd);
+    const nextEnd = Math.max(selectionStart, selectionEnd);
+
+    if (nextEnd - nextStart >= minimumZoomSpan) {
+      setVisibleDomain(clampDomain(nextStart, nextEnd));
+    }
+
+    setSelectionStart(null);
+    setSelectionEnd(null);
+  }
+
+  function resetZoom() {
+    setVisibleDomain(null);
+    setSelectionStart(null);
+    setSelectionEnd(null);
+  }
+
+  function handleWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    if (!event.ctrlKey) {
+      return;
+    }
+
+    event.preventDefault();
+    const centerTime = getTimeFromChartPosition(event.clientX, event.currentTarget);
+    const scale = Math.exp(event.deltaY * 0.002);
+    zoomAround(centerTime, scale);
+  }
+
+  function previewPinchDomain(chartElement: HTMLDivElement) {
+    const nextDistance = getTouchDistance();
+    const startDistance = pinchStartDistanceRef.current;
+    const startDomain = pinchStartDomainRef.current;
+
+    if (nextDistance === null || startDistance === null || startDomain === null) {
+      pendingPinchDomainRef.current = null;
+      setSelectionStart(null);
+      setSelectionEnd(null);
+      return;
+    }
+
+    const centerClientX = getTouchCenterX();
+    const centerTime = getTimeFromChartPosition(
+      centerClientX,
+      chartElement,
+      startDomain
+    );
+    const distanceRatio = nextDistance / startDistance;
+    const zoomScale = Math.pow(distanceRatio, PINCH_ZOOM_SENSITIVITY);
+    const nextDomain = getZoomDomain(centerTime, zoomScale, startDomain);
+    pendingPinchDomainRef.current = nextDomain;
+    setSelectionStart(nextDomain[0]);
+    setSelectionEnd(nextDomain[1]);
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType !== "touch") {
+      return;
+    }
+
+    touchPointsRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    if (touchPointsRef.current.size >= 2) {
+      setIsPinching(true);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      pinchStartDistanceRef.current = getTouchDistance();
+      pinchStartDomainRef.current = activeDomain;
+      pendingPinchDomainRef.current = null;
+      setSelectionStart(null);
+      setSelectionEnd(null);
+    }
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType !== "touch" || !touchPointsRef.current.has(event.pointerId)) {
+      return;
+    }
+
+    touchPointsRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    if (touchPointsRef.current.size < 2) {
+      return;
+    }
+
+    const nextDistance = getTouchDistance();
+
+    if (nextDistance === null || nextDistance <= 0) {
+      return;
+    }
+
+    event.preventDefault();
+    previewPinchDomain(event.currentTarget);
+  }
+
+  function handlePointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType !== "touch") {
+      return;
+    }
+
+    touchPointsRef.current.delete(event.pointerId);
+
+    if (touchPointsRef.current.size < 2) {
+      if (pendingPinchDomainRef.current) {
+        setVisibleDomain(pendingPinchDomainRef.current);
+      }
+
+      setIsPinching(false);
+      pinchStartDistanceRef.current = null;
+      pinchStartDomainRef.current = null;
+      pendingPinchDomainRef.current = null;
+      setSelectionStart(null);
+      setSelectionEnd(null);
+    }
+  }
+
+  function getTouchPoints() {
+    return Array.from(touchPointsRef.current.values()).slice(0, 2);
+  }
+
+  function getTouchDistance() {
+    const [first, second] = getTouchPoints();
+
+    if (!first || !second) {
+      return null;
+    }
+
+    return Math.hypot(second.x - first.x, second.y - first.y);
+  }
+
+  function getTouchCenterX() {
+    const [first, second] = getTouchPoints();
+
+    if (!first || !second) {
+      return 0;
+    }
+
+    return (first.x + second.x) / 2;
+  }
+
   const windowTopM = 2500 + windowOffsetM;
   const windowBottomM = 1500 + windowOffsetM;
 
   return (
     <section className="card">
-      <h2>Interactive Flight Graph</h2>
+      <div className="interactive-chart-heading">
+        <div>
+          <h2>Interactive Flight Graph</h2>
 
-      <p className="subtitle">
-        Touch or move over the graph to inspect your track.
-      </p>
+          <p className="subtitle">
+            Pinch to zoom, or drag across the graph on desktop to zoom into a range.
+          </p>
 
-      <div className="interactive-chart-wrap">
+          <p className="chart-rotate-hint">
+            Rotate your phone for a larger interactive graph.
+          </p>
+        </div>
+
+        <div className="chart-control-row">
+          <button
+            type="button"
+            className={
+              "graph-view-button graph-view-button-left " +
+              (graphView === "comp" ? "active" : "")
+            }
+            onClick={() => onGraphViewChange("comp")}
+            aria-pressed={graphView === "comp"}
+          >
+            Comp run
+          </button>
+
+          {isZoomed ? (
+            <button
+              type="button"
+              className="chart-reset-button"
+              onClick={resetZoom}
+            >
+              Reset zoom
+            </button>
+          ) : (
+            <span className="chart-reset-placeholder" aria-hidden="true" />
+          )}
+
+          <button
+            type="button"
+            className={
+              "graph-view-button graph-view-button-right " +
+              (graphView === "full" ? "active" : "")
+            }
+            onClick={() => onGraphViewChange("full")}
+            aria-pressed={graphView === "full"}
+          >
+            Full Jump
+          </button>
+        </div>
+      </div>
+
+      <div
+        className="interactive-chart-wrap"
+        onWheel={handleWheel}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={handlePointerEnd}
+      >
         <ResponsiveContainer width="100%" height={460} minWidth={0}>
           <LineChart
             data={chartData}
             margin={{ top: 20, right: 28, bottom: 20, left: 12 }}
+            onMouseDown={handleChartMouseDown}
+            onMouseMove={handleChartMouseMove}
+            onMouseUp={finishChartSelection}
+            onMouseLeave={finishChartSelection}
           >
             <CartesianGrid
               stroke="rgba(148, 163, 184, 0.22)"
@@ -3391,22 +3769,23 @@ const chartData = points.map((point, index) => {
             <XAxis
               dataKey="timeSeconds"
               type="number"
-              domain={["dataMin", "dataMax"]}
-              tickFormatter={(value) => `${Number(value).toFixed(0)}s`}
+              domain={activeDomain}
+              allowDataOverflow
+              tickFormatter={(value) => String(Number(value).toFixed(0)) + "s"}
               stroke="#d1d5db"
             />
 
             <YAxis
               yAxisId="altitude"
               stroke="#d1d5db"
-              tickFormatter={(value) => `${Number(value).toFixed(0)} m`}
+              tickFormatter={(value) => String(Number(value).toFixed(0)) + " m"}
             />
 
             <YAxis
               yAxisId="speed"
               orientation="right"
               stroke="#2563eb"
-              tickFormatter={(value) => `${Number(value).toFixed(0)}`}
+              tickFormatter={(value) => String(Number(value).toFixed(0))}
             />
 
             <YAxis
@@ -3424,6 +3803,7 @@ const chartData = points.map((point, index) => {
             />
 
             <Tooltip
+              active={isPinching ? false : undefined}
               contentStyle={{
                 background: "rgba(2, 6, 23, 0.2)",
                 border: "1px solid #22d3ee",
@@ -3431,7 +3811,7 @@ const chartData = points.map((point, index) => {
                 color: "#ffffff",
               }}
               labelFormatter={(value) =>
-                `Time: ${Number(value).toFixed(1)} sec`
+                "Time: " + Number(value).toFixed(1) + " sec"
               }
               formatter={(value, name) => {
                 const numericValue = Number(value);
@@ -3451,15 +3831,27 @@ const chartData = points.map((point, index) => {
                   verticalSpeedKmh: " km/h",
                   totalSpeedKmh: " km/h",
                   glideRatio: "",
-                  diveAngleDeg: "°",
+                  diveAngleDeg: " deg",
                 };
 
                 return [
-                  `${numericValue.toFixed(1)}${units[String(name)] ?? ""}`,
+                  String(numericValue.toFixed(1)) + (units[String(name)] ?? ""),
                   labels[String(name)] ?? String(name),
                 ];
               }}
             />
+
+            {selectionStart !== null && selectionEnd !== null && (
+              <ReferenceArea
+                yAxisId="altitude"
+                x1={Math.min(selectionStart, selectionEnd)}
+                x2={Math.max(selectionStart, selectionEnd)}
+                stroke="#22d3ee"
+                strokeOpacity={0.8}
+                fill="#22d3ee"
+                fillOpacity={0.18}
+              />
+            )}
 
             <ReferenceLine
               yAxisId="altitude"
@@ -3467,7 +3859,7 @@ const chartData = points.map((point, index) => {
               stroke="#22c55e"
               strokeDasharray="6 4"
               label={{
-                value: `${windowTopM} m`,
+                value: String(windowTopM) + " m",
                 fill: "#22c55e",
                 position: "insideTopRight",
               }}
@@ -3479,7 +3871,7 @@ const chartData = points.map((point, index) => {
               stroke="#ef4444"
               strokeDasharray="6 4"
               label={{
-                value: `${windowBottomM} m`,
+                value: String(windowBottomM) + " m",
                 fill: "#ef4444",
                 position: "insideBottomRight",
               }}
@@ -3830,6 +4222,12 @@ const [editNotes, setEditNotes] = useState("");
 
       setSaveJumpStatus("");
       setLogbookStatus("Saved jump loaded into Analyzer.");
+      window.setTimeout(() => {
+        logbookSectionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 100);
 
       const validatedJump = getValidatedJumpTrack(parsedPoints);
       const exitPoint = validatedJump.exitPoint;
@@ -3996,6 +4394,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const mapPickerSectionRef = useRef<HTMLDivElement | null>(null);
   const flyMyLaneButtonRef = useRef<HTMLButtonElement | null>(null);
   const saveLaneButtonRef = useRef<HTMLButtonElement | null>(null);
+  const logbookSectionRef = useRef<HTMLElement | null>(null);
   
 
   const [globalWindFromDeg, setGlobalWindFromDeg] = useState("");
@@ -4888,7 +5287,7 @@ if (activePage === "lane") {
             </section>
             
 {supabaseSession && (
-  <section className="card logbook-card">
+  <section ref={logbookSectionRef} className="card logbook-card">
     <h2>My Logbook</h2>
 
     {logbookStatus && (
@@ -5689,32 +6088,12 @@ if (activePage === "lane") {
 
     return (
     <div className="graph-view-container">
-      <button
-        type="button"
-        className={`graph-view-button graph-view-button-left ${
-          graphView === "comp" ? "active" : ""
-        }`}
-        onClick={() => setGraphView("comp")}
-        aria-pressed={graphView === "comp"}
-      >
-        Comp run
-      </button>
-
-      <button
-        type="button"
-        className={`graph-view-button graph-view-button-right ${
-          graphView === "full" ? "active" : ""
-        }`}
-        onClick={() => setGraphView("full")}
-        aria-pressed={graphView === "full"}
-      >
-        Full Jump
-      </button>
-
       <InteractiveTrackChart
         points={displayedGraphPoints}
         windowOffsetM={windowOffsetM}
         winds={historicalWinds}
+        graphView={graphView}
+        onGraphViewChange={setGraphView}
       />
     </div>
     );

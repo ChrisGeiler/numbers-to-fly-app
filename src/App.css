@@ -902,11 +902,64 @@ button:disabled {
   }
 }
 
+.interactive-chart-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.interactive-chart-heading h2 {
+  margin: 0;
+}
+
+.chart-rotate-hint {
+  display: none;
+  margin: -8px auto 12px;
+  max-width: 420px;
+  color: #67e8f9;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.chart-control-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.chart-reset-button,
+.chart-reset-placeholder {
+  justify-self: center;
+  min-width: 104px;
+}
+
+.chart-reset-button {
+  width: auto;
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-size: 0.82rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .interactive-chart-wrap {
   width: 100%;
   min-width: 0;
   height: 460px;
   overflow: hidden;
+  touch-action: none;
+  cursor: crosshair;
+  user-select: none;
+}
+
+.interactive-chart-wrap .recharts-wrapper {
+  cursor: crosshair;
 }
 
 .logbook-notes-field {
@@ -1542,13 +1595,11 @@ button {
 }
 
 .graph-view-container {
-  position: relative;
+  width: 100%;
 }
 
 .graph-view-button {
-  position: absolute;
-  top: 12px;
-  z-index: 20;
+  position: static;
   width: auto;
   min-width: 92px;
   height: 34px;
@@ -1559,11 +1610,11 @@ button {
 }
 
 .graph-view-button-left {
-  left: 16px;
+  justify-self: start;
 }
 
 .graph-view-button-right {
-  right: 16px;
+  justify-self: end;
 }
 
 .graph-view-button.active {
@@ -1571,20 +1622,24 @@ button {
 }
 
 @media (max-width: 700px) {
+  .chart-rotate-hint {
+    display: block;
+  }
+
+  .chart-control-row {
+    gap: 8px;
+  }
+
+  .chart-reset-button,
+  .chart-reset-placeholder {
+    min-width: 96px;
+  }
+
   .graph-view-button {
-    top: 8px;
     min-width: 78px;
     height: 30px;
     padding: 3px 8px;
     font-size: 0.72rem;
-  }
-
-  .graph-view-button-left {
-    left: 8px;
-  }
-
-  .graph-view-button-right {
-    right: 8px;
   }
 }
 
