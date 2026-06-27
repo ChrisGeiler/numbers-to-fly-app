@@ -3922,7 +3922,26 @@ const [editNotes, setEditNotes] = useState("");
   }
 
   const [activePage, setActivePage] = useState<AppPage>("landing");
-  const [appMode, setAppMode] = useState<AppMode>("phone");
+  const [appMode, setAppMode] = useState<AppMode>(() =>
+  window.matchMedia("(min-width: 900px)").matches
+    ? "desktop"
+    : "phone"
+);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(min-width: 900px)");
+
+    const updateAppMode = (event: MediaQueryListEvent) => {
+      setAppMode(event.matches ? "desktop" : "phone");
+    };
+
+    mediaQuery.addEventListener("change", updateAppMode);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateAppMode);
+  };
+}, []);
+
 useEffect(() => {
   if (activePage !== "lane") {
     return;
@@ -5807,28 +5826,6 @@ if (activePage === "rules") {
 
           <p className="tagline">Performance Wingsuiting App.</p>
         </div>
-
-          <div className="mode-switch-wrap">
-            <span className="mode-switch-label">Phone</span>
-
-            <button
-              type="button"
-              className={`mode-toggle ${
-                appMode === "desktop" ? "mode-toggle-desktop" : ""
-              }`}
-              aria-label="Switch between phone and desktop version"
-              aria-pressed={appMode === "desktop"}
-              onClick={() =>
-                setAppMode((currentMode) =>
-                  currentMode === "phone" ? "desktop" : "phone"
-                )
-              }
-            >
-              <span className="mode-toggle-knob" />
-            </button>
-
-            <span className="mode-switch-label">Desktop</span>
-          </div>        
           
           <button
             type="button"
