@@ -6540,7 +6540,7 @@ if (activePage === "rules") {
 
         <h1>FAI Rules Search</h1>
         <p className="subtitle">
-          Search the Performance Wingsuit rules by keyword, phrase, or topic.
+          Search Performance Wingsuit and relevant Section 5 rules by keyword, phrase, or topic.
         </p>
       </header>
 
