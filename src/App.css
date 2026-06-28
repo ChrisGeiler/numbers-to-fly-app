@@ -988,6 +988,19 @@ button:disabled {
 
 .compact-heading-card .heading-slider-panel {
   padding: 12px 14px;
+  text-align: center;
+}
+
+.compact-heading-card .heading-slider-readout,
+.compact-heading-card .heading-slider-scale {
+  text-align: center;
+}
+
+.compact-heading-card .heading-slider-panel .subtitle {
+  display: block;
+  max-width: 520px;
+  margin: 8px auto 0;
+  text-align: center;
 }
 
 .compact-heading-card p,
@@ -995,12 +1008,18 @@ button:disabled {
   margin: 6px 0;
 }
 
+.compact-heading-card .subtitle {
+  text-align: center;
+}
+
 .compact-wind-card h2 {
   margin: 0 0 8px;
+  text-align: center;
 }
 
 .compact-wind-card label {
   margin-bottom: 8px;
+  text-align: center;
 }
 
 .compact-wind-card .window-adjust-controls {
@@ -1017,6 +1036,24 @@ button:disabled {
 .primary-action-button {
   margin-top: 10px;
   margin-bottom: 4px;
+}
+
+.fly-lane-next-button {
+  display: block;
+  width: min(100%, 360px);
+  margin: 18px auto 0;
+  padding: 14px 20px;
+  border-color: rgba(103, 232, 249, 0.95);
+  box-shadow:
+    0 0 0 1px rgba(103, 232, 249, 0.35),
+    0 12px 30px rgba(34, 211, 238, 0.28);
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.fly-lane-next-button::after {
+  content: " ->";
 }
 
 button {
@@ -1843,4 +1880,22 @@ button {
   .window-adjust-controls {
   display: grid !important;
   grid-template-columns: 1fr 1fr !important;
+}
+
+.wind-forecast-card,
+.wind-forecast-card p,
+.wind-forecast-card label,
+.wind-forecast-card strong {
+  text-align: center;
+}
+
+.wind-forecast-card select {
+  text-align: center;
+  text-align-last: center;
+}
+
+.wind-forecast-card .window-adjust-controls,
+.wind-forecast-card .forecast-time-controls {
+  justify-items: center;
+  text-align: center;
 }

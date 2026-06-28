@@ -16,6 +16,35 @@ import {
 } from "react-leaflet";
 import Fuse from "fuse.js";
 import { faiRuleSections } from "./faiPerformanceRules.ts";
+import {
+  bearingBetweenPointsDeg,
+  buildLanePolygon,
+  buildLaneStripPolygon,
+  calculateDropPoint,
+  degToRad,
+  destinationPoint,
+  nmToMetres,
+  normalizeDeg,
+  signedAngleDeg,
+} from "./flight/geo";
+import type { LatLon } from "./flight/geo";
+import {
+  estimateDzElevationM,
+  formatNumber,
+  getLast800mWindowPoints,
+  getPointDiveAngleDeg,
+  getScoringWindowResult,
+  getTop100mFlareResult,
+  getTrackDistanceM,
+  getValidatedJumpTrack,
+  getValidationStartPoint,
+  getWindowTrackPoints,
+  GPS_SAMPLE_PERIOD_SECONDS,
+  metresPerSecondToKmh,
+  parseFlySightCsv,
+  trimTrackAfterLanding,
+} from "./gpsAnalysis";
+import type { GpsTrackPoint } from "./gpsAnalysis";
 import L from "leaflet";
 import maplibregl from "maplibre-gl";
 import {
@@ -273,11 +302,6 @@ type OpenMeteoResponse = {
 
   return windLayers.sort((a, b) => a.altitudeM - b.altitudeM);
 }
-
-type LatLon = {
-  lat: number;
-  lon: number;
-};
 
 type WindAdvantageSummary = {
   averageTailwindKt: number;
@@ -983,193 +1007,8 @@ Win_Bottom:    ${Math.round(numberFromInput(alarmBeep, 2500))} ; Silence window 
 `;
 }
 
-function degToRad(deg: number): number {
-  return (deg * Math.PI) / 180;
-}
-
-function radToDeg(rad: number): number {
-  return (rad * 180) / Math.PI;
-}
-
-function normalizeDeg(deg: number): number {
-  return ((deg % 360) + 360) % 360;
-}
-
-function normalizeLongitude(lonDeg: number): number {
-  return ((lonDeg + 540) % 360) - 180;
-}
-
-function signedAngleDeg(fromDeg: number, toDeg: number): number {
-  return ((toDeg - fromDeg + 540) % 360) - 180;
-}
-
 function kmhToKt(speedKmh: number): number {
   return speedKmh / 1.852;
-}
-
-function nmToMetres(distanceNm: number): number {
-  return distanceNm * 1852;
-}
-
-function bearingBetweenPointsDeg(
-  startLatDeg: number,
-  startLonDeg: number,
-  endLatDeg: number,
-  endLonDeg: number
-) {
-  const startLatRad = degToRad(startLatDeg);
-  const endLatRad = degToRad(endLatDeg);
-  const deltaLonRad = degToRad(endLonDeg - startLonDeg);
-
-  const y = Math.sin(deltaLonRad) * Math.cos(endLatRad);
-  const x =
-    Math.cos(startLatRad) * Math.sin(endLatRad) -
-    Math.sin(startLatRad) * Math.cos(endLatRad) * Math.cos(deltaLonRad);
-
-  return normalizeDeg(radToDeg(Math.atan2(y, x)));
-}
-
-function destinationPoint(
-  startLatDeg: number,
-  startLonDeg: number,
-  bearingDeg: number,
-  distanceM: number
-): LatLon {
-  const earthRadiusM = 6371000;
-  const angularDistance = distanceM / earthRadiusM;
-
-  const bearingRad = degToRad(bearingDeg);
-  const startLatRad = degToRad(startLatDeg);
-  const startLonRad = degToRad(startLonDeg);
-
-  const endLatRad = Math.asin(
-    Math.sin(startLatRad) * Math.cos(angularDistance) +
-      Math.cos(startLatRad) * Math.sin(angularDistance) * Math.cos(bearingRad)
-  );
-
-  const endLonRad =
-    startLonRad +
-    Math.atan2(
-      Math.sin(bearingRad) *
-        Math.sin(angularDistance) *
-        Math.cos(startLatRad),
-      Math.cos(angularDistance) - Math.sin(startLatRad) * Math.sin(endLatRad)
-    );
-
-  return {
-    lat: radToDeg(endLatRad),
-    lon: normalizeLongitude(radToDeg(endLonRad)),
-  };
-}
-
-function calculateDropPoint(
-  referenceLat: number,
-  referenceLon: number,
-  runHeadingDeg: number,
-  dropDistanceNm: number
-): LatLon {
-  const backBearing = normalizeDeg(runHeadingDeg + 180);
-
-  return destinationPoint(
-    referenceLat,
-    referenceLon,
-    backBearing,
-    nmToMetres(dropDistanceNm)
-  );
-}
-
-function buildLanePolygon(
-  startPoint: LatLon,
-  endPoint: LatLon,
-  runHeadingDeg: number,
-  halfWidthM: number
-): [number, number][] {
-  const leftBearing = normalizeDeg(runHeadingDeg - 90);
-  const rightBearing = normalizeDeg(runHeadingDeg + 90);
-
-  const startLeft = destinationPoint(
-    startPoint.lat,
-    startPoint.lon,
-    leftBearing,
-    halfWidthM
-  );
-
-  const endLeft = destinationPoint(
-    endPoint.lat,
-    endPoint.lon,
-    leftBearing,
-    halfWidthM
-  );
-
-  const endRight = destinationPoint(
-    endPoint.lat,
-    endPoint.lon,
-    rightBearing,
-    halfWidthM
-  );
-
-  const startRight = destinationPoint(
-    startPoint.lat,
-    startPoint.lon,
-    rightBearing,
-    halfWidthM
-  );
-
-  return [
-    [startLeft.lat, startLeft.lon],
-    [endLeft.lat, endLeft.lon],
-    [endRight.lat, endRight.lon],
-    [startRight.lat, startRight.lon],
-  ];
-}
-
-function buildLaneStripPolygon(
-  startPoint: LatLon,
-  endPoint: LatLon,
-  runHeadingDeg: number,
-  innerOffsetM: number,
-  outerOffsetM: number,
-  side: "left" | "right"
-): [number, number][] {
-  const bearing =
-    side === "left"
-      ? normalizeDeg(runHeadingDeg - 90)
-      : normalizeDeg(runHeadingDeg + 90);
-
-  const startInner = destinationPoint(
-    startPoint.lat,
-    startPoint.lon,
-    bearing,
-    innerOffsetM
-  );
-
-  const endInner = destinationPoint(
-    endPoint.lat,
-    endPoint.lon,
-    bearing,
-    innerOffsetM
-  );
-
-  const endOuter = destinationPoint(
-    endPoint.lat,
-    endPoint.lon,
-    bearing,
-    outerOffsetM
-  );
-
-  const startOuter = destinationPoint(
-    startPoint.lat,
-    startPoint.lon,
-    bearing,
-    outerOffsetM
-  );
-
-  return [
-    [startInner.lat, startInner.lon],
-    [endInner.lat, endInner.lon],
-    [endOuter.lat, endOuter.lon],
-    [startOuter.lat, startOuter.lon],
-  ];
 }
 
 function applyTailHeadDeadband(tailwindKt: number): number {
@@ -1712,6 +1551,7 @@ function MapClickPicker({
   userMapLocation,
   dropPoint,
   runHeadingDeg,
+  laneColor = "#22c55e",
   trackPoints = [],
   onPick,
 }: {
@@ -1720,6 +1560,7 @@ function MapClickPicker({
   userMapLocation: LatLon | null;
   dropPoint: LatLon | null;
   runHeadingDeg: string;
+  laneColor?: string;
   trackPoints?: GpsTrackPoint[];
   onPick: (lat: number, lon: number) => void;
 }) {
@@ -1888,10 +1729,24 @@ function MapClickPicker({
           <Polygon
             positions={greenLanePolygon}
             pathOptions={{
-              color: "#22c55e",
-              weight: 2,
+              color: laneColor,
+              weight: 3,
               opacity: 0.95,
               fillOpacity: 0,
+            }}
+          />
+        )}
+
+        {dropPoint !== null && lat !== null && lon !== null && (
+          <Polyline
+            positions={[
+              [dropPoint.lat, dropPoint.lon],
+              [lat, lon],
+            ]}
+            pathOptions={{
+              color: laneColor,
+              weight: 4,
+              opacity: 0.95,
             }}
           />
         )}
@@ -2285,234 +2140,6 @@ function LaneViewMap({
   return <div ref={mapContainerRef} className="lane-view-map" />;
 }
 
-
-function CompetitionLaneAnalysisMap({
-  pointA,
-  pointB,
-  trackPoints,
-}: {
-  pointA: LatLon;
-  pointB: LatLon;
-  trackPoints: GpsTrackPoint[];
-}) {
-  const mapContainerRef = useMemo(
-    () => ({ current: null as HTMLDivElement | null }),
-    []
-  );
-
-  useEffect(() => {
-    if (mapContainerRef.current === null) {
-      return;
-    }
-
-    const headingDeg = bearingBetweenPointsDeg(
-      pointA.lat,
-      pointA.lon,
-      pointB.lat,
-      pointB.lon
-    );
-
-    function toMapLibrePosition(point: LatLon) {
-      return [point.lon, point.lat];
-    }
-
-    function toMapLibrePolygon(points: [number, number][]) {
-      return points.map(([pointLat, pointLon]) => [pointLon, pointLat]);
-    }
-
-    function makePolygonFeature(points: [number, number][]) {
-      return {
-        type: "Feature",
-        properties: {},
-        geometry: {
-          type: "Polygon",
-          coordinates: [[...toMapLibrePolygon(points), toMapLibrePolygon(points)[0]]],
-        },
-      };
-    }
-
-    function makeLineFeature(points: LatLon[]) {
-      return {
-        type: "Feature",
-        properties: {},
-        geometry: {
-          type: "LineString",
-          coordinates: points.map(toMapLibrePosition),
-        },
-      };
-    }
-
-    const greenLanePolygon = buildLanePolygon(pointA, pointB, headingDeg, 300);
-    const leftYellowLanePolygon = buildLaneStripPolygon(
-      pointA,
-      pointB,
-      headingDeg,
-      300,
-      450,
-      "left"
-    );
-    const rightYellowLanePolygon = buildLaneStripPolygon(
-      pointA,
-      pointB,
-      headingDeg,
-      300,
-      450,
-      "right"
-    );
-    const leftRedLanePolygon = buildLaneStripPolygon(
-      pointA,
-      pointB,
-      headingDeg,
-      450,
-      600,
-      "left"
-    );
-    const rightRedLanePolygon = buildLaneStripPolygon(
-      pointA,
-      pointB,
-      headingDeg,
-      450,
-      600,
-      "right"
-    );
-
-    const trackLine = trackPoints.map((point) => ({
-      lat: point.lat,
-      lon: point.lon,
-    }));
-
-    const map = new maplibregl.Map({
-      container: mapContainerRef.current,
-      style: {
-        version: 8,
-        sources: {
-          satellite: {
-            type: "raster",
-            tiles: [
-              "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            ],
-            tileSize: 256,
-            attribution:
-              "Tiles © Esri, Maxar, Earthstar Geographics, and the GIS User Community",
-          },
-        },
-        layers: [
-          {
-            id: "satellite",
-            type: "raster",
-            source: "satellite",
-          },
-        ],
-      },
-      center: [pointA.lon, pointA.lat],
-      zoom: 12,
-      bearing: headingDeg,
-      pitch: 0,
-    });
-
-    map.on("load", () => {
-      const bounds = new maplibregl.LngLatBounds();
-
-      [
-        ...greenLanePolygon,
-        ...leftYellowLanePolygon,
-        ...rightYellowLanePolygon,
-        ...leftRedLanePolygon,
-        ...rightRedLanePolygon,
-      ].forEach(([pointLat, pointLon]) => bounds.extend([pointLon, pointLat]));
-
-      trackLine.forEach((point) => bounds.extend([point.lon, point.lat]));
-
-      if (!bounds.isEmpty()) {
-        map.fitBounds(bounds, {
-          padding: 48,
-          duration: 0,
-        });
-        map.setBearing(headingDeg);
-        map.setPitch(0);
-      }
-
-      map.addSource("competition-lane-green", {
-        type: "geojson",
-        data: makePolygonFeature(greenLanePolygon) as GeoJSON.Feature,
-      });
-      map.addSource("competition-lane-yellow-left", {
-        type: "geojson",
-        data: makePolygonFeature(leftYellowLanePolygon) as GeoJSON.Feature,
-      });
-      map.addSource("competition-lane-yellow-right", {
-        type: "geojson",
-        data: makePolygonFeature(rightYellowLanePolygon) as GeoJSON.Feature,
-      });
-      map.addSource("competition-lane-red-left", {
-        type: "geojson",
-        data: makePolygonFeature(leftRedLanePolygon) as GeoJSON.Feature,
-      });
-      map.addSource("competition-lane-red-right", {
-        type: "geojson",
-        data: makePolygonFeature(rightRedLanePolygon) as GeoJSON.Feature,
-      });
-      map.addSource("competition-track", {
-        type: "geojson",
-        data: makeLineFeature(trackLine) as GeoJSON.Feature,
-      });
-
-      [
-        ["competition-lane-red-left-fill", "competition-lane-red-left", "#ef4444", 0.18],
-        ["competition-lane-red-right-fill", "competition-lane-red-right", "#ef4444", 0.18],
-        ["competition-lane-yellow-left-fill", "competition-lane-yellow-left", "#facc15", 0.22],
-        ["competition-lane-yellow-right-fill", "competition-lane-yellow-right", "#facc15", 0.22],
-      ].forEach(([id, source, color, opacity]) => {
-        map.addLayer({
-          id: String(id),
-          type: "fill",
-          source: String(source),
-          paint: {
-            "fill-color": String(color),
-            "fill-opacity": Number(opacity),
-          },
-        });
-      });
-
-      map.addLayer({
-        id: "competition-lane-green-line",
-        type: "line",
-        source: "competition-lane-green",
-        paint: {
-          "line-color": "#22c55e",
-          "line-width": 3,
-          "line-opacity": 0.95,
-        },
-      });
-
-
-      map.addLayer({
-        id: "competition-track-line",
-        type: "line",
-        source: "competition-track",
-        paint: {
-          "line-color": "#22d3ee",
-          "line-width": 4,
-          "line-opacity": 0.96,
-        },
-      });
-
-      new maplibregl.Marker({ color: "#facc15" })
-        .setLngLat([pointA.lon, pointA.lat])
-        .addTo(map);
-      new maplibregl.Marker({ color: "#22d3ee" })
-        .setLngLat([pointB.lon, pointB.lat])
-        .addTo(map);
-    });
-
-    return () => {
-      map.remove();
-    };
-  }, [pointA, pointB, trackPoints, mapContainerRef]);
-
-  return <div ref={mapContainerRef} className="competition-lane-map" />;
-}
-
 function TargetGraph({
   taskMode,
   results,
@@ -2800,769 +2427,6 @@ function BottomBackButton({
       </button>
     </section>
   );
-}
-
-type GpsTrackPoint = {
-  time: string;
-  timestampMs: number | null;
-  lat: number;
-  lon: number;
-  velNMps: number;
-  velEMps: number;
-  altitudeM: number;
-  horizontalSpeedMps: number;
-  verticalSpeedMps: number;
-  totalSpeedMps: number;
-  glideRatio: number | null;
-};
-
-function parseNumber(value: string | undefined) {
-  const number = Number(value);
-
-  if (!Number.isFinite(number)) {
-    return null;
-  }
-
-  return number;
-}
-
-function parseFlySightCsv(csvText: string): GpsTrackPoint[] {
-  const lines = csvText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (lines.length < 2) {
-    return [];
-  }
-
-  const delimiter = lines[0].includes("\t") ? "\t" : ",";
-
-  const headers = lines[0]
-    .split(delimiter)
-    .map((header) => header.trim());
-
-  const getIndex = (...names: string[]) =>
-    headers.findIndex((header) =>
-      names.some((name) => header.toLowerCase() === name.toLowerCase())
-    );
-
-  const timeIndex = getIndex("time", "date", "timestamp");
-  const latIndex = getIndex("lat", "latitude");
-  const lonIndex = getIndex("lon", "lng", "longitude");
-  const altitudeIndex = getIndex("hMSL", "alt", "altitude", "height");
-  const velNIndex = getIndex("velN", "vn", "north");
-  const velEIndex = getIndex("velE", "ve", "east");
-  const velDIndex = getIndex("velD", "vd", "down");
-
-  if (
-    timeIndex === -1 ||
-    latIndex === -1 ||
-    lonIndex === -1 ||
-    altitudeIndex === -1 ||
-    velNIndex === -1 ||
-    velEIndex === -1 ||
-    velDIndex === -1
-  ) {
-    return [];
-  }
-
-  return lines.slice(1).flatMap((line) => {
-    const columns = line.split(delimiter);
-
-    const lat = parseNumber(columns[latIndex]);
-    const lon = parseNumber(columns[lonIndex]);
-    const altitudeM = parseNumber(columns[altitudeIndex]);
-    const velN = parseNumber(columns[velNIndex]);
-    const velE = parseNumber(columns[velEIndex]);
-    const velD = parseNumber(columns[velDIndex]);
-
-    if (
-      lat === null ||
-      lon === null ||
-      altitudeM === null ||
-      velN === null ||
-      velE === null ||
-      velD === null
-    ) {
-      return [];
-    }
-
-    const horizontalSpeedMps = Math.sqrt(velN * velN + velE * velE);
-    const verticalSpeedMps = velD;
-    const totalSpeedMps = Math.sqrt(
-      horizontalSpeedMps * horizontalSpeedMps + verticalSpeedMps * verticalSpeedMps
-    );
-
-    const glideRatio =
-      verticalSpeedMps > 0 ? horizontalSpeedMps / verticalSpeedMps : null;
-
-    const rawTime = columns[timeIndex] ?? "";
-
-    const time = rawTime
-      .trim()
-      .replace(/^\uFEFF/, "")
-      .replace(/^["']|["']$/g, "");
-
-    const normalizedTime = time.replace(
-      /\.(\d{1,2})Z$/,
-      (_, fraction: string) => `.${fraction.padEnd(3, "0")}Z`
-    );
-
-    const parsedTimestampMs = Date.parse(normalizedTime);
-
-    return [
-      {
-        time: normalizedTime,
-        timestampMs: Number.isFinite(parsedTimestampMs)
-          ? parsedTimestampMs
-          : null,
-        lat,
-        lon,
-        velNMps: velN,
-        velEMps: velE,
-        altitudeM,
-        horizontalSpeedMps,
-        verticalSpeedMps,
-        totalSpeedMps,
-        glideRatio,
-      },
-    ];
-  });
-}
-
-function distanceBetweenPointsM(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-) {
-  const earthRadiusM = 6371000;
-  const lat1Rad = (lat1 * Math.PI) / 180;
-  const lat2Rad = (lat2 * Math.PI) / 180;
-  const deltaLatRad = ((lat2 - lat1) * Math.PI) / 180;
-  const deltaLonRad = ((lon2 - lon1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(deltaLatRad / 2) * Math.sin(deltaLatRad / 2) +
-    Math.cos(lat1Rad) *
-      Math.cos(lat2Rad) *
-      Math.sin(deltaLonRad / 2) *
-      Math.sin(deltaLonRad / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return earthRadiusM * c;
-}
-
-function getScoringWindowResult(
-  points: GpsTrackPoint[],
-  windowOffsetM: number
-) {
-  const windowTopM = 2500 + windowOffsetM;
-  const windowBottomM = 1500 + windowOffsetM;
-
-  const startIndex = points.findIndex(
-    (point, index) =>
-      index > 0 &&
-      points[index - 1].altitudeM > windowTopM &&
-      point.altitudeM <= windowTopM
-  );
-
-  if (startIndex === -1) {
-    return null;
-  }
-
-  const endIndex = points.findIndex(
-    (point, index) =>
-      index > startIndex &&
-      points[index - 1].altitudeM > windowBottomM &&
-      point.altitudeM <= windowBottomM
-  );
-
-  if (endIndex === -1) {
-    return null;
-  }
-
-  const startBefore = points[startIndex - 1];
-  const startAfter = points[startIndex];
-  const endBefore = points[endIndex - 1];
-  const endAfter = points[endIndex];
-
-  const interpolateFraction = (
-    altitudeBeforeM: number,
-    altitudeAfterM: number,
-    targetAltitudeM: number
-  ) => {
-    const altitudeChangeM = altitudeAfterM - altitudeBeforeM;
-
-    if (altitudeChangeM === 0) {
-      return 0;
-    }
-
-    return (
-      (targetAltitudeM - altitudeBeforeM) /
-      altitudeChangeM
-    );
-  };
-
-  const startFraction = interpolateFraction(
-    startBefore.altitudeM,
-    startAfter.altitudeM,
-    windowTopM
-  );
-
-  const endFraction = interpolateFraction(
-    endBefore.altitudeM,
-    endAfter.altitudeM,
-    windowBottomM
-  );
-
-  const interpolateValue = (
-    before: number,
-    after: number,
-    fraction: number
-  ) => before + (after - before) * fraction;
-
-  const entryLat = interpolateValue(
-    startBefore.lat,
-    startAfter.lat,
-    startFraction
-  );
-
-  const entryLon = interpolateValue(
-    startBefore.lon,
-    startAfter.lon,
-    startFraction
-  );
-
-  const exitLat = interpolateValue(
-    endBefore.lat,
-    endAfter.lat,
-    endFraction
-  );
-
-  const exitLon = interpolateValue(
-    endBefore.lon,
-    endAfter.lon,
-    endFraction
-  );
-
-  const elapsedSamples =
-    endIndex -
-    startIndex +
-    endFraction -
-    startFraction;
-
-  const timeSeconds =
-    elapsedSamples * GPS_SAMPLE_PERIOD_SECONDS;
-
-  const distanceM = distanceBetweenPointsM(
-    entryLat,
-    entryLon,
-    exitLat,
-    exitLon
-  );
-
-  return {
-    timeSeconds,
-    distanceM,
-    entryLat,
-    entryLon,
-    exitLat,
-    exitLon,
-    startIndex,
-    endIndex,
-    startFraction,
-    endFraction,
-  };
-}
-
-function getValidationStartPoint(points: GpsTrackPoint[]) {
-  const validationOffsetSamples = Math.round(
-    9 / GPS_SAMPLE_PERIOD_SECONDS
-  );
-
-  return points[Math.min(validationOffsetSamples, points.length - 1)] ?? null;
-}
-
-function getWindowTrackPoints(
-  points: GpsTrackPoint[],
-  windowOffsetM: number
-) {
-  const windowTopM = 2500 + windowOffsetM;
-  const windowBottomM = 1500 + windowOffsetM;
-
-  const windowStartIndex = points.findIndex(
-    (point, index) =>
-      index > 0 &&
-      points[index - 1].altitudeM > windowTopM &&
-      point.altitudeM <= windowTopM
-  );
-
-  if (windowStartIndex === -1) {
-    return [];
-  }
-
-  const windowEndOffset = points
-    .slice(windowStartIndex + 1)
-    .findIndex(
-      (point, index) =>
-        points[windowStartIndex + index].altitudeM > windowBottomM &&
-        point.altitudeM <= windowBottomM
-    );
-
-  if (windowEndOffset === -1) {
-    return [];
-  }
-
-  const windowEndIndex = windowStartIndex + 1 + windowEndOffset;
-
-  return points.slice(windowStartIndex, windowEndIndex + 1);
-}
-
-function getLast800mWindowPoints(points: GpsTrackPoint[]) {
-  return points.filter(
-    (point) => point.altitudeM <= 2300 && point.altitudeM >= 1500
-  );
-}
-
-function getTrackDistanceM(points: GpsTrackPoint[]) {
-  if (points.length < 2) {
-    return 0;
-  }
-
-  return points.slice(1).reduce((total, point, index) => {
-    const previousPoint = points[index];
-
-    return (
-      total +
-      distanceBetweenPointsM(
-        previousPoint.lat,
-        previousPoint.lon,
-        point.lat,
-        point.lon
-      )
-    );
-  }, 0);
-}
-
-const GPS_SAMPLE_PERIOD_SECONDS = 0.2;
-const EXIT_VERTICAL_SPEED_TRIGGER_KMH = 9;
-const EXIT_CONFIRMATION_ALTITUDE_LOSS_M = 50;
-
-function kmhToMetresPerSecond(value: number) {
-  return value / 3.6;
-}
-
-function findDetectedExitIndex(points: GpsTrackPoint[]) {
-  const triggerMps = kmhToMetresPerSecond(
-    EXIT_VERTICAL_SPEED_TRIGGER_KMH
-  );
-
-  const confirmationSeconds = 10;
-  const confirmationSamples = Math.round(
-    confirmationSeconds / GPS_SAMPLE_PERIOD_SECONDS
-  );
-
-  const baselineSeconds = 1.5;
-  const baselineSamples = Math.round(
-    baselineSeconds / GPS_SAMPLE_PERIOD_SECONDS
-  );
-
-  const transitionSeconds = 1;
-  const transitionSamples = Math.round(
-    transitionSeconds / GPS_SAMPLE_PERIOD_SECONDS
-  );
-
-  const median = (values: number[]) => {
-    if (values.length === 0) {
-      return null;
-    }
-
-    const sorted = [...values].sort((a, b) => a - b);
-    const middle = Math.floor(sorted.length / 2);
-
-    return sorted.length % 2 === 0
-      ? (sorted[middle - 1] + sorted[middle]) / 2
-      : sorted[middle];
-  };
-
-  const getDiveAngleDeg = (point: GpsTrackPoint) =>
-    Math.atan2(
-      point.verticalSpeedMps,
-      Math.max(point.horizontalSpeedMps, 0.01)
-    ) *
-    (180 / Math.PI);
-
-  for (
-    let index = baselineSamples;
-    index <
-    points.length -
-      Math.max(confirmationSamples, transitionSamples);
-    index += 1
-  ) {
-    const exitCandidate = points[index];
-
-    const baselinePoints = points.slice(
-      index - baselineSamples,
-      index
-    );
-
-    const transitionPoints = points.slice(
-      index,
-      index + transitionSamples + 1
-    );
-
-    const confirmationPoints = points.slice(
-      index,
-      index + confirmationSamples + 1
-    );
-
-    const baselineVerticalSpeedMps =
-      baselinePoints.reduce(
-        (total, point) => total + point.verticalSpeedMps,
-        0
-      ) / baselinePoints.length;
-
-    const finalConfirmationPoint =
-      confirmationPoints[confirmationPoints.length - 1];
-
-    const altitudeLossM =
-      exitCandidate.altitudeM -
-      finalConfirmationPoint.altitudeM;
-
-    const peakVerticalSpeedMps = Math.max(
-      ...confirmationPoints.map(
-        (point) => point.verticalSpeedMps
-      )
-    );
-
-    const descendingPointRatio =
-      confirmationPoints.filter(
-        (point) => point.verticalSpeedMps > triggerMps
-      ).length / confirmationPoints.length;
-
-    const acceleratedFromAircraft =
-      peakVerticalSpeedMps >=
-      baselineVerticalSpeedMps + 7;
-
-    const reachedJumpVerticalSpeed =
-      peakVerticalSpeedMps >= 12;
-
-    const accelerationExitDetected =
-      altitudeLossM >=
-        EXIT_CONFIRMATION_ALTITUDE_LOSS_M &&
-      descendingPointRatio >= 0.6 &&
-      acceleratedFromAircraft &&
-      reachedJumpVerticalSpeed;
-
-    const baselineGlideRatio = median(
-      baselinePoints
-        .map((point) => point.glideRatio)
-        .filter(
-          (value): value is number =>
-            value !== null &&
-            Number.isFinite(value) &&
-            value > 0
-        )
-    );
-
-    const transitionGlideRatio = median(
-      transitionPoints
-        .map((point) => point.glideRatio)
-        .filter(
-          (value): value is number =>
-            value !== null &&
-            Number.isFinite(value) &&
-            value > 0
-        )
-    );
-
-    const baselineDiveAngleDeg = median(
-      baselinePoints.map(getDiveAngleDeg)
-    );
-
-    const transitionDiveAngleDeg = median(
-      transitionPoints.map(getDiveAngleDeg)
-    );
-
-    const glideRatioDrop =
-      baselineGlideRatio !== null &&
-      transitionGlideRatio !== null
-        ? baselineGlideRatio - transitionGlideRatio
-        : 0;
-
-    const glideRatioDropRatio =
-      baselineGlideRatio !== null &&
-      transitionGlideRatio !== null &&
-      baselineGlideRatio > 0
-        ? transitionGlideRatio / baselineGlideRatio
-        : 1;
-
-    const diveAngleIncreaseDeg =
-      baselineDiveAngleDeg !== null &&
-      transitionDiveAngleDeg !== null
-        ? transitionDiveAngleDeg -
-          baselineDiveAngleDeg
-        : 0;
-
-    const aerodynamicExitDetected =
-      baselineGlideRatio !== null &&
-      transitionGlideRatio !== null &&
-      baselineGlideRatio >= 8 &&
-      glideRatioDrop >= 5 &&
-      glideRatioDropRatio <= 0.55 &&
-      diveAngleIncreaseDeg >= 5 &&
-      exitCandidate.horizontalSpeedMps >= 20 &&
-      altitudeLossM >=
-        EXIT_CONFIRMATION_ALTITUDE_LOSS_M &&
-      descendingPointRatio >= 0.5;
-
-    if (
-      accelerationExitDetected ||
-      aerodynamicExitDetected
-    ) {
-      return index;
-    }
-  }
-
-  return -1;
-}
-
-function refineExitByGlideRatio(
-  points: GpsTrackPoint[],
-  roughExitIndex: number
-) {
-  const searchSeconds = 15;
-  const searchSamples = Math.round(
-    searchSeconds / GPS_SAMPLE_PERIOD_SECONDS
-  );
-
-  const baselineSamples = Math.round(
-    1 / GPS_SAMPLE_PERIOD_SECONDS
-  );
-
-  const transitionSamples = Math.round(
-    0.8 / GPS_SAMPLE_PERIOD_SECONDS
-  );
-
-  const searchEndIndex = Math.min(
-    points.length - transitionSamples - 1,
-    roughExitIndex + searchSamples
-  );
-
-  for (
-    let index = Math.max(roughExitIndex, baselineSamples);
-    index <= searchEndIndex;
-    index += 1
-  ) {
-    const beforePoints = points.slice(
-      index - baselineSamples,
-      index
-    );
-
-    const afterPoints = points.slice(
-      index,
-      index + transitionSamples + 1
-    );
-
-    const beforeRatios = beforePoints
-      .map((point) => point.glideRatio)
-      .filter(
-        (value): value is number =>
-          value !== null &&
-          Number.isFinite(value) &&
-          value > 0
-      );
-
-    const afterRatios = afterPoints
-      .map((point) => point.glideRatio)
-      .filter(
-        (value): value is number =>
-          value !== null &&
-          Number.isFinite(value) &&
-          value > 0
-      );
-
-    if (
-      beforeRatios.length === 0 ||
-      afterRatios.length === 0
-    ) {
-      continue;
-    }
-
-    const beforeGlideRatio =
-      beforeRatios.reduce((sum, value) => sum + value, 0) /
-      beforeRatios.length;
-
-    const afterGlideRatio =
-      afterRatios.reduce((sum, value) => sum + value, 0) /
-      afterRatios.length;
-
-    const beforeDiveAngle =
-      beforePoints.reduce(
-        (sum, point) =>
-          sum +
-          Math.atan2(
-            point.verticalSpeedMps,
-            Math.max(point.horizontalSpeedMps, 0.01)
-          ) *
-            (180 / Math.PI),
-        0
-      ) / beforePoints.length;
-
-    const afterDiveAngle =
-      afterPoints.reduce(
-        (sum, point) =>
-          sum +
-          Math.atan2(
-            point.verticalSpeedMps,
-            Math.max(point.horizontalSpeedMps, 0.01)
-          ) *
-            (180 / Math.PI),
-        0
-      ) / afterPoints.length;
-
-    const glideRatioCollapsed =
-      beforeGlideRatio >= 8 &&
-      afterGlideRatio <= beforeGlideRatio * 0.5 &&
-      beforeGlideRatio - afterGlideRatio >= 5;
-
-    const diveAngleIncreased =
-      afterDiveAngle - beforeDiveAngle >= 5;
-
-    if (glideRatioCollapsed && diveAngleIncreased) {
-      return index;
-    }
-  }
-
-  return roughExitIndex;
-}
-
-function getValidatedJumpTrack(points: GpsTrackPoint[]) {
-  const roughExitIndex = findDetectedExitIndex(points);
-
-const exitIndex =
-  roughExitIndex === -1
-    ? -1
-    : refineExitByGlideRatio(points, roughExitIndex);
-
-  if (exitIndex === -1) {
-    return {
-      isValidJump: false,
-      exitPoint: null,
-      jumpPoints: [],
-    };
-  }
-
-  return {
-    isValidJump: true,
-    exitPoint: points[exitIndex],
-    jumpPoints: points.slice(exitIndex),
-  };
-}
-
-function trimTrackAfterLanding(points: GpsTrackPoint[]) {
-  const minimumFlightSeconds = 60;
-  const minimumFlightSamples = Math.round(
-    minimumFlightSeconds / GPS_SAMPLE_PERIOD_SECONDS
-  );
-
-  const landingConfirmationSeconds = 10;
-  const landingConfirmationSamples = Math.round(
-    landingConfirmationSeconds / GPS_SAMPLE_PERIOD_SECONDS
-  );
-
-  for (
-    let index = minimumFlightSamples;
-    index < points.length - landingConfirmationSamples;
-    index += 1
-  ) {
-    const confirmationPoints = points.slice(
-      index,
-      index + landingConfirmationSamples
-    );
-
-    const slowPointRatio =
-      confirmationPoints.filter(
-        (point) =>
-          point.horizontalSpeedMps < 3 &&
-          Math.abs(point.verticalSpeedMps) < 2
-      ).length / confirmationPoints.length;
-
-    if (slowPointRatio >= 0.9) {
-      return points.slice(0, index);
-    }
-  }
-
-  return points;
-}
-
-function getTop100mFlareResult(  points: GpsTrackPoint[],
-  timeInWindowSeconds: number
-) {
-  if (timeInWindowSeconds <= 30) {
-    return null;
-  }
-
-  const flareStartIndex = points.findIndex(
-    (point) =>
-      point.altitudeM <= 2550 &&
-      point.altitudeM >= 2400 &&
-      point.glideRatio !== null &&
-      point.glideRatio >= 3
-  );
-
-  if (flareStartIndex === -1) {
-    return null;
-  }
-
-  const flareStartPoint = points[flareStartIndex];
-  const targetAltitudeM = flareStartPoint.altitudeM - 100;
-
-  const flareEndOffset = points
-    .slice(flareStartIndex)
-    .findIndex((point) => point.altitudeM <= targetAltitudeM);
-
-  if (flareEndOffset === -1) {
-    return null;
-  }
-
-  const flareEndIndex = flareStartIndex + flareEndOffset;
-  const flarePoints = points.slice(flareStartIndex, flareEndIndex + 1);
-
-  const samplePeriodSeconds = GPS_SAMPLE_PERIOD_SECONDS;
-  const flareTimeSeconds = (flarePoints.length - 1) * samplePeriodSeconds;
-  const flareDistanceM = getTrackDistanceM(flarePoints);
-  const peakFlareAltitudeM = Math.max(
-    ...flarePoints.map((point) => point.altitudeM)
-  );
-
-  const altitudeGainM = Math.max(
-    0,
-    peakFlareAltitudeM - flareStartPoint.altitudeM
-  );
-
-return {
-  startAltitudeM: flareStartPoint.altitudeM,
-  altitudeGainM,
-  endAltitudeM: points[flareEndIndex].altitudeM,
-  timeSeconds: flareTimeSeconds,
-  distanceM: flareDistanceM,
-};
-}
-
-function metresPerSecondToKmh(value: number) {
-  return value * 3.6;
-}
-
-function formatNumber(value: number | null | undefined, decimals = 1) {
-  if (value === null || value === undefined || !Number.isFinite(value)) {
-    return "—";
-  }
-
-  return value.toFixed(decimals);
 }
 
 function InteractiveTrackChart({
@@ -4374,16 +3238,19 @@ const [editNotes, setEditNotes] = useState("");
       return;
     }
 
-    const validatedJump = getValidatedJumpTrack(gpsTrackPoints);
+    const dzElevationNumber = numberFromInput(dzElevationM, 0);
+
+    const validatedJump = getValidatedJumpTrack(
+      gpsTrackPoints,
+      dzElevationNumber
+    );
+
     const exitPoint = validatedJump.exitPoint;
 
     if (!validatedJump.isValidJump || !exitPoint) {
       setSaveJumpStatus("A valid jump exit could not be detected.");
       return;
     }
-
-    const dzElevationNumber = numberFromInput(dzElevationM, 0);
-
     const jumpTrackPointsAgl = validatedJump.jumpPoints.map((point) => ({
       ...point,
       altitudeM: point.altitudeM - dzElevationNumber,
@@ -4512,7 +3379,10 @@ const [editNotes, setEditNotes] = useState("");
         });
       }, 100);
 
-      const validatedJump = getValidatedJumpTrack(parsedPoints);
+      const validatedJump = getValidatedJumpTrack(
+        parsedPoints,
+        dzElevationNumber
+      );
       const exitPoint = validatedJump.exitPoint;
 
       if (
@@ -5523,7 +4393,22 @@ if (activePage === "lane") {
                     setHistoricalWinds([]);
                     setHistoricalWindStatus("");
 
-                    const validatedJump = getValidatedJumpTrack(parsedPoints);
+                    const estimatedDzElevationM =
+                      estimateDzElevationM(parsedPoints);
+
+                    const dzElevationNumber =
+                      estimatedDzElevationM ??
+                      optionalNumberFromInput(dzElevationM) ??
+                      0;
+
+                    if (estimatedDzElevationM !== null) {
+                      setDzElevationM(String(estimatedDzElevationM));
+                    }
+
+                    const validatedJump = getValidatedJumpTrack(
+                      parsedPoints,
+                      dzElevationNumber
+                    );
                     const exitPoint = validatedJump.exitPoint;
 
                     if (
@@ -5544,7 +4429,7 @@ if (activePage === "lane") {
                         latitude: exitPoint.lat,
                         longitude: exitPoint.lon,
                         timestampMs: exitPoint.timestampMs,
-                        dzElevationM: numberFromInput(dzElevationM, 0),
+                        dzElevationM: dzElevationNumber,
                       });
 
                       setHistoricalWinds(importedWinds);
@@ -5760,6 +4645,58 @@ if (activePage === "lane") {
   </section>
 )}
 
+<section className="card save-jump-card">
+  <h2>Track Info</h2>
+
+  <label>
+    Location
+    <input
+      type="text"
+      value={jumpLocationName}
+      placeholder="Dropzone or event"
+      onChange={(event) => setJumpLocationName(event.target.value)}
+    />
+  </label>
+
+  <label>
+    Suit
+    <input
+      type="text"
+      value={jumpSuitName}
+      placeholder="Wingsuit model"
+      onChange={(event) => setJumpSuitName(event.target.value)}
+    />
+  </label>
+
+  <label>
+    Notes
+    <textarea
+      value={jumpNotes}
+      placeholder="Jump notes"
+      rows={3}
+      onChange={(event) => setJumpNotes(event.target.value)}
+    />
+  </label>
+
+  <div className="landing-actions">
+    <button
+      type="button"
+      onClick={handleSaveJump}
+      disabled={
+        saveJumpBusy ||
+        !supabaseSession ||
+        !rawGpsCsv
+      }
+    >
+      {saveJumpBusy ? "Saving..." : "Save jump to logbook"}
+    </button>
+  </div>
+
+  {saveJumpStatus && (
+    <p className="subtitle">{saveJumpStatus}</p>
+  )}
+</section>
+
 {gpsTrackPoints.length === 0 && (
   <section className="card track-summary-card">
     <h2>Track Summary</h2>
@@ -5838,36 +4775,45 @@ if (activePage === "lane") {
 
 {gpsTrackPoints.length > 0 &&
   (() => {
-    const validatedJump = getValidatedJumpTrack(gpsTrackPoints);
+    const dzElevationNumber = numberFromInput(
+      dzElevationM,
+      0
+    );
+
+    const validatedJump = getValidatedJumpTrack(
+      gpsTrackPoints,
+      dzElevationNumber
+    );
 
     if (!validatedJump.isValidJump) {
       return null;
     }
 
-    const dzElevationNumber = numberFromInput(dzElevationM, 0);
-
-    const jumpTrackPointsAgl = validatedJump.jumpPoints.map((point) => ({
-      ...point,
-      altitudeM: point.altitudeM - dzElevationNumber,
-    }));
+    const jumpTrackPoints =
+      validatedJump.jumpPoints.map((point) => ({
+        ...point,
+        altitudeM:
+          point.altitudeM - dzElevationNumber,
+      }));
 
     const exitPoint = validatedJump.exitPoint;
 
-    const windowTrackPoints = getWindowTrackPoints(
-      jumpTrackPointsAgl,
-      windowOffsetM
-    );
-
-    const scoringWindowResult = getScoringWindowResult(
-      jumpTrackPointsAgl,
-      windowOffsetM
-    );
+    const scoringWindowResult =
+      getScoringWindowResult(
+        jumpTrackPoints,
+        windowOffsetM
+      );
 
     if (!scoringWindowResult) {
       return null;
     }
 
-    const preWindowDivePoints = jumpTrackPointsAgl.slice(
+    const windowTrackPoints = getWindowTrackPoints(
+      jumpTrackPoints,
+      windowOffsetM
+    );
+
+    const preWindowDivePoints = jumpTrackPoints.slice(
       0,
       scoringWindowResult.startIndex + 1
     );
@@ -5883,7 +4829,7 @@ if (activePage === "lane") {
         : null;
 
     const last800mPoints =
-      getLast800mWindowPoints(jumpTrackPointsAgl);
+      getLast800mWindowPoints(jumpTrackPoints);
 
     const last800mDistanceM =
       getTrackDistanceM(last800mPoints);
@@ -5961,30 +4907,75 @@ if (activePage === "lane") {
     const peakDiveAngleDeg =
       preWindowDivePoints.length > 0
         ? Math.max(
-            ...preWindowDivePoints.map((point) => {
-              if (point.horizontalSpeedMps <= 0) {
-                return 0;
-              }
-
-              return (
-                Math.atan2(
-                  point.verticalSpeedMps,
-                  point.horizontalSpeedMps
-                ) *
-                (180 / Math.PI)
-              );
-            })
+            ...preWindowDivePoints.map(getPointDiveAngleDeg)
           )
         : null;
 
     const top100mFlare = getTop100mFlareResult(
-      jumpTrackPointsAgl,
+      jumpTrackPoints,
       timeInWindowSeconds
     );
 
+    const fullJumpPoints = trimTrackAfterLanding(jumpTrackPoints);
+
+    const scoringWindowEndAltitudeM =
+      jumpTrackPoints[scoringWindowResult.endIndex].altitudeM;
+
+    const compGraphEndAltitudeM =
+      scoringWindowEndAltitudeM - 50;
+
+    const compGraphEndOffset = fullJumpPoints
+      .slice(scoringWindowResult.endIndex)
+      .findIndex(
+        (point) => point.altitudeM <= compGraphEndAltitudeM
+      );
+
+    const compGraphEndIndex =
+      compGraphEndOffset === -1
+        ? scoringWindowResult.endIndex
+        : scoringWindowResult.endIndex + compGraphEndOffset;
+
+    const maximumExitAltitudeIndex = fullJumpPoints.reduce(
+      (highestIndex, point, index, array) =>
+        point.altitudeM > array[highestIndex].altitudeM
+          ? index
+          : highestIndex,
+      0
+    );
+
+    const competitionRunPoints = fullJumpPoints.slice(
+      maximumExitAltitudeIndex,
+      compGraphEndIndex + 1
+    );
+
+    const displayedGraphPoints =
+      graphView === "comp"
+        ? competitionRunPoints
+        : fullJumpPoints;
+
+    const pointA = getValidationStartPoint(jumpTrackPoints);
+    const pointBLat = optionalNumberFromInput(competitionReferenceLat);
+    const pointBLon = optionalNumberFromInput(competitionReferenceLon);
+    const pointB =
+      pointBLat !== null && pointBLon !== null
+        ? { lat: pointBLat, lon: pointBLon }
+        : null;
+    const laneHeadingDeg =
+      pointA !== null && pointB !== null
+        ? String(
+            bearingBetweenPointsDeg(
+              pointA.lat,
+              pointA.lon,
+              pointB.lat,
+              pointB.lon
+            )
+          )
+        : "";
+
     return (
+    <>
       <section className="card track-summary-card">
-        <h2>Track Summary</h2>
+        <h2>Jump Metrics</h2>
 
         <p className="subtitle">
           Window uses {2500 + windowOffsetM} m to{" "}
@@ -6086,7 +5077,7 @@ if (activePage === "lane") {
               <div>
                 <span>Peak Dive Angle: </span>
                 <strong>
-                  {formatNumber(peakDiveAngleDeg, 1)}°
+                  {formatNumber(peakDiveAngleDeg, 1)} deg
                 </strong>
               </div>
 
@@ -6259,141 +5250,7 @@ if (activePage === "lane") {
           </div>
         )}
       </section>
-    );
-  })()}
 
-
-<section className="card save-jump-card">
-    <label>
-      Location
-      <input
-        type="text"
-        value={jumpLocationName}
-        placeholder="Dropzone or event"
-        onChange={(event) => setJumpLocationName(event.target.value)}
-      />
-    </label>
-
-    <label>
-      Suit
-      <input
-        type="text"
-        value={jumpSuitName}
-        placeholder="Wingsuit model"
-        onChange={(event) => setJumpSuitName(event.target.value)}
-      />
-    </label>
-
-    <label>
-      Notes
-      <textarea
-        value={jumpNotes}
-        placeholder="Jump notes"
-        rows={3}
-        onChange={(event) => setJumpNotes(event.target.value)}
-      />
-    </label>
-    <div className="landing-actions">
-      <button
-        type="button"
-        onClick={handleSaveJump}
-        disabled={
-          saveJumpBusy ||
-          !supabaseSession ||
-          !rawGpsCsv
-        }
-      >
-        {saveJumpBusy ? "Saving..." : "Save jump to logbook"}
-      </button>
-    </div>
-
-    {saveJumpStatus && (
-      <p className="subtitle">{saveJumpStatus}</p>
-    )}
-  </section>
-
-{gpsTrackPoints.length > 0 &&
-  (() => {
-    const dzElevationNumber = numberFromInput(dzElevationM, 0);
-
-    const validatedJump = getValidatedJumpTrack(gpsTrackPoints);
-
-    if (!validatedJump.isValidJump) {
-      return null;
-    }
-
-    const jumpTrackPoints = validatedJump.jumpPoints.map((point) => ({
-      ...point,
-      altitudeM: point.altitudeM - dzElevationNumber,
-    }));
-
-    const scoringWindowResult = getScoringWindowResult(
-      jumpTrackPoints,
-      windowOffsetM
-    );
-
-    if (!scoringWindowResult) {
-      return null;
-    }
-
-    const fullJumpPoints = trimTrackAfterLanding(jumpTrackPoints);
-
-    const scoringWindowEndAltitudeM =
-      jumpTrackPoints[scoringWindowResult.endIndex].altitudeM;
-
-    const compGraphEndAltitudeM =
-      scoringWindowEndAltitudeM - 50;
-
-    const compGraphEndOffset = fullJumpPoints
-      .slice(scoringWindowResult.endIndex)
-      .findIndex(
-        (point) => point.altitudeM <= compGraphEndAltitudeM
-      );
-
-    const compGraphEndIndex =
-      compGraphEndOffset === -1
-        ? scoringWindowResult.endIndex
-        : scoringWindowResult.endIndex + compGraphEndOffset;
-
-    const maximumExitAltitudeIndex = fullJumpPoints.reduce(
-      (highestIndex, point, index, array) =>
-        point.altitudeM > array[highestIndex].altitudeM
-          ? index
-          : highestIndex,
-      0
-    );
-
-    const competitionRunPoints = fullJumpPoints.slice(
-      maximumExitAltitudeIndex,
-      compGraphEndIndex + 1
-    );
-
-    const displayedGraphPoints =
-      graphView === "comp"
-        ? competitionRunPoints
-        : fullJumpPoints;
-
-    const pointA = getValidationStartPoint(jumpTrackPoints);
-    const pointBLat = optionalNumberFromInput(competitionReferenceLat);
-    const pointBLon = optionalNumberFromInput(competitionReferenceLon);
-    const pointB =
-      pointBLat !== null && pointBLon !== null
-        ? { lat: pointBLat, lon: pointBLon }
-        : null;
-    const laneHeadingDeg =
-      pointA !== null && pointB !== null
-        ? String(
-            bearingBetweenPointsDeg(
-              pointA.lat,
-              pointA.lon,
-              pointB.lat,
-              pointB.lon
-            )
-          )
-        : "";
-
-    return (
-    <>
       <div className="graph-view-container">
         <InteractiveTrackChart
           points={displayedGraphPoints}
@@ -6475,7 +5332,7 @@ if (activePage === "lane") {
           <MapClickPicker
             referenceLat={competitionReferenceLat}
             referenceLon={competitionReferenceLon}
-            userMapLocation={userMapLocation ?? pointA}
+            userMapLocation={pointA}
             dropPoint={pointA}
             runHeadingDeg={laneHeadingDeg}
             trackPoints={fullJumpPoints}
@@ -7474,6 +6331,7 @@ if (activePage === "rules") {
               dropPoint={calculatedDropPoint}
               onPick={pickReferenceFromMap}
               runHeadingDeg={runHeadingDeg}
+              laneColor={windAdvantage.color}
             />
           </div>
 
@@ -7644,8 +6502,9 @@ if (activePage === "rules") {
 
 
         <button
+              ref={flyMyLaneButtonRef}
               type="button"
-              className="primary-action-button"
+              className="primary-action-button fly-lane-next-button"
               onClick={() => setActivePage("lane")}
             >
               Fly my Lane
