@@ -2053,11 +2053,12 @@ function LaneViewMap({
       pitch: 0,
     });
 
+    let handleLaneWheel: ((event: WheelEvent) => void) | null = null;
     map.on("load", () => {
       const windMarkerSideBearing = normalizeDeg(headingNumber - 90);
       const laneLengthM = nmToMetres(numberFromInput(dropDistanceNm, 0));
 
-      const bounds = new maplibregl.LngLatBounds();;
+      const bounds = new maplibregl.LngLatBounds();
 
       [
         ...leftRedLanePolygon,
@@ -2095,16 +2096,46 @@ function LaneViewMap({
       if (!bounds.isEmpty()) {
         map.fitBounds(bounds, {
           padding: {
-          top: 45,
-          bottom: 85,
-          left: 105,
-          right: 25,
-        },
+            top: 45,
+            bottom: 85,
+            left: 105,
+            right: 25,
+          },
           duration: 0,
         });
 
         map.setBearing(headingNumber);
         map.setPitch(0);
+
+        const laneCenter = bounds.getCenter();
+
+        map.scrollZoom.disable();
+
+        handleLaneWheel = (event: WheelEvent) => {
+          event.preventDefault();
+
+          const zoomStep = 0.12;
+          const direction = event.deltaY > 0 ? -1 : 1;
+
+          const nextZoom = Math.max(
+            map.getMinZoom(),
+            Math.min(map.getMaxZoom(), map.getZoom() + direction * zoomStep)
+          );
+
+          map.easeTo({
+            center: laneCenter,
+            zoom: nextZoom,
+            bearing: headingNumber,
+            pitch: 0,
+            duration: 100,
+          });
+        };
+
+        map
+          .getCanvasContainer()
+          .addEventListener("wheel", handleLaneWheel, {
+            passive: false,
+          });
       }
       map.addSource("lane-red-left", {
         type: "geojson",
@@ -3817,8 +3848,8 @@ const chartData = points.map((point, index) => {
 
     event.preventDefault();
     const centerTime = getTimeFromChartPosition(event.clientX, event.currentTarget);
-    const wheelStep = Math.max(-1, Math.min(1, event.deltaY / 100));
-    const scale = 1 + wheelStep * 0.035;
+    const wheelStep = Math.max(-1, Math.min(1, event.deltaY / 240));
+    const scale = Math.exp(wheelStep * 0.012);
     zoomAround(centerTime, scale);
   }
 
@@ -5352,7 +5383,7 @@ if (activePage === "lane") {
       </header>
 
       <section className="card">
-        <div className="window-adjust-controls">
+        <div className="competition-reference-actions">
           <button
             type="button"
             onClick={() =>
@@ -6464,11 +6495,6 @@ if (activePage === "lane") {
               </strong>
             </div>
 
-            <CompetitionLaneAnalysisMap
-              pointA={pointA}
-              pointB={pointB}
-              trackPoints={fullJumpPoints}
-            />
           </>
         ) : (
           <p className="subtitle">
