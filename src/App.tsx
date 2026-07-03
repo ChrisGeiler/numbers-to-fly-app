@@ -3510,6 +3510,9 @@ useEffect(() => {
 
 const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [findUnitSystem, setFindUnitSystem] = useState<UnitSystem>("metric");
+  const [activeFindHelp, setActiveFindHelp] = useState<
+    "speed" | "time" | "distance" | null
+  >(null);
   const [findWeight, setFindWeight] = useState("");
   const [findHeightCm, setFindHeightCm] = useState("");
   const [findHeightFeet, setFindHeightFeet] = useState("");
@@ -4321,6 +4324,7 @@ if (activePage === "lane") {
             : "Adds a My Lane button to the home page so you can quickly return to this lane view with the latest winds."}
         </p>
       </section>
+      
       
       <BottomBackButton
         label="Back to Home"
@@ -5566,7 +5570,7 @@ if (activePage === "rules") {
           )}
           <div className="landing-actions">
             <button type="button" onClick={() => setActivePage("find")}>
-              Find your Numbers to fly
+              Numbers to fly
             </button>
 
             <button type="button" onClick={() => setActivePage("fly")}>
@@ -5739,7 +5743,199 @@ if (activePage === "rules") {
             Starting point only. Refine these numbers with actual training data,
             suit setup, FlySight data, and coaching feedback.
           </p>
+                </section>
+
+        <section className="card tutorial-card">
+          <h2>How do I fly the numbers?</h2>
+
+          <p>
+            Choose a task to see how to use the numbers in flight and how the
+            FlySight tones can help you stay in the right performance range.
+          </p>
+
+          <div className="find-help-buttons">
+            <button
+              type="button"
+              className="find-help-button"
+              onClick={() =>
+                setActiveFindHelp(activeFindHelp === "speed" ? null : "speed")
+              }
+            >
+              Speed
+            </button>
+
+            <button
+              type="button"
+              className="find-help-button"
+              onClick={() =>
+                setActiveFindHelp(activeFindHelp === "time" ? null : "time")
+              }
+            >
+              Time
+            </button>
+
+            <button
+              type="button"
+              className="find-help-button"
+              onClick={() =>
+                setActiveFindHelp(
+                  activeFindHelp === "distance" ? null : "distance"
+                )
+              }
+            >
+              Distance
+            </button>
+          </div>
         </section>
+
+                {activeFindHelp !== null && (
+          <div
+            className="find-help-overlay"
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setActiveFindHelp(null)}
+          >
+            <section
+              className="find-help-modal"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="find-help-close"
+                aria-label="Close help"
+                onClick={() => setActiveFindHelp(null)}
+              >
+                ×
+              </button>
+
+              {activeFindHelp === "speed" && (
+                <>
+                  <h2>Flying Speed Numbers</h2>
+
+                  <p>
+                    For Speed, you will be shown a start GR and an end GR. The
+                    idea is that if you fly too steep, you will not create
+                    enough horizontal speed. If you fly too flat, you will
+                    present too much surface area and carry too much angle of
+                    attack, which will slow you down.
+                  </p>
+
+                  <p>
+                    There is an ideal angle of flight for every person based on
+                    their height, weight, suit, and flying style. Aim to enter
+                    the window at the start GR, then control the run so the GR
+                    slowly increases through the whole speed window.
+                  </p>
+
+                  <p>
+                    The goal is to finish the window near the end GR with good
+                    speed.
+                  </p>
+
+                  <p>
+                    The tones help you monitor your performance through a speed
+                    range. Low tones mean you are below the target range. High
+                    tones mean you are flying well. Use Configure FlySight to
+                    lower or increase the tone range when needed.
+                  </p>
+                </>
+              )}
+
+              {activeFindHelp === "time" && (
+                <>
+                  <h2>Flying Time Numbers</h2>
+
+                  <p>
+                    For Time, the goal is to fly the lowest sustainable
+                    vertical speed. If you have a good wing configuration and fly
+                    the correct airspeed, the suit should stay efficient through
+                    the window.
+                  </p>
+
+                  <p>
+                    If your horizontal speed is higher than expected, you may be flying too
+                    steep. If your vertical speed is lower, you may be flying too flat,
+                    which is usually not sustainable.
+                  </p>
+
+                  <p>                 
+                    We cannot directly measure airspeed in freefall, but we know our ground
+                    speed and can calculate the effect of the winds. A useful rule of thumb
+                    is to add about 1 km/h to your target speed for every knot of tailwind.
+
+                    For example, if your zero-wind target speed is 150 km/h and you have a 
+                    20 kt tailwind, your new target speed is about 170 km/h.
+                  </p>
+
+                  <p>
+                    For Time, monitor vertical speed using the tone feature on
+                    your FlySight. A range will be set for what is good and bad
+                    in the Configure Flysight page, from the information you provide 
+                    here. Listen for the tone changing as your performance
+                    changes.This gives live feedback in the actual conditions.
+                    
+                  </p>
+
+                  <p>
+                    If you are always flying better than the set tone range, try
+                    adjusting the targets in Configure FlySight to give yourself
+                    a better performance range.
+                  </p>
+                </>
+              )}
+
+              {activeFindHelp === "distance" && (
+                <>
+                  <h2>Flying Distance Numbers</h2>
+
+                  <p>
+                    For Distance, the goal is to fly the best sustainable GR. 
+                    If you have a clean wing configuration and fly the correct
+                    airspeed, the suit should stay efficient through the window.                    
+                  </p>
+
+                  <p>
+                    If your horizontal speed is higher than expected, you may be 
+                    flying too steep. If your vertical speed is lower, you may be 
+                    flying too flat, which is usually not sustainable.
+                  </p>
+                  <p>
+                    We cannot directly measure airspeed in freefall, but we know
+                    our ground speed and can calculate the effect of the winds.
+                    A useful rule of thumb is to add about 1 km/h to your target
+                    speed for every knot of tailwind.
+                  </p>
+
+                  <p>
+                    For example, if your zero-wind target speed is 185 km/h and
+                    you have a 20 kt tailwind, your new target speed is about
+                    205 km/h. Your GR will also increase by around 0.1 for every 
+                    10kts of tailwind.
+                  </p>
+
+                  <p>
+                    It is okay to lose around 20 km/h through the window. That
+                    should still leave enough energy to increase your glide
+                    ratio over the last 100 m. There is no point crossing the
+                    finish line with anything left in the tank.
+                  </p>
+
+                  <p>
+                    For Distance, monitor glide ratio using FlySight tones. Low
+                    tones mean you are below the target range. High tones mean
+                    you are flying well.
+                  </p>
+                </>
+              )}
+
+              <p>
+                Upper winds are extremely important for all of this. Your
+                FlySight config files may need to change between different days
+                as conditions change.
+              </p>
+            </section>
+          </div>
+        )}
 
         <BottomBackButton
           label="Back to Home"
