@@ -1158,6 +1158,128 @@ function distanceWindCorrectionKph(
   return Math.max(tailwindCorrectionKph, crosswindCorrectionKph);
 }
 
+function getWindCorrectedHorizontalSpeedMps(
+  point: GpsTrackPoint,
+  winds: WindLayer[]
+) {
+  if (winds.length === 0) {
+    return point.horizontalSpeedMps;
+  }
+
+  const windAltitudes = winds.map((wind) => wind.altitudeM);
+
+  const windDirectionsByAltitude = Object.fromEntries(
+    winds.map((wind) => [
+      String(wind.altitudeM),
+      numberFromInput(wind.directionFromDeg, 0),
+    ])
+  );
+
+  const windSpeedsByAltitude = Object.fromEntries(
+    winds.map((wind) => [
+      String(wind.altitudeM),
+      numberFromInput(wind.speedKt, 0),
+    ])
+  );
+
+  const windDirectionFromDeg = interpolateDirection(
+    point.altitudeM,
+    windAltitudes,
+    windDirectionsByAltitude
+  );
+
+  const windSpeedKt = interpolateNumber(
+    point.altitudeM,
+    windAltitudes,
+    windSpeedsByAltitude
+  );
+
+  const windTowardDeg = normalizeDeg(windDirectionFromDeg + 180);
+  const windSpeedMps = windSpeedKt * 0.514444;
+  const windTowardRad = degToRad(windTowardDeg);
+
+  const windNorthMps = Math.cos(windTowardRad) * windSpeedMps;
+  const windEastMps = Math.sin(windTowardRad) * windSpeedMps;
+
+  const airNorthMps = point.velNMps - windNorthMps;
+  const airEastMps = point.velEMps - windEastMps;
+
+  return Math.sqrt(airNorthMps * airNorthMps + airEastMps * airEastMps);
+}
+
+function getWindCorrectedWindowDistanceM(
+  points: GpsTrackPoint[],
+  winds: WindLayer[]
+) {
+  if (points.length < 2) {
+    return 0;
+  }
+
+  return points.slice(1).reduce((total, point, index) => {
+    const previousPoint = points[index];
+
+    const previousSpeedMps = getWindCorrectedHorizontalSpeedMps(
+      previousPoint,
+      winds
+    );
+    const currentSpeedMps = getWindCorrectedHorizontalSpeedMps(point, winds);
+
+    const averageSpeedMps = (previousSpeedMps + currentSpeedMps) / 2;
+
+    const previousTimestamp = previousPoint.timestampMs;
+    const currentTimestamp = point.timestampMs;
+
+    const elapsedSeconds =
+      previousTimestamp !== null && currentTimestamp !== null
+        ? Math.max((currentTimestamp - previousTimestamp) / 1000, 0)
+        : GPS_SAMPLE_PERIOD_SECONDS;
+
+    return total + averageSpeedMps * elapsedSeconds;
+  }, 0);
+}
+
+function getDisplayHorizontalSpeedMps(
+  point: GpsTrackPoint,
+  winds: WindLayer[],
+  useCorrected: boolean
+) {
+  return useCorrected
+    ? getWindCorrectedHorizontalSpeedMps(point, winds)
+    : point.horizontalSpeedMps;
+}
+
+function getDisplayGlideRatio(
+  point: GpsTrackPoint,
+  winds: WindLayer[],
+  useCorrected: boolean
+) {
+  if (point.verticalSpeedMps <= 0) {
+    return null;
+  }
+
+  return (
+    getDisplayHorizontalSpeedMps(point, winds, useCorrected) /
+    point.verticalSpeedMps
+  );
+}
+
+function getDisplayTotalSpeedMps(
+  point: GpsTrackPoint,
+  winds: WindLayer[],
+  useCorrected: boolean
+) {
+  const horizontalSpeedMps = getDisplayHorizontalSpeedMps(
+    point,
+    winds,
+    useCorrected
+  );
+
+  return Math.sqrt(
+    horizontalSpeedMps * horizontalSpeedMps +
+      point.verticalSpeedMps * point.verticalSpeedMps
+  );
+}
+
 function interpolateNumber(
   altitudeM: number,
   altitudeLevels: number[],
@@ -3114,6 +3236,7 @@ function App() {
   const [authStatus, setAuthStatus] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [graphView, setGraphView] = useState<"comp" | "full">("comp");
+    const [jumpScoreMode, setJumpScoreMode] = useState<"raw" | "corrected">("raw");
   const [showLogbookLogin, setShowLogbookLogin] = useState(false);
   const [saveJumpStatus, setSaveJumpStatus] = useState("");
   const [saveJumpBusy, setSaveJumpBusy] = useState(false);
@@ -4782,59 +4905,31 @@ if (activePage === "lane") {
       {1500 + windowOffsetM} m.
     </p>
 
-    <div className="window-adjust-controls">
-      <button
-        type="button"
-        onClick={() =>
-          setWindowOffsetM((current) => current - 10)
-        }
-      >
-        -10 m
-      </button>
-
-      <button
-        type="button"
-        onClick={() => setWindowOffsetM(0)}
-      >
-        Reset
-      </button>
-
-      <button
-        type="button"
-        onClick={() =>
-          setWindowOffsetM((current) => current + 10)
-        }
-      >
-        +10 m
-      </button>
-    </div>
-
     <div className="metric-section">
       <h3>Main Scores</h3>
 
       <div className="main-score-columns">
         <div className="main-score-column">
-          <div><span>Jump Time: </span><strong>—</strong></div>
-          <div><span>Exit Location: </span><strong>—</strong></div>
-          <div><span>Exit Altitude: </span><strong>—</strong></div>
-          <div><span>Time: </span><strong>—</strong></div>
-          <div><span>Distance: </span><strong>—</strong></div>
-          <div><span>Speed: </span><strong>—</strong></div>
+          <div><span>Jump Time: </span><strong>&mdash;</strong></div>
+          <div><span>Exit Location: </span><strong>&mdash;</strong></div>
+          <div><span>Exit Altitude: </span><strong>&mdash;</strong></div>
+          <div><span>Time: </span><strong>&mdash;</strong></div>
+          <div><span>Distance: </span><strong>&mdash;</strong></div>
+          <div><span>Speed: </span><strong>&mdash;</strong></div>
         </div>
 
         <div className="main-score-column">
-          <div><span>Peak Dive Angle: </span><strong>—</strong></div>
-          <div><span>Peak Vertical Speed: </span><strong>—</strong></div>
-          <div><span>Peak Total Speed: </span><strong>—</strong></div>
-          <div><span>Peak Horizontal Speed: </span><strong>—</strong></div>
-          <div><span>Entry Glide Ratio: </span><strong>—</strong></div>
-          <div><span>Exit Glide Ratio: </span><strong>—</strong></div>
+          <div><span>Peak Dive Angle: </span><strong>&mdash;</strong></div>
+          <div><span>Peak Vertical Speed: </span><strong>&mdash;</strong></div>
+          <div><span>Peak Total Speed: </span><strong>&mdash;</strong></div>
+          <div><span>Peak Horizontal Speed: </span><strong>&mdash;</strong></div>
+          <div><span>Entry Glide Ratio: </span><strong>&mdash;</strong></div>
+          <div><span>Exit Glide Ratio: </span><strong>&mdash;</strong></div>
         </div>
       </div>
     </div>
   </section>
 )}
-
 {gpsTrackPoints.length === 0 && (
   <section className="card graph-placeholder-card">
     <h2>Interactive Jump Graph</h2>
@@ -4894,16 +4989,25 @@ if (activePage === "lane") {
       scoringWindowResult.startIndex + 1
     );
 
-    const windowDistanceM = scoringWindowResult.distanceM;
+    const rawWindowDistanceM = scoringWindowResult.distanceM;
     const timeInWindowSeconds = scoringWindowResult.timeSeconds;
+
+    const correctedWindowDistanceM = getWindCorrectedWindowDistanceM(
+      windowTrackPoints,
+      historicalWinds
+    );
+
+    const usingCorrectedScores =
+      jumpScoreMode === "corrected" && historicalWinds.length > 0;
+
+    const windowDistanceM = usingCorrectedScores
+      ? correctedWindowDistanceM
+      : rawWindowDistanceM;
 
     const averageHorizontalSpeedKmh =
       timeInWindowSeconds > 0
-        ? metresPerSecondToKmh(
-            windowDistanceM / timeInWindowSeconds
-          )
+        ? metresPerSecondToKmh(windowDistanceM / timeInWindowSeconds)
         : null;
-
     const last800mPoints =
       getLast800mWindowPoints(jumpTrackPoints);
 
@@ -4940,19 +5044,42 @@ if (activePage === "lane") {
       timeInWindowSeconds > 0 &&
       timeInWindowSeconds <= 40;
 
+    const windowEntryPoint = windowTrackPoints[0] ?? null;
+    const windowExitPoint =
+      windowTrackPoints[windowTrackPoints.length - 1] ?? null;
+
     const windowEntryGlideRatio =
-      windowTrackPoints[0]?.glideRatio ?? null;
+      windowEntryPoint === null
+        ? null
+        : getDisplayGlideRatio(
+            windowEntryPoint,
+            historicalWinds,
+            usingCorrectedScores
+          );
 
     const windowExitGlideRatio =
-      windowTrackPoints[windowTrackPoints.length - 1]
-        ?.glideRatio ?? null;
+      windowExitPoint === null
+        ? null
+        : getDisplayGlideRatio(
+            windowExitPoint,
+            historicalWinds,
+            usingCorrectedScores
+          );
+
+    const peakSpeedPoints = isSpeedRun
+      ? windowTrackPoints
+      : preWindowDivePoints;
 
     const peakDiveHorizontalSpeedKmh =
-      preWindowDivePoints.length > 0
+      peakSpeedPoints.length > 0
         ? metresPerSecondToKmh(
             Math.max(
-              ...preWindowDivePoints.map(
-                (point) => point.horizontalSpeedMps
+              ...peakSpeedPoints.map((point) =>
+                getDisplayHorizontalSpeedMps(
+                  point,
+                  historicalWinds,
+                  usingCorrectedScores
+                )
               )
             )
           )
@@ -4970,11 +5097,15 @@ if (activePage === "lane") {
         : null;
 
     const peakDiveTotalSpeedKmh =
-      preWindowDivePoints.length > 0
+      peakSpeedPoints.length > 0
         ? metresPerSecondToKmh(
             Math.max(
-              ...preWindowDivePoints.map(
-                (point) => point.totalSpeedMps
+              ...peakSpeedPoints.map((point) =>
+                getDisplayTotalSpeedMps(
+                  point,
+                  historicalWinds,
+                  usingCorrectedScores
+                )
               )
             )
           )
@@ -5088,6 +5219,33 @@ if (activePage === "lane") {
         <div className="metric-section">
           <h3>Main Scores</h3>
 
+          <label className="score-mode-switch">
+            <span className={jumpScoreMode === "raw" ? "active" : ""}>Raw</span>
+
+            <input
+              type="checkbox"
+              checked={jumpScoreMode === "corrected"}
+              onChange={(event) =>
+                setJumpScoreMode(event.target.checked ? "corrected" : "raw")
+              }
+              disabled={historicalWinds.length === 0}
+            />
+
+            <span className="score-mode-track">
+              <span className="score-mode-knob" />
+            </span>
+
+            <span className={jumpScoreMode === "corrected" ? "active" : ""}>
+              Corrected
+            </span>
+          </label>
+
+          {jumpScoreMode === "corrected" && historicalWinds.length === 0 && (
+            <p className="subtitle">
+              Load historical winds before using corrected scores.
+            </p>
+          )}
+
           <div className="main-score-columns">
             <div className="main-score-column">
               <div>
@@ -5131,14 +5289,14 @@ if (activePage === "lane") {
               </div>
 
               <div>
-                <span>Distance: </span>
+                <span>{usingCorrectedScores ? "Corrected Distance: " : "Distance: "}</span>
                 <strong>
                   {formatNumber(windowDistanceM, 2)} m
                 </strong>
               </div>
 
               <div>
-                <span>Speed: </span>
+                <span>{usingCorrectedScores ? "Corrected Speed: " : "Speed: "}</span>
                 <strong>
                   {formatNumber(
                     averageHorizontalSpeedKmh,
