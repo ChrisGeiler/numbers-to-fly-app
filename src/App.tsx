@@ -3124,8 +3124,9 @@ function App() {
   raw_csv: string | null;
   exit_latitude: number | null;
   exit_longitude: number | null;
-  dz_elevation_m: number | null;
-  id: string;
+  landing_latitude: number | null;
+  landing_longitude: number | null;
+  dz_elevation_m: number | null;  id: string;
   jump_date: string | null;
   location_name: string | null;
   suit_name: string | null;
@@ -3273,6 +3274,11 @@ const [editNotes, setEditNotes] = useState("");
           )
         : null;
 
+    const trimmedTrackPoints = trimTrackAfterLanding(gpsTrackPoints);
+    const landingPoint =
+      trimmedTrackPoints[trimmedTrackPoints.length - 1] ??
+      gpsTrackPoints[gpsTrackPoints.length - 1];
+
     setSaveJumpBusy(true);
     setSaveJumpStatus("");
 
@@ -3287,7 +3293,9 @@ const [editNotes, setEditNotes] = useState("");
       notes: jumpNotes.trim() || null,
       exit_latitude: exitPoint.lat,
       exit_longitude: exitPoint.lon,
-      dz_elevation_m: dzElevationNumber,
+      landing_latitude: landingPoint?.lat ?? null,
+      landing_longitude: landingPoint?.lon ?? null,
+      dz_elevation_m: dzElevationNumber,      
       exit_altitude_m: exitPoint.altitudeM - dzElevationNumber,
       window_time_s: scoringWindowResult.timeSeconds,
       window_distance_m: scoringWindowResult.distanceM,
@@ -3317,7 +3325,7 @@ const [editNotes, setEditNotes] = useState("");
     const { data, error } = await supabase
       .from("jumps")
       .select(
-        "id, jump_date, location_name, suit_name, notes, window_time_s, window_distance_m, window_speed_kmh, exit_latitude, exit_longitude, dz_elevation_m, raw_csv"
+        "id, jump_date, location_name, suit_name, notes, window_time_s, window_distance_m, window_speed_kmh, exit_latitude, exit_longitude, landing_latitude, landing_longitude, dz_elevation_m, raw_csv"
       ) 
       .order("jump_date", { ascending: false });
 
@@ -3331,6 +3339,47 @@ const [editNotes, setEditNotes] = useState("");
       data && data.length > 0
         ? ""
         : "No saved jumps yet."
+    );
+  }
+
+  function findMatchingSavedLocation(landingPoint: GpsTrackPoint) {
+    const matchRadiusM = nmToMetres(3);
+    const matches: { locationName: string; distanceM: number }[] = [];
+
+    savedJumps.forEach((jump) => {
+      if (
+        !jump.location_name ||
+        jump.landing_latitude === null ||
+        jump.landing_longitude === null
+      ) {
+        return;
+      }
+
+      const lat1Rad = degToRad(landingPoint.lat);
+      const lat2Rad = degToRad(jump.landing_latitude);
+      const deltaLatRad = degToRad(jump.landing_latitude - landingPoint.lat);
+      const deltaLonRad = degToRad(jump.landing_longitude - landingPoint.lon);
+
+      const a =
+        Math.sin(deltaLatRad / 2) * Math.sin(deltaLatRad / 2) +
+        Math.cos(lat1Rad) *
+          Math.cos(lat2Rad) *
+          Math.sin(deltaLonRad / 2) *
+          Math.sin(deltaLonRad / 2);
+
+      const distanceM = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      if (distanceM <= matchRadiusM) {
+        matches.push({
+          locationName: jump.location_name,
+          distanceM,
+        });
+      }
+    });
+
+    return (
+      matches.sort((first, second) => first.distanceM - second.distanceM)[0] ??
+      null
     );
   }
 
@@ -4380,10 +4429,19 @@ if (activePage === "lane") {
                     if (!file) {
                       setGpsFileName("");
                       setGpsTrackPoints([]);
+                      setJumpLocationName("");
+                      setJumpSuitName("");
+                      setJumpNotes("");
+                      setSaveJumpStatus("");
                       return;
                     }
 
                     setGpsFileName(file.name);
+
+                    setJumpLocationName("");
+                    setJumpSuitName("");
+                    setJumpNotes("");
+                    setSaveJumpStatus("");
 
                     const csvText = await file.text();
                     setRawGpsCsv(csvText);
@@ -4423,6 +4481,23 @@ if (activePage === "lane") {
                       return;
                     }
 
+                    const trimmedTrackPoints =
+                      trimTrackAfterLanding(parsedPoints);
+                    const landingPoint =
+                      trimmedTrackPoints[trimmedTrackPoints.length - 1] ??
+                      parsedPoints[parsedPoints.length - 1];
+
+                    const matchingLocation =
+                      landingPoint === undefined
+                        ? null
+                        : findMatchingSavedLocation(landingPoint);
+
+                    if (matchingLocation !== null) {
+                      setJumpLocationName(matchingLocation.locationName);
+                      setSaveJumpStatus(
+                        `Matched saved location: ${matchingLocation.locationName}.`
+                      );
+                    }
                     setHistoricalWindStatus("Loading historical winds...");
 
                     try {
