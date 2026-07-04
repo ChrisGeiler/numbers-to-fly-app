@@ -899,6 +899,8 @@ export function getTop100mFlareResult(
   );
 
   return {
+    startIndex: flareStartIndex,
+    endIndex: flareEndIndex,
     startAltitudeM: flareStartPoint.altitudeM,
     altitudeGainM,
     endAltitudeM: points[flareEndIndex].altitudeM,

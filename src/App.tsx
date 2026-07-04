@@ -5011,8 +5011,17 @@ if (activePage === "lane") {
     const last800mPoints =
       getLast800mWindowPoints(jumpTrackPoints);
 
-    const last800mDistanceM =
+    const rawLast800mDistanceM =
       getTrackDistanceM(last800mPoints);
+
+    const correctedLast800mDistanceM = getWindCorrectedWindowDistanceM(
+      last800mPoints,
+      historicalWinds
+    );
+
+    const last800mDistanceM = usingCorrectedScores
+      ? correctedLast800mDistanceM
+      : rawLast800mDistanceM;
 
     const last800mTimeSeconds =
       last800mPoints.length > 1
@@ -5122,6 +5131,24 @@ if (activePage === "lane") {
       jumpTrackPoints,
       timeInWindowSeconds
     );
+
+    const top100mFlarePoints =
+      top100mFlare === null
+        ? []
+        : jumpTrackPoints.slice(
+            top100mFlare.startIndex,
+            top100mFlare.endIndex + 1
+          );
+
+    const top100mFlareDistanceM =
+      top100mFlare === null
+        ? null
+        : usingCorrectedScores
+          ? getWindCorrectedWindowDistanceM(
+              top100mFlarePoints,
+              historicalWinds
+            )
+          : top100mFlare.distanceM;
 
     const fullJumpPoints = trimTrackAfterLanding(jumpTrackPoints);
 
@@ -5401,10 +5428,10 @@ if (activePage === "lane") {
                   </div>
 
                   <div>
-                    <span>Distance: </span>
+                    <span>{usingCorrectedScores ? "Corrected Distance: " : "Distance: "}</span>
                     <strong>
                       {formatNumber(
-                        top100mFlare.distanceM,
+                        top100mFlareDistanceM,
                         0
                       )}{" "}
                       m
@@ -5441,7 +5468,7 @@ if (activePage === "lane") {
 
               <div className="result-grid">
                 <div>
-                  <span>Distance: </span>
+                  <span>{usingCorrectedScores ? "Corrected Distance: " : "Distance: "}</span>
                   <strong>
                     {formatNumber(last800mDistanceM, 0)} m
                   </strong>
@@ -5459,7 +5486,7 @@ if (activePage === "lane") {
                 </div>
 
                 <div>
-                  <span>Avg. Horizontal Speed: </span>
+                  <span>{usingCorrectedScores ? "Corrected Avg. Horizontal Speed: " : "Avg. Horizontal Speed: "}</span>
                   <strong>
                     {formatNumber(
                       last800mAverageHorizontalSpeedKmh,
