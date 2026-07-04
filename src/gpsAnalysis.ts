@@ -10,6 +10,10 @@ export type GpsTrackPoint = {
   verticalSpeedMps: number;
   totalSpeedMps: number;
   glideRatio: number | null;
+  hAccM?: number | null;
+  vAccM?: number | null;
+  speedAccuracyMps?: number | null;
+  numSV?: number | null;
 };
 
 export const GPS_SAMPLE_PERIOD_SECONDS = 0.2;
@@ -78,6 +82,10 @@ export function parseFlySightCsv(csvText: string): GpsTrackPoint[] {
   const velNIndex = getIndex("velN", "vn", "north");
   const velEIndex = getIndex("velE", "ve", "east");
   const velDIndex = getIndex("velD", "vd", "down");
+  const hAccIndex = getIndex("hAcc", "horizontal accuracy");
+  const vAccIndex = getIndex("vAcc", "vertical accuracy");
+  const sAccIndex = getIndex("sAcc", "speed accuracy");
+  const numSVIndex = getIndex("numSV", "satellites", "sv");
 
   if (
     timeIndex === -1 ||
@@ -101,6 +109,11 @@ export function parseFlySightCsv(csvText: string): GpsTrackPoint[] {
     const velN = parseNumber(columns[velNIndex]);
     const velE = parseNumber(columns[velEIndex]);
     const velD = parseNumber(columns[velDIndex]);
+    const hAccM = hAccIndex === -1 ? null : parseNumber(columns[hAccIndex]);
+    const vAccM = vAccIndex === -1 ? null : parseNumber(columns[vAccIndex]);
+    const speedAccuracyMps =
+      sAccIndex === -1 ? null : parseNumber(columns[sAccIndex]);
+    const numSV = numSVIndex === -1 ? null : parseNumber(columns[numSVIndex]);
 
     if (
       lat === null ||
@@ -152,6 +165,10 @@ export function parseFlySightCsv(csvText: string): GpsTrackPoint[] {
         verticalSpeedMps,
         totalSpeedMps,
         glideRatio,
+        hAccM,
+        vAccM,
+        speedAccuracyMps,
+        numSV,
       },
     ];
   });
@@ -392,6 +409,53 @@ function kmhToMetresPerSecond(value: number) {
   return value / 3.6;
 }
 
+function isReliableGpsPoint(point: GpsTrackPoint) {
+  if (point.hAccM !== undefined && point.hAccM !== null && point.hAccM > 80) {
+    return false;
+  }
+
+  if (point.vAccM !== undefined && point.vAccM !== null && point.vAccM > 150) {
+    return false;
+  }
+
+  if (
+    point.speedAccuracyMps !== undefined &&
+    point.speedAccuracyMps !== null &&
+    point.speedAccuracyMps > 8
+  ) {
+    return false;
+  }
+
+  if (point.numSV !== undefined && point.numSV !== null && point.numSV < 4) {
+    return false;
+  }
+
+  return true;
+}
+
+function hasContinuousTiming(points: GpsTrackPoint[], maxGapSeconds = 1) {
+  for (let index = 1; index < points.length; index += 1) {
+    const previousTimestamp = points[index - 1].timestampMs;
+    const currentTimestamp = points[index].timestampMs;
+
+    if (previousTimestamp === null || currentTimestamp === null) {
+      continue;
+    }
+
+    const gapSeconds = (currentTimestamp - previousTimestamp) / 1000;
+
+    if (gapSeconds > maxGapSeconds) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function isReliableExitWindow(points: GpsTrackPoint[]) {
+  return points.every(isReliableGpsPoint) && hasContinuousTiming(points);
+}
+
 function findDetectedExitIndex(points: GpsTrackPoint[]) {
   const triggerMps = kmhToMetresPerSecond(EXIT_VERTICAL_SPEED_TRIGGER_KMH);
 
@@ -435,6 +499,14 @@ function findDetectedExitIndex(points: GpsTrackPoint[]) {
       index,
       index + confirmationSamples + 1
     );
+
+    if (
+      !isReliableExitWindow(baselinePoints) ||
+      !isReliableExitWindow(transitionPoints) ||
+      !isReliableExitWindow(confirmationPoints)
+    ) {
+      continue;
+    }
 
     const baselineVerticalSpeedMps =
       baselinePoints.reduce(
