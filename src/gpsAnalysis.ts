@@ -43,11 +43,28 @@ export function parseFlySightCsv(csvText: string): GpsTrackPoint[] {
     return [];
   }
 
-  const delimiter = lines[0].includes("\t") ? "\t" : ",";
+  const delimiter = lines.some((line) => line.includes("\t")) ? "\t" : ",";
 
-  const headers = lines[0]
-    .split(delimiter)
-    .map((header) => header.trim());
+  const splitLine = (line: string) =>
+    line.split(delimiter).map((value) => value.trim());
+
+  const flySight2HeaderIndex = lines.findIndex((line) => {
+    const columns = splitLine(line);
+    return columns[0] === "$COL" && columns[1] === "GNSS";
+  });
+
+  const isFlySight2 = flySight2HeaderIndex !== -1;
+
+  const headers = isFlySight2
+    ? splitLine(lines[flySight2HeaderIndex]).slice(2)
+    : splitLine(lines[0]).map((header) => header.replace(/^\uFEFF/, ""));
+
+  const dataLines = isFlySight2
+    ? lines.slice(flySight2HeaderIndex + 1).filter((line) => {
+        const columns = splitLine(line);
+        return columns[0] === "$GNSS";
+      })
+    : lines.slice(1);
 
   const getIndex = (...names: string[]) =>
     headers.findIndex((header) =>
@@ -74,8 +91,9 @@ export function parseFlySightCsv(csvText: string): GpsTrackPoint[] {
     return [];
   }
 
-  return lines.slice(1).flatMap((line) => {
-    const columns = line.split(delimiter);
+  return dataLines.flatMap((line) => {
+    const rawColumns = splitLine(line);
+    const columns = isFlySight2 ? rawColumns.slice(1) : rawColumns;
 
     const lat = parseNumber(columns[latIndex]);
     const lon = parseNumber(columns[lonIndex]);
