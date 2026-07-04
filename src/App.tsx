@@ -79,7 +79,6 @@ type SuitSetup =
   | "freak-atc"
   | "swift";
 type UnitSystem = "metric" | "imperial";
-type FlySightVersion = "original" | "flysight2";
 type ConfigTask = "distance" | "speed" | "time";
 
 type StoredConfigTonePresets = Partial<
@@ -795,7 +794,7 @@ function generateFlySightConfig({
 
   const finalAlarmType = task === "time" ? 1 : 4;
   const flareAlarmType = task === "speed" ? 1 : 4;
-
+  
 return `; GPS settings
 Model:     7     ; Dynamic model
                  ;   0 = Portable
@@ -3616,8 +3615,6 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [configTask, setConfigTask] = useState<ConfigTask>("distance");
   const [configSuit, setConfigSuit] =
     useState<ConfigSuit>("crplus-no-wingtips");
-  const [flySightVersion, setFlySightVersion] =
-    useState<FlySightVersion>("original");
   const [configDzElevM, setConfigDzElevM] = useState("");
   const [configTimezoneOffsetHours, setConfigTimezoneOffsetHours] =
     useState("");
@@ -3661,7 +3658,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
 
   const generatedConfigText = useMemo(
     () =>
-      generateFlySightConfig({
+            generateFlySightConfig({
         task: configTask,
         dzElevM: configDzElevM,
         timezoneOffsetHours: configTimezoneOffsetHours,
@@ -3677,7 +3674,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
         alarmFlare: configAlarmFlare,
         alarmTask: configAlarmTask,
       }),
-    [
+        [
       configTask,
       configDzElevM,
       configTimezoneOffsetHours,
@@ -4061,7 +4058,7 @@ async function copyGeneratedConfig() {
 }
 
 function downloadGeneratedConfig() {
-  if (toneRangeInvalid) {
+    if (toneRangeInvalid) {
     setCopyStatus("Fix the tone range before downloading the config.");
     return;
   }
@@ -5970,23 +5967,9 @@ if (activePage === "rules") {
           <h2>FlySight Config Builder</h2>
 
           <p className="subtitle">
-            Generate task-specific FlySight settings. Original FlySight users can
-            copy/download the file and transfer by cable. FlySight 2 Bluetooth
-            transfer can be added later.
+            Generate task-specific FlySight settings. The same config format
+            works for FlySight 1 and FlySight 2.
           </p>
-
-          <label>
-            FlySight version
-            <select
-              value={flySightVersion}
-              onChange={(e) =>
-                setFlySightVersion(e.target.value as FlySightVersion)
-              }
-            >
-              <option value="original">Original FlySight</option>
-              <option value="flysight2">FlySight 2</option>
-            </select>
-          </label>
 
           <label>
             Task
@@ -6342,15 +6325,8 @@ if (activePage === "rules") {
           <h2>Generated Config</h2>
 
           <p className="subtitle">
-            Keep the firmware header at the very top of the FlySight file, then
-            paste the generated config directly underneath it.
-          </p>
-
-          <pre className="firmware-header">{`; Firmware version v20######
-
-; For information on configuring FlySight, please go to
-;     http://flysight.ca/wiki`}</pre>
-
+            Copy or download this config and use it for either FlySight version.
+          </p>          
           <div className="config-actions">
             <button
               type="button"

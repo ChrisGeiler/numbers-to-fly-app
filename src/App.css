@@ -520,19 +520,6 @@ tr:last-child td {
   }
 }
 
-.firmware-header {
-  padding: 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(34, 211, 238, 0.35);
-  background: rgba(2, 6, 23, 0.92);
-  color: #a5f3fc;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    "Liberation Mono", "Courier New", monospace;
-  font-size: 0.82rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-}
-
 .invalid-input {
   border-color: #ef4444 !important;
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35),
