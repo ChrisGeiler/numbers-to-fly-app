@@ -2556,12 +2556,16 @@ function InteractiveTrackChart({
   winds,
   graphView,
   onGraphViewChange,
+  scoreMode,
+  onScoreModeChange,
 }: {
   points: GpsTrackPoint[];
   windowOffsetM: number;
   winds: WindLayer[];
   graphView: "comp" | "full";
   onGraphViewChange: (view: "comp" | "full") => void;
+  scoreMode: "raw" | "corrected";
+  onScoreModeChange: (mode: "raw" | "corrected") => void;
 }) {
 const windAltitudes = winds.map((wind) => wind.altitudeM);
 
@@ -2986,17 +2990,26 @@ const chartData = points.map((point, index) => {
             Comp run
           </button>
 
-          {isZoomed ? (
-            <button
-              type="button"
-              className="chart-reset-button"
-              onClick={resetZoom}
-            >
-              Reset zoom
-            </button>
-          ) : (
-            <span className="chart-reset-placeholder" aria-hidden="true" />
-          )}
+          <label className="score-mode-switch graph-score-mode-switch">
+            <span className={scoreMode === "raw" ? "active" : ""}>Raw</span>
+
+            <input
+              type="checkbox"
+              checked={scoreMode === "corrected"}
+              onChange={(event) =>
+                onScoreModeChange(event.target.checked ? "corrected" : "raw")
+              }
+              disabled={winds.length === 0}
+            />
+
+            <span className="score-mode-track">
+              <span className="score-mode-knob" />
+            </span>
+
+            <span className={scoreMode === "corrected" ? "active" : ""}>
+              Corrected
+            </span>
+          </label>
 
           <button
             type="button"
@@ -3010,6 +3023,16 @@ const chartData = points.map((point, index) => {
             Full Jump
           </button>
         </div>
+
+        {isZoomed && (
+          <button
+            type="button"
+            className="chart-reset-button"
+            onClick={resetZoom}
+          >
+            Reset zoom
+          </button>
+        )}
       </div>
 
       <div
@@ -5519,6 +5542,8 @@ if (activePage === "lane") {
           winds={historicalWinds}
           graphView={graphView}
           onGraphViewChange={setGraphView}
+          scoreMode={jumpScoreMode}
+          onScoreModeChange={setJumpScoreMode}
         />
       </div>
 

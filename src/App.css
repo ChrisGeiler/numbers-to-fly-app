@@ -1076,6 +1076,16 @@ button:disabled {
   margin-top: 4px;
 }
 
+.graph-score-mode-switch {
+  margin: 0;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.graph-score-mode-switch span {
+  font-size: 0.82rem;
+}
+
 .chart-reset-button,
 .chart-reset-placeholder {
   justify-self: center;
@@ -1083,7 +1093,10 @@ button:disabled {
 }
 
 .chart-reset-button {
+  align-self: center;
   width: auto;
+  min-width: 104px;
+  margin: 2px 0 0;
   padding: 8px 12px;
   border-radius: 9px;
   font-size: 0.82rem;
@@ -1811,6 +1824,14 @@ button {
 
   .chart-control-row {
     gap: 8px;
+  }
+
+  .graph-score-mode-switch {
+    gap: 6px;
+  }
+
+  .graph-score-mode-switch span {
+    font-size: 0.7rem;
   }
 
   .chart-reset-button,
