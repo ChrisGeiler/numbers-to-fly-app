@@ -2625,21 +2625,41 @@ const chartData = points.map((point, index) => {
     airNorthMps * airNorthMps + airEastMps * airEastMps
   );
 
+  const useCorrectedGraphValues = scoreMode === "corrected" && winds.length > 0;
+
+const displayHorizontalSpeedMps = getDisplayHorizontalSpeedMps(
+  point,
+  winds,
+  useCorrectedGraphValues
+);
+
+const displayTotalSpeedMps = getDisplayTotalSpeedMps(
+  point,
+  winds,
+  useCorrectedGraphValues
+);
+
+const displayGlideRatio = getDisplayGlideRatio(
+  point,
+  winds,
+  useCorrectedGraphValues
+);
+
   return {
     sample: index,
     timeSeconds: index * GPS_SAMPLE_PERIOD_SECONDS,
     altitudeM: point.altitudeM,
     horizontalSpeedKmh: metresPerSecondToKmh(
-      point.horizontalSpeedMps
-    ),
+      displayHorizontalSpeedMps),
     verticalSpeedKmh: metresPerSecondToKmh(
       point.verticalSpeedMps
     ),
-    totalSpeedKmh: metresPerSecondToKmh(point.totalSpeedMps),
+    totalSpeedKmh: metresPerSecondToKmh(
+      displayTotalSpeedMps),
     calculatedAirspeedKmh: metresPerSecondToKmh(
       calculatedAirspeedMps
     ),
-    glideRatio: point.glideRatio,
+    glideRatio: displayGlideRatio,
     diveAngleDeg,
     windDirectionFromDeg,
     windSpeedKt,
