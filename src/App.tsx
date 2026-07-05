@@ -52,6 +52,7 @@ import {
   Line,
   LineChart,
   ReferenceArea,
+  ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -324,6 +325,18 @@ type WindAdvantageSummary = {
 const altitudes = [
   2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600, 1500,
 ];
+
+const compareTrackColors = ["#ef4444", "#2563eb", "#39ff14", "#ff00ff"];
+const comparePreWindowSeconds = 25;
+const comparePostWindowSeconds = 35;
+
+type CompareTrackOption = {
+  id: string;
+  label: string;
+  rawCsv: string;
+  dzElevationM: number;
+  taskType: TaskMode | null;
+};
 
 function formatLogbookDateTime(value: string | null): string {
   if (!value) return "Not available";
@@ -3306,6 +3319,633 @@ const displayGlideRatio = getDisplayGlideRatio(
               );
             }
 
+function TrackComparisonChart({
+  tracks,
+  windowOffsetM,
+}: {
+  tracks: CompareTrackOption[];
+  windowOffsetM: number;
+}) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playheadSeconds, setPlayheadSeconds] = useState(0);
+  const [visibleXDomain, setVisibleXDomain] = useState<[number, number] | null>(
+    null
+  );
+  const [selectionStartX, setSelectionStartX] = useState<number | null>(null);
+  const [selectionEndX, setSelectionEndX] = useState<number | null>(null);
+  const [isDraggingDot, setIsDraggingDot] = useState(false);
+
+  const preparedTracks = useMemo(
+    () =>
+      tracks
+        .slice(0, 4)
+        .map((track, trackIndex) => {
+          try {
+            const parsedPoints = parseFlySightCsv(track.rawCsv);
+            const validatedJump = getValidatedJumpTrack(
+              parsedPoints,
+              track.dzElevationM
+            );
+
+            if (!validatedJump.isValidJump) {
+              return null;
+            }
+
+            const jumpTrackPoints = validatedJump.jumpPoints.map((point) => ({
+              ...point,
+              altitudeM: point.altitudeM - track.dzElevationM,
+            }));
+
+            const scoringWindowResult = getScoringWindowResult(
+              jumpTrackPoints,
+              windowOffsetM
+            );
+
+            if (!scoringWindowResult) {
+              return null;
+            }
+
+            const distanceFromEntryByIndex = jumpTrackPoints.map(() => 0);
+
+            for (
+              let index = scoringWindowResult.startIndex + 1;
+              index < jumpTrackPoints.length;
+              index += 1
+            ) {
+              distanceFromEntryByIndex[index] =
+                distanceFromEntryByIndex[index - 1] +
+                getTrackDistanceM([
+                  jumpTrackPoints[index - 1],
+                  jumpTrackPoints[index],
+                ]);
+            }
+
+            for (
+              let index = scoringWindowResult.startIndex - 1;
+              index >= 0;
+              index -= 1
+            ) {
+              distanceFromEntryByIndex[index] =
+                distanceFromEntryByIndex[index + 1] -
+                getTrackDistanceM([
+                  jumpTrackPoints[index],
+                  jumpTrackPoints[index + 1],
+                ]);
+            }
+
+            const firstIndex = Math.max(
+              0,
+              scoringWindowResult.startIndex -
+                Math.round(comparePreWindowSeconds / GPS_SAMPLE_PERIOD_SECONDS)
+            );
+            const lastIndex = Math.min(
+              jumpTrackPoints.length - 1,
+              scoringWindowResult.endIndex +
+                Math.round(comparePostWindowSeconds / GPS_SAMPLE_PERIOD_SECONDS)
+            );
+
+            return {
+              id: track.id,
+              label: track.label,
+              color: compareTrackColors[trackIndex],
+              dataKey: "track" + trackIndex,
+              taskType: track.taskType,
+              windowDurationSeconds: scoringWindowResult.timeSeconds,
+              windowDistanceM: scoringWindowResult.distanceM,
+              windowSpeedKmh:
+                scoringWindowResult.timeSeconds > 0
+                  ? metresPerSecondToKmh(
+                      scoringWindowResult.distanceM /
+                        scoringWindowResult.timeSeconds
+                    )
+                  : null,
+              points: jumpTrackPoints
+                .slice(firstIndex, lastIndex + 1)
+                .map((point, pointOffset) => {
+                  const originalIndex = firstIndex + pointOffset;
+                  return {
+                    relativeTimeSeconds: Number(
+                      (
+                        (originalIndex - scoringWindowResult.startIndex) *
+                        GPS_SAMPLE_PERIOD_SECONDS
+                      ).toFixed(1)
+                    ),
+                    altitudeM: point.altitudeM,
+                    distanceFromEntryM: distanceFromEntryByIndex[originalIndex],
+                  };
+                }),
+            };
+          } catch (_error) {
+            return null;
+          }
+        })
+        .filter((track): track is NonNullable<typeof track> => track !== null),
+    [tracks, windowOffsetM]
+  );
+
+  const comparisonPoints = preparedTracks.flatMap((track) => track.points);
+  const taskTypes = Array.from(
+    new Set(
+      preparedTracks
+        .map((track) => track.taskType)
+        .filter((taskType): taskType is TaskMode => taskType !== null)
+    )
+  );
+  const comparisonTask: TaskMode | "mixed" =
+    taskTypes.length === 1 ? taskTypes[0] : "mixed";
+  const useTimeAxis = comparisonTask === "time";
+  const minTime =
+    comparisonPoints.length > 0
+      ? Math.min(...comparisonPoints.map((point) => point.relativeTimeSeconds))
+      : -comparePreWindowSeconds;
+  const maxTime =
+    comparisonPoints.length > 0
+      ? Math.max(...comparisonPoints.map((point) => point.relativeTimeSeconds))
+      : comparePostWindowSeconds;
+  const minDistance =
+    comparisonPoints.length > 0
+      ? Math.floor(
+          Math.min(...comparisonPoints.map((point) => point.distanceFromEntryM)) /
+            100
+        ) * 100
+      : -200;
+  const maxDistance =
+    comparisonPoints.length > 0
+      ? Math.ceil(
+          Math.max(...comparisonPoints.map((point) => point.distanceFromEntryM)) /
+            100
+        ) * 100
+      : 2500;
+  const windowTopM = 2500 + windowOffsetM;
+  const windowBottomM = 1500 + windowOffsetM;
+  const altitudeTicks = Array.from(
+    { length: Math.floor((windowTopM - windowBottomM) / 250) + 1 },
+    (_, index) => windowBottomM + index * 250
+  );
+  const xAxisKey = useTimeAxis ? "relativeTimeSeconds" : "distanceFromEntryM";
+  const fullXAxisDomain: [number, number] = useTimeAxis
+    ? [minTime, maxTime]
+    : [minDistance, maxDistance];
+  const activeXAxisDomain = visibleXDomain ?? fullXAxisDomain;
+  const xAxisUnit = useTimeAxis ? "s" : "m";
+  const chartSubtitle =
+    comparisonTask === "time"
+      ? "Time tracks are compared by seconds spent falling through the window."
+      : comparisonTask === "speed"
+        ? "Speed tracks are compared by distance covered as the dots move by elapsed time."
+        : comparisonTask === "distance"
+          ? "Distance tracks are compared by metres flown through the window."
+          : "Mixed tasks are shown by distance from window entry.";
+
+  type CompareChartMouseState = {
+    activeLabel?: string | number;
+  };
+
+  function getActiveXValue(state: CompareChartMouseState | undefined) {
+    const value = Number(state?.activeLabel);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function clampXDomain(start: number, end: number): [number, number] {
+    const minX = Math.min(...fullXAxisDomain);
+    const maxX = Math.max(...fullXAxisDomain);
+    const nextStart = Math.max(minX, Math.min(start, maxX));
+    const nextEnd = Math.max(minX, Math.min(end, maxX));
+
+    return [
+      Math.min(nextStart, nextEnd),
+      Math.max(nextStart, nextEnd),
+    ];
+  }
+
+  function getTimeForXValue(
+    track: (typeof preparedTracks)[number],
+    xValue: number
+  ) {
+    const firstPoint = track.points[0];
+    const lastPoint = track.points.at(-1);
+
+    if (!firstPoint || !lastPoint) {
+      return null;
+    }
+
+    if (useTimeAxis) {
+      return xValue;
+    }
+
+    const firstX = firstPoint.distanceFromEntryM;
+    const lastX = lastPoint.distanceFromEntryM;
+
+    if (xValue <= firstX) {
+      return firstPoint.relativeTimeSeconds;
+    }
+
+    if (xValue >= lastX) {
+      return lastPoint.relativeTimeSeconds;
+    }
+
+    const nextIndex = track.points.findIndex(
+      (point) => point.distanceFromEntryM >= xValue
+    );
+
+    if (nextIndex <= 0) {
+      return firstPoint.relativeTimeSeconds;
+    }
+
+    const previousPoint = track.points[nextIndex - 1];
+    const nextPoint = track.points[nextIndex];
+    const span =
+      nextPoint.distanceFromEntryM - previousPoint.distanceFromEntryM;
+    const progress =
+      span > 0 ? (xValue - previousPoint.distanceFromEntryM) / span : 0;
+
+    return (
+      previousPoint.relativeTimeSeconds +
+      (nextPoint.relativeTimeSeconds - previousPoint.relativeTimeSeconds) *
+        progress
+    );
+  }
+
+  function getPlaybackTimeRange() {
+    if (!visibleXDomain) {
+      return [minTime, maxTime] as [number, number];
+    }
+
+    const times = preparedTracks.flatMap((track) =>
+      visibleXDomain
+        .map((xValue) => getTimeForXValue(track, xValue))
+        .filter((value): value is number => value !== null)
+    );
+
+    if (times.length === 0) {
+      return [minTime, maxTime] as [number, number];
+    }
+
+    return [Math.min(...times), Math.max(...times)] as [number, number];
+  }
+
+  function scrubToXValue(xValue: number) {
+    const times = preparedTracks
+      .map((track) => getTimeForXValue(track, xValue))
+      .filter((value): value is number => value !== null);
+
+    if (times.length === 0) {
+      return;
+    }
+
+    setPlayheadSeconds(times.reduce((total, time) => total + time, 0) / times.length);
+  }
+
+  function handleCompareMouseDown(state: CompareChartMouseState | undefined) {
+    const value = getActiveXValue(state);
+
+    if (value === null) {
+      return;
+    }
+
+    if (isDraggingDot) {
+      scrubToXValue(value);
+      return;
+    }
+
+    setSelectionStartX(value);
+    setSelectionEndX(value);
+  }
+
+  function handleCompareMouseMove(state: CompareChartMouseState | undefined) {
+    const value = getActiveXValue(state);
+
+    if (value === null) {
+      return;
+    }
+
+    if (isDraggingDot) {
+      scrubToXValue(value);
+      return;
+    }
+
+    if (selectionStartX !== null) {
+      setSelectionEndX(value);
+    }
+  }
+
+  function finishCompareSelection() {
+    if (isDraggingDot) {
+      setIsDraggingDot(false);
+      return;
+    }
+
+    if (selectionStartX === null || selectionEndX === null) {
+      setSelectionStartX(null);
+      setSelectionEndX(null);
+      return;
+    }
+
+    const selectionSize = Math.abs(selectionEndX - selectionStartX);
+    const minimumSelectionSize =
+      Math.abs(fullXAxisDomain[1] - fullXAxisDomain[0]) * 0.04;
+
+    if (selectionSize >= minimumSelectionSize) {
+      const nextDomain = clampXDomain(selectionStartX, selectionEndX);
+      setVisibleXDomain(nextDomain);
+      scrubToXValue(nextDomain[0]);
+    }
+
+    setSelectionStartX(null);
+    setSelectionEndX(null);
+  }
+
+  function getCompareReadout(
+    track: (typeof preparedTracks)[number],
+    dot: { distanceFromEntryM: number; track: { id: string } } | undefined
+  ) {
+    if (comparisonTask === "time") {
+      return `${formatNumber(track.windowDurationSeconds, 2)} sec`;
+    }
+
+    if (comparisonTask === "speed") {
+      return `${formatNumber(track.windowSpeedKmh, 1)} km/h`;
+    }
+
+    const distanceM =
+      comparisonTask === "distance"
+        ? track.windowDistanceM
+        : dot?.distanceFromEntryM ?? null;
+
+    return `${formatNumber(distanceM, 0)} m`;
+  }
+
+  function getTrackPositionAtTime(
+    track: (typeof preparedTracks)[number],
+    timeSeconds: number
+  ) {
+    const firstPoint = track.points[0];
+    const lastPoint = track.points.at(-1);
+
+    if (!firstPoint || !lastPoint) {
+      return null;
+    }
+
+    if (timeSeconds <= firstPoint.relativeTimeSeconds) {
+      return firstPoint;
+    }
+
+    if (timeSeconds >= lastPoint.relativeTimeSeconds) {
+      return lastPoint;
+    }
+
+    const nextIndex = track.points.findIndex(
+      (point) => point.relativeTimeSeconds >= timeSeconds
+    );
+
+    if (nextIndex <= 0) {
+      return firstPoint;
+    }
+
+    const previousPoint = track.points[nextIndex - 1];
+    const nextPoint = track.points[nextIndex];
+    const span =
+      nextPoint.relativeTimeSeconds - previousPoint.relativeTimeSeconds;
+    const progress =
+      span > 0
+        ? (timeSeconds - previousPoint.relativeTimeSeconds) / span
+        : 0;
+
+    return {
+      relativeTimeSeconds: timeSeconds,
+      altitudeM:
+        previousPoint.altitudeM +
+        (nextPoint.altitudeM - previousPoint.altitudeM) * progress,
+      distanceFromEntryM:
+        previousPoint.distanceFromEntryM +
+        (nextPoint.distanceFromEntryM - previousPoint.distanceFromEntryM) *
+          progress,
+    };
+  }
+
+  const animatedDots = preparedTracks
+    .map((track) => {
+      const point = getTrackPositionAtTime(track, playheadSeconds);
+      return point ? { ...point, track } : null;
+    })
+    .filter((dot): dot is NonNullable<typeof dot> => dot !== null);
+
+  useEffect(() => {
+    setPlayheadSeconds(minTime);
+    setIsPlaying(false);
+    setVisibleXDomain(null);
+    setSelectionStartX(null);
+    setSelectionEndX(null);
+    setIsDraggingDot(false);
+  }, [minTime, maxTime, tracks.length, xAxisKey]);
+
+  useEffect(() => {
+    if (!isPlaying || preparedTracks.length === 0) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setPlayheadSeconds((current) => {
+        const [playStartTime, playEndTime] = getPlaybackTimeRange();
+        const next = current + 0.4;
+        return next >= playEndTime ? playStartTime : next;
+      });
+    }, 80);
+
+    return () => window.clearInterval(timer);
+  }, [isPlaying, maxTime, minTime, preparedTracks, visibleXDomain]);
+
+  if (tracks.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="card compare-chart-card">
+      <div className="compare-chart-heading">
+        <div>
+          <h2>Track Comparison</h2>
+          <p className="subtitle">
+            {chartSubtitle}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="compare-play-button"
+          onClick={() => setIsPlaying((current) => !current)}
+          disabled={preparedTracks.length === 0}
+        >
+          {isPlaying ? "Pause" : "Play"}
+        </button>
+
+        {visibleXDomain && (
+          <button
+            type="button"
+            className="compare-play-button"
+            onClick={() => {
+              setVisibleXDomain(null);
+              setSelectionStartX(null);
+              setSelectionEndX(null);
+            }}
+          >
+            Reset zoom
+          </button>
+        )}
+      </div>
+
+      {preparedTracks.length === 0 ? (
+        <p className="subtitle">
+          Selected tracks need a detected scoring window before they can be compared.
+        </p>
+      ) : (
+        <>
+          <div className="compare-chart-legend">
+            {preparedTracks.map((track) => (
+              <span key={track.id}>
+                <span
+                  className="compare-color-swatch"
+                  style={{ background: track.color }}
+                />
+                {track.label}
+                <strong className="compare-distance-readout">
+                  {getCompareReadout(
+                    track,
+                    animatedDots.find((dot) => dot.track.id === track.id)
+                  )}
+                </strong>
+              </span>
+            ))}
+          </div>
+
+          <div className="compare-chart-wrap">
+            <ResponsiveContainer width="100%" height={460} minWidth={0}>
+              <LineChart
+                margin={{ top: 18, right: 26, bottom: 18, left: 10 }}
+                onMouseDown={handleCompareMouseDown}
+                onMouseMove={handleCompareMouseMove}
+                onMouseUp={finishCompareSelection}
+                onMouseLeave={finishCompareSelection}
+              >
+                <CartesianGrid
+                  stroke="rgba(148, 163, 184, 0.22)"
+                  strokeDasharray="4 4"
+                />
+                <XAxis
+                  dataKey={xAxisKey}
+                  type="number"
+                  domain={activeXAxisDomain}
+                  allowDataOverflow
+                  tickFormatter={(value) =>
+                    String(Number(value).toFixed(useTimeAxis ? 0 : 0)) +
+                    " " +
+                    xAxisUnit
+                  }
+                  stroke="#d1d5db"
+                />
+                <YAxis
+                  dataKey="altitudeM"
+                  type="number"
+                  domain={[windowBottomM, windowTopM]}
+                  ticks={altitudeTicks}
+                  tickFormatter={(value) => String(Number(value).toFixed(0)) + " m"}
+                  stroke="#d1d5db"
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "rgba(2, 6, 23, 0.9)",
+                    border: "1px solid #22d3ee",
+                    borderRadius: "8px",
+                    color: "#ffffff",
+                  }}
+                  labelFormatter={(value) =>
+                    (useTimeAxis ? "Time from entry: " : "Distance from entry: ") +
+                    Number(value).toFixed(useTimeAxis ? 1 : 0) +
+                    " " +
+                    xAxisUnit
+                  }
+                  formatter={(value, name) => [
+                    String(Number(value).toFixed(0)) + " m altitude",
+                    preparedTracks.find((track) => track.dataKey === name)?.label ??
+                      String(name),
+                  ]}
+                />
+                {selectionStartX !== null && selectionEndX !== null && (
+                  <ReferenceArea
+                    x1={Math.min(selectionStartX, selectionEndX)}
+                    x2={Math.max(selectionStartX, selectionEndX)}
+                    stroke="#22d3ee"
+                    strokeOpacity={0.85}
+                    fill="#22d3ee"
+                    fillOpacity={0.16}
+                  />
+                )}
+                <ReferenceLine
+                  y={windowTopM}
+                  stroke="#22c55e"
+                  strokeDasharray="6 4"
+                  label={{
+                    value: "Window start",
+                    fill: "#22c55e",
+                    position: "insideTopRight",
+                  }}
+                />
+                <ReferenceLine
+                  y={windowBottomM}
+                  stroke="#ef4444"
+                  strokeDasharray="6 4"
+                  label={{
+                    value: "Window end",
+                    fill: "#ef4444",
+                    position: "insideBottomRight",
+                  }}
+                />
+                {preparedTracks.map((track) => (
+                  <Line
+                    key={track.id}
+                    type="monotone"
+                    data={track.points}
+                    dataKey="altitudeM"
+                    name={track.label}
+                    stroke={track.color}
+                    strokeWidth={2.8}
+                    dot={false}
+                    connectNulls={false}
+                    activeDot={{ r: 5 }}
+                  />
+                ))}
+                {animatedDots.map((dot) => (
+                  <ReferenceDot
+                    key={dot.track.id}
+                    x={
+                      useTimeAxis
+                        ? dot.relativeTimeSeconds
+                        : dot.distanceFromEntryM
+                    }
+                    y={dot.altitudeM}
+                    r={7}
+                    fill={dot.track.color}
+                    stroke="#ffffff"
+                    strokeWidth={2}
+                    ifOverflow="extendDomain"
+                    onMouseDown={() => {
+                      setIsPlaying(false);
+                      setIsDraggingDot(true);
+                    }}
+                    onTouchStart={() => {
+                      setIsPlaying(false);
+                      setIsDraggingDot(true);
+                    }}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 function App() {
   const [supabaseSession, setSupabaseSession] = useState<Session | null>(null);
   const [authEmail, setAuthEmail] = useState("");
@@ -3758,14 +4398,6 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     }, 150);
   }
 
-    function startEditingJump(jump: SavedJump) {
-    setEditingJumpId(jump.id);
-    setEditLocationName(jump.location_name ?? "");
-    setEditSuitName(jump.suit_name ?? "");
-    setEditNotes(jump.notes ?? "");
-    setLogbookStatus("");
-  }
-
     async function openSavedJump(
       jump: SavedJump,
       options: { preserveTrackInfoEdit?: boolean } = {}
@@ -3952,6 +4584,10 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [windowOffsetM, setWindowOffsetM] = useState(0);
   const [gpsTrackPoints, setGpsTrackPoints] = useState<GpsTrackPoint[]>([]);
   const [rawGpsCsv, setRawGpsCsv] = useState("");
+  const [showCompareSelector, setShowCompareSelector] = useState(false);
+  const [compareOptions, setCompareOptions] = useState<CompareTrackOption[]>([]);
+  const [selectedCompareTrackIds, setSelectedCompareTrackIds] = useState<string[]>([]);
+  const [compareStatus, setCompareStatus] = useState("");
   const [historicalWinds, setHistoricalWinds] = useState<WindLayer[]>([]);
   const [historicalWindStatus, setHistoricalWindStatus] = useState("");
   const [findSuitSetup, setFindSuitSetup] =
@@ -3980,6 +4616,79 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const flyMyLaneButtonRef = useRef<HTMLButtonElement | null>(null);
   const saveLaneButtonRef = useRef<HTMLButtonElement | null>(null);
   const logbookSectionRef = useRef<HTMLElement | null>(null);
+
+  const selectedCompareTracks = compareOptions.filter((option) =>
+    selectedCompareTrackIds.includes(option.id)
+  );
+
+  function getSavedJumpCompareOption(jump: SavedJump): CompareTrackOption | null {
+    if (!jump.raw_csv) {
+      return null;
+    }
+
+    const labelParts = [
+      formatLogbookDateTime(jump.jump_date),
+      jump.task_type
+        ? jump.task_type[0].toUpperCase() + jump.task_type.slice(1)
+        : null,
+      jump.location_name,
+      jump.suit_name,
+    ].filter(Boolean);
+
+    return {
+      id: "saved-" + jump.id,
+      label: labelParts.join(" - "),
+      rawCsv: jump.raw_csv,
+      dzElevationM: jump.dz_elevation_m ?? 0,
+      taskType: jump.task_type,
+    };
+  }
+
+  function openCompareTracksSelector() {
+    setShowCompareSelector(true);
+    setCompareStatus(
+      "Choose tracks from the logbook below. Selected tracks will appear here."
+    );
+  }
+
+  function toggleCompareTrack(option: CompareTrackOption) {
+    const optionId = option.id;
+
+    setSelectedCompareTrackIds((currentIds) => {
+      if (currentIds.includes(optionId)) {
+        setCompareOptions((currentOptions) =>
+          currentOptions.filter((currentOption) => currentOption.id !== optionId)
+        );
+        return currentIds.filter((id) => id !== optionId);
+      }
+
+      if (currentIds.length >= 4) {
+        setCompareStatus("Maximum 4 tracks can be compared.");
+        return currentIds;
+      }
+
+      setCompareOptions((currentOptions) => {
+        if (currentOptions.some((currentOption) => currentOption.id === optionId)) {
+          return currentOptions;
+        }
+
+        return [...currentOptions, option];
+      });
+      setCompareStatus("Select up to 4 tracks.");
+      return [...currentIds, optionId];
+    });
+  }
+
+  function toggleSavedJumpCompare(jump: SavedJump) {
+    const compareOption = getSavedJumpCompareOption(jump);
+
+    if (!compareOption) {
+      setCompareStatus("This saved jump does not contain the original CSV.");
+      return;
+    }
+
+    toggleCompareTrack(compareOption);
+  }
   
 
   const [globalWindFromDeg, setGlobalWindFromDeg] = useState("");
@@ -5071,6 +5780,10 @@ if (activePage === "lane") {
               key={jump.id}
               className={[
                 editingJumpId === jump.id ? "" : "logbook-row-clickable",
+                showCompareSelector &&
+                selectedCompareTrackIds.includes("saved-" + jump.id)
+                  ? "logbook-row-compare-selected"
+                  : "",
                 getPinnedBestJumpIds(savedJumps).has(jump.id)
                   ? "logbook-row-pinned"
                   : "",
@@ -5079,7 +5792,13 @@ if (activePage === "lane") {
                 .join(" ")}
               tabIndex={editingJumpId === jump.id ? undefined : 0}
               onClick={() => {
-                if (editingJumpId !== jump.id) {
+                if (editingJumpId === jump.id) {
+                  return;
+                }
+
+                if (showCompareSelector) {
+                  toggleSavedJumpCompare(jump);
+                } else {
                   void openSavedJump(jump);
                 }
               }}
@@ -5089,7 +5808,12 @@ if (activePage === "lane") {
                   (event.key === "Enter" || event.key === " ")
                 ) {
                   event.preventDefault();
-                  void openSavedJump(jump);
+
+                  if (showCompareSelector) {
+                    toggleSavedJumpCompare(jump);
+                  } else {
+                    void openSavedJump(jump);
+                  }
                 }
               }}
             >
@@ -5199,11 +5923,30 @@ if (activePage === "lane") {
                       Notes
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void editSavedJumpInTrackInfo(jump);
+                      <button
+                        type="button"
+                        className={
+                          selectedCompareTrackIds.includes("saved-" + jump.id)
+                            ? "compare-row-button active"
+                            : "compare-row-button"
+                        }
+                        disabled={!jump.raw_csv}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setShowCompareSelector(true);
+                          toggleSavedJumpCompare(jump);
+                        }}
+                      >
+                        {selectedCompareTrackIds.includes("saved-" + jump.id)
+                          ? "Selected"
+                          : "Compare"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void editSavedJumpInTrackInfo(jump);
                       }}
                     >
                       Edit
@@ -5345,7 +6088,77 @@ if (activePage === "lane") {
     >
       {saveJumpBusy ? "Saving..." : "Save as distance"}
     </button>
+
+    <button
+      type="button"
+      className="compare-tracks-button"
+      onClick={openCompareTracksSelector}
+      disabled={!rawGpsCsv && !supabaseSession}
+    >
+      Compare tracks
+    </button>
   </div>
+
+  {showCompareSelector && (
+    <div className="compare-selector">
+      <div className="compare-selector-heading">
+        <strong>Compare tracks</strong>
+
+        <div className="compare-selector-actions">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedCompareTrackIds([]);
+              setCompareOptions([]);
+              setCompareStatus("Tracks cleared.");
+            }}
+            disabled={
+              selectedCompareTrackIds.length === 0 && compareOptions.length === 0
+            }
+          >
+            Clear tracks
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowCompareSelector(false)}
+            aria-label="Close compare tracks selector"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+
+      {compareStatus && (
+        <p className="subtitle compare-selector-status">{compareStatus}</p>
+      )}
+
+      <div className="compare-track-options">
+        {compareOptions.map((option, index) => {
+          const selectedIndex = selectedCompareTrackIds.indexOf(option.id);
+          const selectedColor =
+            selectedIndex === -1
+              ? compareTrackColors[index % compareTrackColors.length]
+              : compareTrackColors[selectedIndex];
+
+          return (
+            <label key={option.id} className="compare-track-option">
+              <input
+                type="checkbox"
+                checked={selectedIndex !== -1}
+                onChange={() => toggleCompareTrack(option)}
+              />
+              <span
+                className="compare-color-swatch"
+                style={{ background: selectedColor }}
+              />
+              <span>{option.label}</span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  )}
 
   {saveJumpStatus && (
     <p className="subtitle">{saveJumpStatus}</p>
@@ -6082,6 +6895,13 @@ if (activePage === "lane") {
     );
 
   })()}
+
+      {selectedCompareTracks.length > 0 && (
+        <TrackComparisonChart
+          tracks={selectedCompareTracks}
+          windowOffsetM={windowOffsetM}
+        />
+      )}
 
       <BottomBackButton
         label="Back to Home"

@@ -1118,6 +1118,140 @@ button:disabled {
   cursor: crosshair;
 }
 
+.compare-tracks-button {
+  margin-left: auto;
+}
+
+.compare-selector {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(34, 211, 238, 0.55);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.4);
+}
+
+.compare-selector-heading,
+.compare-chart-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.compare-selector-heading button,
+.compare-play-button {
+  min-width: 88px;
+}
+
+.compare-selector-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.compare-selector-actions button {
+  width: auto;
+  min-width: 96px;
+  height: 36px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.compare-selector-status {
+  margin: 10px 0 0;
+  text-align: left;
+}
+
+.compare-track-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.compare-track-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.75);
+}
+
+.compare-track-option span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compare-color-swatch {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.65);
+}
+
+.compare-chart-card {
+  margin-top: 16px;
+}
+
+.compare-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin: 8px 0 12px;
+  font-size: 0.85rem;
+}
+
+.compare-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.compare-distance-readout {
+  color: #ffffff;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.compare-row-button.active {
+  box-shadow: 0 0 0 2px rgba(57, 255, 20, 0.55);
+}
+
+.compare-chart-wrap {
+  width: 100%;
+  height: 460px;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .compare-tracks-button {
+    margin-left: 0;
+  }
+
+  .compare-selector-heading,
+  .compare-chart-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compare-selector-actions {
+    flex-direction: column;
+  }
+
+  .compare-track-options {
+    grid-template-columns: 1fr;
+  }
+}
+
 .logbook-notes-field {
   display: block;
   margin-top: 18px;
@@ -1541,6 +1675,12 @@ button {
 .logbook-row-pinned td:last-child {
   border-right: 1px solid #facc15;
 }
+
+.logbook-row-compare-selected td {
+  background: rgba(34, 211, 238, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(57, 255, 20, 0.55);
+}
+
 .logbook-notes-cell {
   min-width: 220px;
   max-width: 320px;
@@ -1850,6 +1990,7 @@ button {
 }
 
 .graph-view-container,
+.compare-chart-card,
 .competition-lane-card {
   width: 100%;
   max-width: 100%;
@@ -1933,6 +2074,7 @@ button {
       "header header"
       "upload save"
       "logbook summary"
+      "compare compare"
       "graph graph"
       "lane lane"
       "back back";
@@ -1973,6 +2115,10 @@ button {
   .gps-analyzer-desktop > .graph-placeholder-card,
   .gps-analyzer-desktop > .graph-view-container {
     grid-area: graph;
+  }
+
+  .gps-analyzer-desktop > .compare-chart-card {
+    grid-area: compare;
   }
 
   .gps-analyzer-desktop > .competition-lane-card {
