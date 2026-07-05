@@ -72,7 +72,12 @@ type AppPage =
   | "rules"
   | "gps";
 type TaskMode = "time" | "distance" | "speed";
-type WindSource = "manual" | "mark-schulze" | "open-meteo" | "windy";
+type WindSource =
+  | "manual"
+  | "mark-schulze"
+  | "open-meteo"
+  | "meteomatics"
+  | "windy";
 type SuitSetup =
   | ""
   | "crplus-no-wingtips"
@@ -124,6 +129,10 @@ type MarkSchulzeResponse = {
   directionSI?: Record<string, number>;
   speedSI?: Record<string, number>;
   model?: string;
+};
+
+type MeteomaticsProxyResponse = MarkSchulzeResponse & {
+  winds?: WindLayer[];
 };
 
 type OpenMeteoResponse = {
@@ -323,7 +332,7 @@ const defaultWinds: WindLayer[] = altitudes.map((altitudeM) => ({
 }));
 
 const tailHeadDeadbandKt = 2;
-const markSchulzeProxyUrl =
+const windProxyUrl =
   "https://numbers-to-fly-winds.flywithcruza.workers.dev";
 
 const referencePointIcon = L.divIcon({
@@ -1471,6 +1480,18 @@ function mapMarkSchulzeToWindLayers(data: MarkSchulzeResponse): WindLayer[] {
       speedKt: String(Math.round(kmhToKt(speedKmh))),
     };
   });
+}
+
+function mapMeteomaticsToWindLayers(data: MeteomaticsProxyResponse): WindLayer[] {
+  if (Array.isArray(data.winds) && data.winds.length > 0) {
+    return data.winds.map((wind) => ({
+      altitudeM: wind.altitudeM,
+      directionFromDeg: String(Math.round(numberFromInput(wind.directionFromDeg, 0))),
+      speedKt: String(Math.round(numberFromInput(wind.speedKt, 0))),
+    }));
+  }
+
+  return mapMarkSchulzeToWindLayers(data);
 }
 
 function buildWindyUrl(lat: number, lon: number): string {
@@ -3778,7 +3799,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     useState(false);
 
       useEffect(() => {
-      if (windSource !== "open-meteo") {
+      if (windSource !== "open-meteo" && windSource !== "meteomatics") {
         return;
       }
 
@@ -3789,7 +3810,13 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
         return;
       }
 
-      void fetchOpenMeteoWindsForLocation(lat, lon);
+      if (windSource === "open-meteo") {
+        void fetchOpenMeteoWithMeteomaticsFallback(lat, lon);
+      }
+
+      if (windSource === "meteomatics") {
+        void fetchMeteomaticsWindsForLocationWithStatus(lat, lon);
+      }
     }, [
       windSource,
       referenceLat,
@@ -3870,6 +3897,13 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
       findSuitSetup,
     ]
   );
+
+  const hasFindInputs =
+  findWeight.trim() !== "" &&
+  (findUnitSystem === "metric"
+    ? findHeightCm.trim() !== ""
+    : findHeightFeet.trim() !== "" || findHeightInches.trim() !== "") &&
+  findSuitSetup !== "";
 
   const generatedConfigText = useMemo(
     () =>
@@ -4308,7 +4342,7 @@ function downloadGeneratedConfig() {
   async function fetchMarkSchulzeWindsForLocation(lat: number, lon: number) {
     setFetchStatus("Fetching Mark Schulze winds...");
 
-    const url = `${markSchulzeProxyUrl}/?lat=${encodeURIComponent(
+    const url = `${windProxyUrl}/?lat=${encodeURIComponent(
       lat
     )}&lon=${encodeURIComponent(lon)}&hourOffset=0`;
 
@@ -4334,6 +4368,32 @@ function downloadGeneratedConfig() {
     }
   }
 
+  async function fetchMeteomaticsWindsForLocation(
+    lat: number,
+    lon: number,
+    statusPrefix = "Fetching Meteomatics winds..."
+  ) {
+    setFetchStatus(statusPrefix);
+
+    const url = `${windProxyUrl}/meteomatics?lat=${encodeURIComponent(
+      lat
+    )}&lon=${encodeURIComponent(lon)}&hourOffset=${encodeURIComponent(
+      forecastHourOffset
+    )}`;
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Meteomatics request failed with status ${response.status}`);
+    }
+
+    const data = (await response.json()) as MeteomaticsProxyResponse;
+    const importedWinds = mapMeteomaticsToWindLayers(data);
+
+    setWinds(importedWinds);
+    setFetchStatus(`Loaded ${data.model ?? "Meteomatics"} forecast winds.`);
+  }
+
 
   async function fetchOpenMeteoWindsForLocation(lat: number, lon: number) {
   setFetchStatus("Fetching Open-Meteo winds...");
@@ -4356,7 +4416,6 @@ function downloadGeneratedConfig() {
       lon
     )}&hourly=${encodeURIComponent(hourlyFields)}&wind_speed_unit=kn`;
 
-  try {
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -4368,14 +4427,51 @@ function downloadGeneratedConfig() {
 
     setWinds(importedWinds);
     setFetchStatus("Loaded Open-Meteo forecast winds.");
+}
+
+  async function fetchOpenMeteoWithMeteomaticsFallback(lat: number, lon: number) {
+  try {
+    await fetchOpenMeteoWindsForLocation(lat, lon);
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
         : "Unknown error while fetching winds.";
 
-    setFetchStatus(
-      `Could not fetch Open-Meteo winds. ${message}. Use raw winds or try again later.`
+    try {
+      await fetchMeteomaticsWindsForLocation(
+        lat,
+        lon,
+        `Open-Meteo unavailable (${message}). Fetching Meteomatics fallback...`
+      );
+      setWindSource("meteomatics");
+    } catch (fallbackError) {
+      const fallbackMessage =
+        fallbackError instanceof Error
+          ? fallbackError.message
+          : "Unknown error while fetching Meteomatics winds.";
+
+      setFetchStatus(
+        `Could not fetch Open-Meteo winds (${message}) or Meteomatics fallback (${fallbackMessage}). Use raw winds or try again later.`
+      );
+    }
+  }
+}
+
+  async function fetchMeteomaticsWindsForLocationWithStatus(
+    lat: number,
+    lon: number
+  ) {
+    try {
+      await fetchMeteomaticsWindsForLocation(lat, lon);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unknown error while fetching Meteomatics winds.";
+
+      setFetchStatus(
+        `Could not fetch Meteomatics winds. ${message}. Use raw winds or try again later.`
     );
   }
 }
@@ -4394,7 +4490,11 @@ function downloadGeneratedConfig() {
     }
 
     if (windSource === "open-meteo") {
-      await fetchOpenMeteoWindsForLocation(lat, lon);
+      await fetchOpenMeteoWithMeteomaticsFallback(lat, lon);
+    }
+
+    if (windSource === "meteomatics") {
+      await fetchMeteomaticsWindsForLocationWithStatus(lat, lon);
     }
   }
 
@@ -4425,7 +4525,11 @@ async function handleWindSourceChange(source: WindSource) {
   }
 
   if (source === "open-meteo") {
-    await fetchOpenMeteoWindsForLocation(lat, lon);
+    await fetchOpenMeteoWithMeteomaticsFallback(lat, lon);
+  }
+
+  if (source === "meteomatics") {
+    await fetchMeteomaticsWindsForLocationWithStatus(lat, lon);
   }
 }
   function openWindyVisualCheck() {
@@ -4712,7 +4816,6 @@ if (activePage === "lane") {
       <table className="logbook-table">
         <thead>
           <tr>
-            <th>Actions</th>
             <th>Date / Time</th>
             <th>Location</th>
             <th>Suit</th>
@@ -4725,51 +4828,25 @@ if (activePage === "lane") {
 
         <tbody>
           {savedJumps.map((jump) => (
-            <tr key={jump.id}>
-              <td>
-                {editingJumpId === jump.id ? (
-                  <div className="logbook-table-actions">
-                    <button
-                      type="button"
-                      onClick={saveEditedJump}
-                    >
-                      Save
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setEditingJumpId(null)}
-                    >
-                      Cancel
-                    </button>
-
-                    <button
-                      type="button"
-                      className="delete-jump-button"
-                      onClick={() => deleteSavedJump(jump.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ) : (
-                  <div className="logbook-table-actions">
-                    <button
-                      type="button"
-                      onClick={() => openSavedJump(jump)}
-                    >
-                      Open
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => startEditingJump(jump)}
-                    >
-                      Edit
-                    </button>
-                  </div>
-                )}
-              </td>
-
+            <tr
+              key={jump.id}
+              className={editingJumpId === jump.id ? "" : "logbook-row-clickable"}
+              tabIndex={editingJumpId === jump.id ? undefined : 0}
+              onClick={() => {
+                if (editingJumpId !== jump.id) {
+                  void openSavedJump(jump);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (
+                  editingJumpId !== jump.id &&
+                  (event.key === "Enter" || event.key === " ")
+                ) {
+                  event.preventDefault();
+                  void openSavedJump(jump);
+                }
+              }}
+            >
               <td>
                 {jump.jump_date
                   ? new Date(jump.jump_date).toLocaleString()
@@ -4781,6 +4858,7 @@ if (activePage === "lane") {
                   <input
                     type="text"
                     value={editLocationName}
+                    onClick={(event) => event.stopPropagation()}
                     onChange={(event) =>
                       setEditLocationName(event.target.value)
                     }
@@ -4795,6 +4873,7 @@ if (activePage === "lane") {
                   <input
                     type="text"
                     value={editSuitName}
+                    onClick={(event) => event.stopPropagation()}
                     onChange={(event) =>
                       setEditSuitName(event.target.value)
                     }
@@ -4822,49 +4901,92 @@ if (activePage === "lane") {
                     value={editNotes}
                     placeholder="Notes"
                     rows={3}
+                    onClick={(event) => event.stopPropagation()}
                     onChange={(event) =>
                       setEditNotes(event.target.value)
                     }
                   />
                 ) : (
-                  <button
-                    type="button"
-                    className="logbook-notes-label"
-                    onContextMenu={(event) => event.preventDefault()}
-                    onPointerEnter={(event) => {
-                      const rect =
-                        event.currentTarget.getBoundingClientRect();
+                  <div className="logbook-notes-actions">
+                    <button
+                      type="button"
+                      className="logbook-notes-label"
+                      onClick={(event) => event.stopPropagation()}
+                      onContextMenu={(event) => event.preventDefault()}
+                      onPointerEnter={(event) => {
+                        const rect =
+                          event.currentTarget.getBoundingClientRect();
 
-                      setNotesPopover({
-                        text:
-                          jump.notes || "No notes entered.",
-                        left: rect.left,
-                        top: rect.top - 8,
-                      });
-                    }}
-                    onPointerLeave={() =>
-                      setNotesPopover(null)
-                    }
-                    onPointerDown={(event) => {
-                      const rect =
-                        event.currentTarget.getBoundingClientRect();
+                        setNotesPopover({
+                          text:
+                            jump.notes || "No notes entered.",
+                          left: rect.left,
+                          top: rect.top - 8,
+                        });
+                      }}
+                      onPointerLeave={() =>
+                        setNotesPopover(null)
+                      }
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        const rect =
+                          event.currentTarget.getBoundingClientRect();
 
-                      setNotesPopover({
-                        text:
-                          jump.notes || "No notes entered.",
-                        left: rect.left,
-                        top: rect.top - 8,
-                      });
-                    }}
-                    onPointerUp={() =>
-                      setNotesPopover(null)
-                    }
-                    onPointerCancel={() =>
-                      setNotesPopover(null)
-                    }
+                        setNotesPopover({
+                          text:
+                            jump.notes || "No notes entered.",
+                          left: rect.left,
+                          top: rect.top - 8,
+                        });
+                      }}
+                      onPointerUp={() =>
+                        setNotesPopover(null)
+                      }
+                      onPointerCancel={() =>
+                        setNotesPopover(null)
+                      }
+                    >
+                      Notes
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        startEditingJump(jump);
+                      }}
+                    >
+                      Edit
+                    </button>
+                  </div>
+                )}
+                {editingJumpId === jump.id && (
+                  <div
+                    className="logbook-table-actions"
+                    onClick={(event) => event.stopPropagation()}
                   >
-                    Show notes
-                  </button>
+                    <button
+                      type="button"
+                      onClick={saveEditedJump}
+                    >
+                      Save
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditingJumpId(null)}
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      type="button"
+                      className="delete-jump-button"
+                      onClick={() => deleteSavedJump(jump.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 )}
               </td>
             </tr>
@@ -6014,35 +6136,41 @@ if (activePage === "rules") {
         <section className="card">
           <h2>Estimated Zero Wind Numbers</h2>
 
-          <div className="numbers-grid">
-            <div className="number-tile">
-              <span>Distance speed</span>
-              <strong>{foundNumbers.distanceSpeedKph} km/h</strong>
-            </div>
+          {!hasFindInputs ? (
+            <p className="subtitle">Please enter your height, weight and suit</p>
+          ) : (
+            <>
+              <div className="numbers-grid">
+                <div className="number-tile">
+                  <span>Distance speed</span>
+                  <strong>{foundNumbers.distanceSpeedKph} km/h</strong>
+                </div>
 
-            <div className="number-tile">
-              <span>Time speed</span>
-              <strong>{foundNumbers.timeSpeedKph} km/h</strong>
-            </div>
+                <div className="number-tile">
+                  <span>Time speed</span>
+                  <strong>{foundNumbers.timeSpeedKph} km/h</strong>
+                </div>
 
-            <div className="number-tile">
-              <span>Speed start GR</span>
-              <strong>{foundNumbers.speedStartGR.toFixed(2)}</strong>
-            </div>
+                <div className="number-tile">
+                  <span>Speed start GR</span>
+                  <strong>{foundNumbers.speedStartGR.toFixed(2)}</strong>
+                </div>
 
-            <div className="number-tile">
-              <span>Speed end GR</span>
-              <strong>{foundNumbers.speedEndGR.toFixed(2)}</strong>
-            </div>
-          </div>
+                <div className="number-tile">
+                  <span>Speed end GR</span>
+                  <strong>{foundNumbers.speedEndGR.toFixed(2)}</strong>
+                </div>
+              </div>
 
-          <button
-            type="button"
-            className="primary-action-button"
-            onClick={pushAllFoundNumbersToFlyPage}
-          >
-            Push all numbers to Fly your Numbers
-          </button>
+              <button
+                type="button"
+                className="primary-action-button"
+                onClick={pushAllFoundNumbersToFlyPage}
+              >
+                Push all numbers to Fly your Numbers
+              </button>
+            </>
+          )}
 
           <p className="calculator-disclaimer">
             Starting point only. Refine these numbers with actual training data,
@@ -6121,15 +6249,17 @@ if (activePage === "rules") {
                     For Speed, you will be shown a start GR and an end GR. The
                     idea is that if you fly too steep, you will not create
                     enough horizontal speed. If you fly too flat, you will
-                    present too much surface area and carry too much angle of
-                    attack, which will slow you down.
+                    present too much surface area and make your angle of
+                    attack to high, which will slow you down.
                   </p>
 
                   <p>
                     There is an ideal angle of flight for every person based on
-                    their height, weight, suit, and flying style. Aim to enter
-                    the window at the start GR, then control the run so the GR
-                    slowly increases through the whole speed window.
+                    their height, weight and suit. Aim to enter
+                    the window at the start GR, then control the suit so the GR
+                    slowly increases through the whole speed window.The suit will want to 
+                    flatten out because of how loaded it is with energy, it's up to you
+                    to control how much you let the GR increase.
                   </p>
 
                   <p>
@@ -6154,13 +6284,15 @@ if (activePage === "rules") {
                     For Time, the goal is to fly the lowest sustainable
                     vertical speed. If you have a good wing configuration and fly
                     the correct airspeed, the suit should stay efficient through
-                    the window.
+                    the window. It is okay to lose around 20 km/h through the window.
                   </p>
 
                   <p>
-                    If your horizontal speed is higher than expected, you may be flying too
-                    steep. If your vertical speed is lower, you may be flying too flat,
-                    which is usually not sustainable.
+                    If your horizontal and vertical speed are higher than expected, you may be flying too
+                    steep. If your horizontal speed is lower, you may be flying too flat, you may have 
+                    heard good tones for a while but the suit can not create sufficient lift
+                    when the airpseed gets too low.
+                    
                   </p>
 
                   <p>                 
@@ -6177,7 +6309,7 @@ if (activePage === "rules") {
                     your FlySight. A range will be set for what is good and bad
                     in the Configure Flysight page, from the information you provide 
                     here. Listen for the tone changing as your performance
-                    changes.This gives live feedback in the actual conditions.
+                    changes. This gives live feedback in the actual conditions.
                     
                   </p>
 
@@ -6201,7 +6333,7 @@ if (activePage === "rules") {
 
                   <p>
                     If your horizontal speed is higher than expected, you may be 
-                    flying too steep. If your vertical speed is lower, you may be 
+                    flying too steep. If your horizontal speed is lower, you may be 
                     flying too flat, which is usually not sustainable.
                   </p>
                   <p>
@@ -6843,8 +6975,9 @@ if (activePage === "rules") {
                     value={windSource}
                     onChange={(e) => handleWindSourceChange(e.target.value as WindSource)}
                   >
-                    <option value="mark-schulze">Mark Schulze</option>
                     <option value="open-meteo">Open-Meteo</option>
+                    <option value="mark-schulze">Mark Schulze</option>
+                    <option value="meteomatics">Meteomatics</option>
                     <option value="manual">Manual</option>
                     <option value="windy">Windy visual check</option>
                   </select>

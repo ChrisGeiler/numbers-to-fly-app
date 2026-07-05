@@ -1497,10 +1497,25 @@ button {
   color: #f8fafc;
 }
 
+.logbook-row-clickable {
+  cursor: pointer;
+}
+
+.logbook-row-clickable:hover td,
+.logbook-row-clickable:focus td {
+  background: rgba(34, 211, 238, 0.08);
+}
+
 .logbook-notes-cell {
   min-width: 220px;
   max-width: 320px;
   white-space: normal;
+}
+
+.logbook-notes-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 .logbook-table-actions {
@@ -1508,7 +1523,8 @@ button {
   gap: 8px;
 }
 
-.logbook-table-actions button {
+.logbook-table-actions button,
+.logbook-notes-actions button {
   min-width: 72px;
   padding: 7px 10px;
 }
@@ -1618,11 +1634,13 @@ button {
     line-height: 1.2;
   }
 
-  .logbook-table-actions {
+  .logbook-table-actions,
+  .logbook-notes-actions {
     gap: 6px;
   }
 
-  .logbook-table-actions button {
+  .logbook-table-actions button,
+  .logbook-notes-actions button {
     min-width: 58px;
     min-height: 32px;
     padding: 5px 8px;
@@ -1645,11 +1663,13 @@ button {
   line-height: 1.2;
 }
 
-.logbook-table-actions {
+.logbook-table-actions,
+.logbook-notes-actions {
   gap: 6px;
 }
 
 .logbook-table-actions button,
+.logbook-notes-actions button,
 .logbook-notes-label {
   min-width: 58px;
   min-height: 32px;
@@ -1665,13 +1685,15 @@ button {
   line-height: 1.1;
 }
 
-.logbook-table-actions {
+.logbook-table-actions,
+.logbook-notes-actions {
   display: flex;
   gap: 4px;
   align-items: center;
 }
 
 .logbook-table-actions button,
+.logbook-notes-actions button,
 .logbook-notes-label {
   min-width: 0;
   min-height: 0;
@@ -1686,7 +1708,8 @@ button {
   vertical-align: top;
 }
 
-.logbook-table-actions {
+.logbook-table-actions,
+.logbook-notes-actions {
   align-items: flex-start;
 }
 
@@ -1694,7 +1717,8 @@ button {
   vertical-align: top !important;
 }
 
-.logbook-table-actions {
+.logbook-table-actions,
+.logbook-notes-actions {
   display: flex;
   align-items: flex-start !important;
   justify-content: flex-start;
@@ -1702,7 +1726,8 @@ button {
   padding: 0 !important;
 }
 
-.logbook-table-actions button {
+.logbook-table-actions button,
+.logbook-notes-actions button {
   margin: 0 !important;
   align-self: flex-start;
 }
@@ -1740,9 +1765,14 @@ button {
   white-space: nowrap;
 }
 
-.logbook-table th:nth-child(2),
-.logbook-table td:nth-child(2) {
+.logbook-table th:nth-child(1),
+.logbook-table td:nth-child(1) {
   width: 150px;
+}
+
+.logbook-table th:nth-child(4),
+.logbook-table td:nth-child(4) {
+  width: 72px;
 }
 
 .logbook-table th:nth-child(5),
@@ -1752,11 +1782,6 @@ button {
 
 .logbook-table th:nth-child(6),
 .logbook-table td:nth-child(6) {
-  width: 72px;
-}
-
-.logbook-table th:nth-child(7),
-.logbook-table td:nth-child(7) {
   width: 78px;
 }
 
@@ -1764,11 +1789,13 @@ button {
   overflow-x: auto;
 }
 
-.logbook-table-actions {
+.logbook-table-actions,
+.logbook-notes-actions {
   gap: 3px;
 }
 
 .logbook-table-actions button,
+.logbook-notes-actions button,
 .logbook-notes-label {
   min-width: 0;
   width: auto;
