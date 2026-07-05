@@ -74,6 +74,7 @@ type AppPage =
 type TaskMode = "time" | "distance" | "speed";
 type WindSource = "manual" | "mark-schulze" | "open-meteo" | "windy";
 type SuitSetup =
+  | ""
   | "crplus-no-wingtips"
   | "crplus-wingtips"
   | "freak-atc"
@@ -473,10 +474,9 @@ function mapSuitSetupToConfigSuit(suitSetup: SuitSetup): ConfigSuit {
   if (suitSetup === "crplus-wingtips") return "crplus-wingtips";
   if (suitSetup === "crplus-no-wingtips") return "crplus-no-wingtips";
   if (suitSetup === "swift") return "swift";
+  if (suitSetup === "freak-atc") return "freak";
 
-  // Find your Numbers currently combines Freak / ATC.
-  // Default to Freak for Config your Numbers.
-  return "freak";
+  return "crplus-no-wingtips";
 }
 
 function getConfigTonePreset({
@@ -3740,7 +3740,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [historicalWinds, setHistoricalWinds] = useState<WindLayer[]>([]);
   const [historicalWindStatus, setHistoricalWindStatus] = useState("");
   const [findSuitSetup, setFindSuitSetup] =
-    useState<SuitSetup>("crplus-no-wingtips");
+    useState<SuitSetup>("");
 
   const [taskMode, setTaskMode] = useState<TaskMode>("distance");
 
@@ -6000,6 +6000,9 @@ if (activePage === "rules") {
               value={findSuitSetup}
               onChange={(e) => setFindSuitSetup(e.target.value as SuitSetup)}
             >
+              <option value="" disabled>
+                Select suit
+              </option>
               <option value="crplus-no-wingtips">CR+ without wingtips</option>
               <option value="crplus-wingtips">CR+ with wingtips</option>
               <option value="freak-atc">Freak / ATC</option>
