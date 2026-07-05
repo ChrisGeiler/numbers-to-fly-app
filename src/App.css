@@ -995,9 +995,35 @@ button:disabled {
 }
 
 @media (max-width: 640px) {
+  .score-mode-switch {
+    flex-wrap: wrap;
+    gap: 8px 10px;
+  }
+
+  .score-mode-track {
+    flex: 0 0 72px;
+  }
+
   .main-score-columns {
     grid-template-columns: 1fr;
     gap: 10px;
+  }
+
+  .main-score-column > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .main-score-column span,
+  .main-score-column strong {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .main-score-column strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 
