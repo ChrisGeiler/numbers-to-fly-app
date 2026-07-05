@@ -325,6 +325,19 @@ const altitudes = [
   2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600, 1500,
 ];
 
+function formatLogbookDateTime(value: string | null): string {
+  if (!value) return "Not available";
+
+  return new Date(value).toLocaleString([], {
+    year: "2-digit",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 const defaultWinds: WindLayer[] = altitudes.map((altitudeM) => ({
   altitudeM,
   directionFromDeg: "",
@@ -3304,6 +3317,7 @@ function App() {
   const [showLogbookLogin, setShowLogbookLogin] = useState(false);
   const [saveJumpStatus, setSaveJumpStatus] = useState("");
   const [saveJumpBusy, setSaveJumpBusy] = useState(false);
+  const [trackInfoEditJumpId, setTrackInfoEditJumpId] = useState<string | null>(null);
   const [jumpLocationName, setJumpLocationName] = useState("");
   const [jumpSuitName, setJumpSuitName] = useState("");
   const [jumpNotes, setJumpNotes] = useState("");
@@ -3315,6 +3329,7 @@ function App() {
   landing_longitude: number | null;
   dz_elevation_m: number | null;  id: string;
   jump_date: string | null;
+  task_type: TaskMode | null;
   location_name: string | null;
   suit_name: string | null;
   notes: string | null;
@@ -3324,6 +3339,8 @@ function App() {
 };
 
 const [savedJumps, setSavedJumps] = useState<SavedJump[]>([]);
+const [logbookTaskFilter, setLogbookTaskFilter] =
+  useState<"recent" | "all" | TaskMode>("recent");
 const [logbookStatus, setLogbookStatus] = useState("");
 const [editingJumpId, setEditingJumpId] = useState<string | null>(null);
 const [notesPopover, setNotesPopover] = useState<{
@@ -3334,6 +3351,50 @@ const [notesPopover, setNotesPopover] = useState<{
 const [editLocationName, setEditLocationName] = useState("");
 const [editSuitName, setEditSuitName] = useState("");
 const [editNotes, setEditNotes] = useState("");
+
+function getLogbookScoreForTask(jump: SavedJump, task: TaskMode): number | null {
+  if (task === "speed") return jump.window_speed_kmh;
+  if (task === "time") return jump.window_time_s;
+  return jump.window_distance_m;
+}
+
+function getPinnedBestJumpIds(jumps: SavedJump[]): Set<string> {
+  const tasks: TaskMode[] =
+    logbookTaskFilter === "speed" ||
+    logbookTaskFilter === "time" ||
+    logbookTaskFilter === "distance"
+      ? [logbookTaskFilter]
+      : ["speed", "time", "distance"];
+
+  return new Set(
+    tasks.flatMap((task) => {
+      const bestJump = jumps.reduce<SavedJump | null>((best, jump) => {
+        if (jump.task_type !== task) return best;
+
+        const score = getLogbookScoreForTask(jump, task);
+        if (score === null || !Number.isFinite(score)) return best;
+
+        const bestScore = best === null ? null : getLogbookScoreForTask(best, task);
+        return bestScore === null || score > bestScore ? jump : best;
+      }, null);
+
+      return bestJump ? [bestJump.id] : [];
+    })
+  );
+}
+
+function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
+  const pinnedIds = getPinnedBestJumpIds(jumps);
+
+  if (pinnedIds.size === 0) {
+    return jumps;
+  }
+
+  return [
+    ...jumps.filter((jump) => pinnedIds.has(jump.id)),
+    ...jumps.filter((jump) => !pinnedIds.has(jump.id)),
+  ];
+}
 
   useEffect(() => {
     void supabase.auth.getSession().then(({ data, error }) => {
@@ -3358,7 +3419,7 @@ const [editNotes, setEditNotes] = useState("");
 
       useEffect(() => {
     void loadSavedJumps();
-  }, [supabaseSession]);
+  }, [supabaseSession, logbookTaskFilter]);
 
     async function handleSignUp() {
     setAuthBusy(true);
@@ -3414,7 +3475,9 @@ const [editNotes, setEditNotes] = useState("");
     setAuthBusy(false);
   }
 
-    async function handleSaveJump() {
+    async function handleSaveJump(taskType: TaskMode) {
+    const editingSavedJumpId = trackInfoEditJumpId;
+
     if (!supabaseSession) {
       setSaveJumpStatus("Please sign in before saving a jump.");
       return;
@@ -3469,8 +3532,9 @@ const [editNotes, setEditNotes] = useState("");
     setSaveJumpBusy(true);
     setSaveJumpStatus("");
 
-    const { error } = await supabase.from("jumps").insert({
+    const jumpPayload = {
       user_id: supabaseSession.user.id,
+      task_type: taskType,
       jump_date:
         exitPoint.timestampMs !== null
           ? new Date(exitPoint.timestampMs).toISOString()
@@ -3488,12 +3552,57 @@ const [editNotes, setEditNotes] = useState("");
       window_distance_m: scoringWindowResult.distanceM,
       window_speed_kmh: windowSpeedKmh,
       raw_csv: rawGpsCsv,
-    });
+    };
+
+    let error;
+
+    if (editingSavedJumpId) {
+      const updateResult = await supabase
+        .from("jumps")
+        .update(jumpPayload)
+        .eq("id", editingSavedJumpId);
+      error = updateResult.error;
+    } else {
+      const insertResult = await supabase.from("jumps").insert(jumpPayload);
+      error = insertResult.error;
+    }
+
+    if (
+      error &&
+      String(error.message).toLowerCase().includes("task_type")
+    ) {
+      const { task_type: _taskType, ...legacyJumpPayload } = jumpPayload;
+
+      const legacyResult = editingSavedJumpId
+        ? await supabase
+            .from("jumps")
+            .update(legacyJumpPayload)
+            .eq("id", editingSavedJumpId)
+        : await supabase.from("jumps").insert(legacyJumpPayload);
+      error = legacyResult.error;
+
+      if (!error) {
+        setSaveJumpStatus(
+          editingSavedJumpId
+            ? "Jump updated, but task type was not stored. Add the task_type column to enable task filtering."
+            : "Jump saved, but task type was not stored. Add the task_type column to enable task filtering."
+        );
+        setTrackInfoEditJumpId(null);
+        void loadSavedJumps();
+        setSaveJumpBusy(false);
+        return;
+      }
+    }
 
     if (error) {
       setSaveJumpStatus(`Could not save jump: ${error.message}`);
     } else {
-      setSaveJumpStatus("Jump saved to your logbook.");
+      setSaveJumpStatus(
+        editingSavedJumpId
+          ? `Jump updated as ${taskType}.`
+          : `Jump saved as ${taskType}.`
+      );
+      setTrackInfoEditJumpId(null);
       void loadSavedJumps();
     }
 
@@ -3509,23 +3618,86 @@ const [editNotes, setEditNotes] = useState("");
 
     setLogbookStatus("Loading logbook...");
 
-    const { data, error } = await supabase
+    const oneWeekAgoIso = new Date(
+      Date.now() - 7 * 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    const selectWithTaskType =
+      "id, jump_date, task_type, location_name, suit_name, notes, window_time_s, window_distance_m, window_speed_kmh, exit_latitude, exit_longitude, landing_latitude, landing_longitude, dz_elevation_m, raw_csv";
+
+    const selectWithoutTaskType =
+      "id, jump_date, location_name, suit_name, notes, window_time_s, window_distance_m, window_speed_kmh, exit_latitude, exit_longitude, landing_latitude, landing_longitude, dz_elevation_m, raw_csv";
+
+    let query = supabase
       .from("jumps")
-      .select(
-        "id, jump_date, location_name, suit_name, notes, window_time_s, window_distance_m, window_speed_kmh, exit_latitude, exit_longitude, landing_latitude, landing_longitude, dz_elevation_m, raw_csv"
-      ) 
+      .select(selectWithTaskType);
+
+    if (logbookTaskFilter === "recent") {
+      query = query.gte("jump_date", oneWeekAgoIso);
+    }
+
+    if (
+      logbookTaskFilter === "speed" ||
+      logbookTaskFilter === "time" ||
+      logbookTaskFilter === "distance"
+    ) {
+      query = query.eq("task_type", logbookTaskFilter);
+    }
+
+    let { data, error } = await query
       .order("jump_date", { ascending: false });
+
+    if (
+      error &&
+      String(error.message).toLowerCase().includes("task_type")
+    ) {
+      if (logbookTaskFilter !== "all" && logbookTaskFilter !== "recent") {
+        setSavedJumps([]);
+        setLogbookStatus(
+          "Task filtering needs the task_type database column. Switch to All or add the column."
+        );
+        return;
+      }
+
+      let legacyQuery = supabase
+        .from("jumps")
+        .select(selectWithoutTaskType);
+
+      if (logbookTaskFilter === "recent") {
+        legacyQuery = legacyQuery.gte("jump_date", oneWeekAgoIso);
+      }
+
+      const legacyResult = await legacyQuery.order("jump_date", {
+        ascending: false,
+      });
+
+      data =
+        legacyResult.data?.map((jump) => ({
+          ...jump,
+          task_type: null,
+        })) ?? null;
+      error = legacyResult.error;
+    }
 
     if (error) {
       setLogbookStatus(`Could not load logbook: ${error.message}`);
       return;
     }
 
-    setSavedJumps((data ?? []) as SavedJump[]);
+    const normalizedJumps = ((data ?? []).map((jump) => ({
+        ...jump,
+        task_type: "task_type" in jump ? jump.task_type : null,
+      })) ?? []) as SavedJump[];
+
+    setSavedJumps(pinBestLogbookJumps(normalizedJumps));
     setLogbookStatus(
       data && data.length > 0
         ? ""
-        : "No saved jumps yet."
+        : logbookTaskFilter === "recent"
+          ? "No saved jumps found from the last week."
+          : logbookTaskFilter === "all"
+            ? "No saved jumps yet."
+            : `No saved ${logbookTaskFilter} jumps found.`
     );
   }
 
@@ -3570,6 +3742,22 @@ const [editNotes, setEditNotes] = useState("");
     );
   }
 
+    async function editSavedJumpInTrackInfo(jump: SavedJump) {
+    setTrackInfoEditJumpId(jump.id);
+    await openSavedJump(jump, { preserveTrackInfoEdit: true });
+    setTrackInfoEditJumpId(jump.id);
+    setEditingJumpId(null);
+    setSaveJumpStatus(
+      "Editing saved jump. Change Track Info, then choose Save as speed, time, or distance."
+    );
+    window.setTimeout(() => {
+      document.querySelector(".save-jump-card")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 150);
+  }
+
     function startEditingJump(jump: SavedJump) {
     setEditingJumpId(jump.id);
     setEditLocationName(jump.location_name ?? "");
@@ -3578,7 +3766,10 @@ const [editNotes, setEditNotes] = useState("");
     setLogbookStatus("");
   }
 
-    async function openSavedJump(jump: SavedJump) {
+    async function openSavedJump(
+      jump: SavedJump,
+      options: { preserveTrackInfoEdit?: boolean } = {}
+    ) {
       if (!jump.raw_csv) {
         setLogbookStatus(
           "This saved jump does not contain the original CSV."
@@ -3589,6 +3780,9 @@ const [editNotes, setEditNotes] = useState("");
       const parsedPoints = parseFlySightCsv(jump.raw_csv);
       const dzElevationNumber = jump.dz_elevation_m ?? 0;
 
+      if (!options.preserveTrackInfoEdit) {
+        setTrackInfoEditJumpId(null);
+      }
       setRawGpsCsv(jump.raw_csv);
       setGpsTrackPoints(parsedPoints);
       setHistoricalWinds([]);
@@ -4699,6 +4893,7 @@ if (activePage === "lane") {
                     if (!file) {
                       setGpsFileName("");
                       setGpsTrackPoints([]);
+                      setTrackInfoEditJumpId(null);
                       setJumpLocationName("");
                       setJumpSuitName("");
                       setJumpNotes("");
@@ -4708,6 +4903,7 @@ if (activePage === "lane") {
 
                     setGpsFileName(file.name);
 
+                    setTrackInfoEditJumpId(null);
                     setJumpLocationName("");
                     setJumpSuitName("");
                     setJumpNotes("");
@@ -4812,11 +5008,54 @@ if (activePage === "lane") {
       <p className="subtitle">{logbookStatus}</p>
     )}
 
+    <div className="logbook-filter-controls">
+      <button
+        type="button"
+        className={logbookTaskFilter === "recent" ? "active" : ""}
+        onClick={() => setLogbookTaskFilter("recent")}
+      >
+        Recent
+      </button>
+
+      <button
+        type="button"
+        className={logbookTaskFilter === "all" ? "active" : ""}
+        onClick={() => setLogbookTaskFilter("all")}
+      >
+        All
+      </button>
+
+      <button
+        type="button"
+        className={logbookTaskFilter === "speed" ? "active" : ""}
+        onClick={() => setLogbookTaskFilter("speed")}
+      >
+        Speed
+      </button>
+
+      <button
+        type="button"
+        className={logbookTaskFilter === "time" ? "active" : ""}
+        onClick={() => setLogbookTaskFilter("time")}
+      >
+        Time
+      </button>
+
+      <button
+        type="button"
+        className={logbookTaskFilter === "distance" ? "active" : ""}
+        onClick={() => setLogbookTaskFilter("distance")}
+      >
+        Distance
+      </button>
+    </div>
+
     <div className="logbook-table-wrap">
       <table className="logbook-table">
         <thead>
           <tr>
             <th>Date / Time</th>
+            <th>Task</th>
             <th>Location</th>
             <th>Suit</th>
             <th>Time</th>
@@ -4830,7 +5069,14 @@ if (activePage === "lane") {
           {savedJumps.map((jump) => (
             <tr
               key={jump.id}
-              className={editingJumpId === jump.id ? "" : "logbook-row-clickable"}
+              className={[
+                editingJumpId === jump.id ? "" : "logbook-row-clickable",
+                getPinnedBestJumpIds(savedJumps).has(jump.id)
+                  ? "logbook-row-pinned"
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               tabIndex={editingJumpId === jump.id ? undefined : 0}
               onClick={() => {
                 if (editingJumpId !== jump.id) {
@@ -4848,9 +5094,13 @@ if (activePage === "lane") {
               }}
             >
               <td>
-                {jump.jump_date
-                  ? new Date(jump.jump_date).toLocaleString()
-                  : "Not available"}
+                {formatLogbookDateTime(jump.jump_date)}
+              </td>
+
+              <td>
+                {jump.task_type
+                  ? jump.task_type[0].toUpperCase() + jump.task_type.slice(1)
+                  : "Not set"}
               </td>
 
               <td>
@@ -4953,10 +5203,21 @@ if (activePage === "lane") {
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
-                        startEditingJump(jump);
+                        void editSavedJumpInTrackInfo(jump);
                       }}
                     >
                       Edit
+                    </button>
+
+                    <button
+                      type="button"
+                      className="delete-jump-button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void deleteSavedJump(jump.id);
+                      }}
+                    >
+                      Delete
                     </button>
                   </div>
                 )}
@@ -5012,6 +5273,12 @@ if (activePage === "lane") {
 <section className="card save-jump-card">
   <h2>Track Info</h2>
 
+  {trackInfoEditJumpId && (
+    <p className="subtitle">
+      Editing saved jump. Choose a save button below to update this logbook entry.
+    </p>
+  )}
+
   <label>
     Location
     <input
@@ -5045,14 +5312,38 @@ if (activePage === "lane") {
   <div className="landing-actions">
     <button
       type="button"
-      onClick={handleSaveJump}
+      onClick={() => handleSaveJump("speed")}
       disabled={
         saveJumpBusy ||
         !supabaseSession ||
         !rawGpsCsv
       }
     >
-      {saveJumpBusy ? "Saving..." : "Save jump to logbook"}
+      {saveJumpBusy ? "Saving..." : "Save as speed"}
+    </button>
+
+    <button
+      type="button"
+      onClick={() => handleSaveJump("time")}
+      disabled={
+        saveJumpBusy ||
+        !supabaseSession ||
+        !rawGpsCsv
+      }
+    >
+      {saveJumpBusy ? "Saving..." : "Save as time"}
+    </button>
+
+    <button
+      type="button"
+      onClick={() => handleSaveJump("distance")}
+      disabled={
+        saveJumpBusy ||
+        !supabaseSession ||
+        !rawGpsCsv
+      }
+    >
+      {saveJumpBusy ? "Saving..." : "Save as distance"}
     </button>
   </div>
 

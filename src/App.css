@@ -1473,9 +1473,31 @@ button {
   overflow-x: auto;
 }
 
+.logbook-filter-controls {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 14px;
+}
+
+.logbook-filter-controls button {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+}
+
+.logbook-filter-controls button.active {
+  background: #22d3ee;
+  color: #001016;
+}
+
 .logbook-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   min-width: 980px;
 }
 
@@ -1506,6 +1528,19 @@ button {
   background: rgba(34, 211, 238, 0.08);
 }
 
+.logbook-row-pinned td {
+  border-top: 1px solid #facc15;
+  border-bottom: 1px solid #facc15;
+  box-shadow: none;
+}
+
+.logbook-row-pinned td:first-child {
+  border-left: 1px solid #facc15;
+}
+
+.logbook-row-pinned td:last-child {
+  border-right: 1px solid #facc15;
+}
 .logbook-notes-cell {
   min-width: 220px;
   max-width: 320px;
@@ -1770,11 +1805,6 @@ button {
   width: 150px;
 }
 
-.logbook-table th:nth-child(4),
-.logbook-table td:nth-child(4) {
-  width: 72px;
-}
-
 .logbook-table th:nth-child(5),
 .logbook-table td:nth-child(5) {
   width: 72px;
@@ -1782,6 +1812,11 @@ button {
 
 .logbook-table th:nth-child(6),
 .logbook-table td:nth-child(6) {
+  width: 72px;
+}
+
+.logbook-table th:nth-child(7),
+.logbook-table td:nth-child(7) {
   width: 78px;
 }
 
