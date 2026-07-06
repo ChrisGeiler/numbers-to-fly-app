@@ -3762,35 +3762,38 @@ function TrackComparisonChart({
   return (
     <section className="card compare-chart-card">
       <div className="compare-chart-heading">
-        <div>
-          <h2>Track Comparison</h2>
-          <p className="subtitle">
-            {chartSubtitle}
-          </p>
-        </div>
+        <h2>Track Comparison</h2>
+        <p className="subtitle">
+          {chartSubtitle}
+        </p>
 
-        <button
-          type="button"
-          className="compare-play-button"
-          onClick={() => setIsPlaying((current) => !current)}
-          disabled={preparedTracks.length === 0}
-        >
-          {isPlaying ? "Pause" : "Play"}
-        </button>
-
-        {visibleXDomain && (
+        <div className="compare-control-row">
+          <span />
           <button
             type="button"
             className="compare-play-button"
-            onClick={() => {
-              setVisibleXDomain(null);
-              setSelectionStartX(null);
-              setSelectionEndX(null);
-            }}
+            onClick={() => setIsPlaying((current) => !current)}
+            disabled={preparedTracks.length === 0}
           >
-            Reset zoom
+            {isPlaying ? "Pause" : "Play"}
           </button>
-        )}
+
+          {visibleXDomain ? (
+            <button
+              type="button"
+              className="compare-play-button"
+              onClick={() => {
+                setVisibleXDomain(null);
+                setSelectionStartX(null);
+                setSelectionEndX(null);
+              }}
+            >
+              Reset zoom
+            </button>
+          ) : (
+            <span />
+          )}
+        </div>
       </div>
 
       {preparedTracks.length === 0 ? (
@@ -3981,6 +3984,7 @@ function App() {
 const [savedJumps, setSavedJumps] = useState<SavedJump[]>([]);
 const [logbookTaskFilter, setLogbookTaskFilter] =
   useState<"recent" | "all" | TaskMode>("recent");
+const [logbookSearchQuery, setLogbookSearchQuery] = useState("");
 const [logbookStatus, setLogbookStatus] = useState("");
 const [editingJumpId, setEditingJumpId] = useState<string | null>(null);
 const [notesPopover, setNotesPopover] = useState<{
@@ -3996,6 +4000,82 @@ function getLogbookScoreForTask(jump: SavedJump, task: TaskMode): number | null 
   if (task === "speed") return jump.window_speed_kmh;
   if (task === "time") return jump.window_time_s;
   return jump.window_distance_m;
+}
+
+type LogbookComparisonFilter = {
+  metric: TaskMode | "any";
+  value: number;
+};
+
+function getLogbookComparisonFilters(query: string) {
+  const filters: LogbookComparisonFilter[] = [];
+  const comparisonPattern =
+    /\b(?:better than|greater than|higher than|over|more than|more|further than|further)\s+(\d+(?:\.\d+)?)\s*(kilometers per hour|kilometres per hour|km\/h|kph|kmh|seconds?|secs?|kilometers?|kilometres?|meters?|metres?|kms?|km|m|s)?\b/gi;
+  const bareNumberPattern =
+    /\b(\d+(?:\.\d+)?)\s*(kilometers per hour|kilometres per hour|km\/h|kph|kmh|seconds?|secs?|kilometers?|kilometres?|meters?|metres?|kms?|km|m|s)?\b/gi;
+
+  function addComparisonFilter(rawValue: string, rawUnit: string | undefined) {
+    const value = Number(rawValue);
+    const unit = (rawUnit ?? "").toLowerCase();
+
+    if (!Number.isFinite(value)) {
+      return false;
+    }
+
+    if (!unit) {
+      filters.push({ metric: "any", value });
+      return true;
+    }
+
+    if (
+      unit.includes("kph") ||
+      unit.includes("km/h") ||
+      unit.includes("kmh") ||
+      unit.includes("per hour")
+    ) {
+      filters.push({ metric: "speed", value });
+      return true;
+    }
+
+    if (unit.startsWith("sec") || unit === "s") {
+      filters.push({ metric: "time", value });
+      return true;
+    }
+
+    if (
+      unit.startsWith("km") ||
+      unit.startsWith("kilometer") ||
+      unit.startsWith("kilometre")
+    ) {
+      filters.push({ metric: "distance", value: value * 1000 });
+      return true;
+    }
+
+    if (
+      unit === "m" ||
+      unit.startsWith("meter") ||
+      unit.startsWith("metre")
+    ) {
+      filters.push({ metric: "distance", value });
+      return true;
+    }
+
+    return false;
+  }
+
+  const queryWithoutComparisonPhrases = query.replace(
+    comparisonPattern,
+    (match, rawValue: string, rawUnit: string | undefined) => {
+      return addComparisonFilter(rawValue, rawUnit) ? " " : match;
+    }
+  );
+  const remainingQuery = queryWithoutComparisonPhrases.replace(
+    bareNumberPattern,
+    (match, rawValue: string, rawUnit: string | undefined) =>
+      addComparisonFilter(rawValue, rawUnit) ? " " : match
+  );
+
+  return { filters, remainingQuery };
 }
 
 function getPinnedBestJumpIds(jumps: SavedJump[]): Set<string> {
@@ -4616,6 +4696,72 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const flyMyLaneButtonRef = useRef<HTMLButtonElement | null>(null);
   const saveLaneButtonRef = useRef<HTMLButtonElement | null>(null);
   const logbookSectionRef = useRef<HTMLElement | null>(null);
+
+  const visibleSavedJumps = useMemo(() => {
+    const { filters, remainingQuery } =
+      getLogbookComparisonFilters(logbookSearchQuery);
+    const ignoredSearchWords = new Set([
+      "all",
+      "track",
+      "tracks",
+      "jump",
+      "jumps",
+      "that",
+      "are",
+      "with",
+    ]);
+    const searchWords = remainingQuery
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((word) => word && !ignoredSearchWords.has(word));
+
+    if (searchWords.length === 0 && filters.length === 0) {
+      return savedJumps;
+    }
+
+    return savedJumps.filter((jump) => {
+      const meetsComparisonFilters = filters.every((filter) => {
+        if (filter.metric === "any") {
+          return [
+            jump.window_speed_kmh,
+            jump.window_time_s,
+            jump.window_distance_m,
+          ].some(
+            (score) =>
+              score !== null && Number.isFinite(score) && score > filter.value
+          );
+        }
+
+        const score = getLogbookScoreForTask(jump, filter.metric);
+        return score !== null && Number.isFinite(score) && score > filter.value;
+      });
+
+      if (!meetsComparisonFilters) {
+        return false;
+      }
+
+      const searchableText = [
+        formatLogbookDateTime(jump.jump_date),
+        jump.task_type,
+        jump.location_name,
+        jump.suit_name,
+        jump.notes,
+        jump.window_time_s !== null ? `${formatNumber(jump.window_time_s, 2)} sec` : null,
+        jump.window_distance_m !== null
+          ? `${formatNumber(jump.window_distance_m, 1)} m`
+          : null,
+        jump.window_speed_kmh !== null
+          ? `${formatNumber(jump.window_speed_kmh, 1)} km/h`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchWords.every((word) => searchableText.includes(word));
+    });
+  }, [logbookSearchQuery, savedJumps]);
 
   const selectedCompareTracks = compareOptions.filter((option) =>
     selectedCompareTrackIds.includes(option.id)
@@ -5717,6 +5863,23 @@ if (activePage === "lane") {
       <p className="subtitle">{logbookStatus}</p>
     )}
 
+    <label className="logbook-search-field">
+      Search logbook
+      <input
+        type="search"
+        value={logbookSearchQuery}
+        placeholder="enter: location or over____ secs/kph/m"
+        onChange={(event) => {
+          const nextSearchQuery = event.target.value;
+          setLogbookSearchQuery(nextSearchQuery);
+
+          if (nextSearchQuery.trim() && logbookTaskFilter !== "all") {
+            setLogbookTaskFilter("all");
+          }
+        }}
+      />
+    </label>
+
     <div className="logbook-filter-controls">
       <button
         type="button"
@@ -5775,7 +5938,15 @@ if (activePage === "lane") {
         </thead>
 
         <tbody>
-          {savedJumps.map((jump) => (
+          {savedJumps.length > 0 && visibleSavedJumps.length === 0 && (
+            <tr>
+              <td colSpan={8} className="logbook-empty-cell">
+                No jumps match that search.
+              </td>
+            </tr>
+          )}
+
+          {visibleSavedJumps.map((jump) => (
             <tr
               key={jump.id}
               className={[
@@ -5784,7 +5955,7 @@ if (activePage === "lane") {
                 selectedCompareTrackIds.includes("saved-" + jump.id)
                   ? "logbook-row-compare-selected"
                   : "",
-                getPinnedBestJumpIds(savedJumps).has(jump.id)
+                getPinnedBestJumpIds(visibleSavedJumps).has(jump.id)
                   ? "logbook-row-pinned"
                   : "",
               ]
@@ -6052,7 +6223,7 @@ if (activePage === "lane") {
     />
   </label>
 
-  <div className="landing-actions">
+  <div className="landing-actions track-info-actions">
     <button
       type="button"
       onClick={() => handleSaveJump("speed")}
@@ -6793,6 +6964,13 @@ if (activePage === "lane") {
         />
       </div>
 
+      {selectedCompareTracks.length > 0 && (
+        <TrackComparisonChart
+          tracks={selectedCompareTracks}
+          windowOffsetM={windowOffsetM}
+        />
+      )}
+
       <section className="card competition-lane-card">
         <h2>Competition Lane</h2>
 
@@ -6896,12 +7074,7 @@ if (activePage === "lane") {
 
   })()}
 
-      {selectedCompareTracks.length > 0 && (
-        <TrackComparisonChart
-          tracks={selectedCompareTracks}
-          windowOffsetM={windowOffsetM}
-        />
-      )}
+
 
       <BottomBackButton
         label="Back to Home"
@@ -8299,3 +8472,5 @@ if (activePage === "rules") {
 }
 
 export default App;
+
+
