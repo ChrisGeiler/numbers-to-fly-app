@@ -1731,7 +1731,7 @@ button {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  min-width: 980px;
+  min-width: 760px;
 }
 
 .logbook-table th,
@@ -1787,15 +1787,45 @@ button {
 }
 
 .logbook-notes-cell {
-  min-width: 220px;
-  max-width: 320px;
+  min-width: 130px;
+  max-width: 220px;
   white-space: normal;
 }
 
-.logbook-notes-actions {
-  display: flex;
-  align-items: flex-start;
-  gap: 4px;
+.logbook-notes-preview {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: #a5f3fc;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logbook-action-menu {
+  position: fixed;
+  z-index: 80;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(86px, 1fr));
+  gap: 8px;
+  width: min(260px, calc(100vw - 24px));
+  padding: 10px;
+  border: 1px solid rgba(34, 211, 238, 0.65);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.98);
+  box-shadow:
+    0 18px 38px rgba(0, 0, 0, 0.48),
+    0 0 24px rgba(34, 211, 238, 0.18);
+  transform: translateX(-50%);
+}
+
+.logbook-action-menu button {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 9px 8px;
+  border-radius: 9px;
+  font-size: 0.78rem;
+  line-height: 1;
 }
 
 .logbook-table-actions {

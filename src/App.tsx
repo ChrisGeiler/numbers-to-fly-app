@@ -3992,6 +3992,11 @@ const [notesPopover, setNotesPopover] = useState<{
   left: number;
   top: number;
 } | null>(null);
+const [logbookActionMenu, setLogbookActionMenu] = useState<{
+  jumpId: string;
+  left: number;
+  top: number;
+} | null>(null);
 const [editLocationName, setEditLocationName] = useState("");
 const [editSuitName, setEditSuitName] = useState("");
 const [editNotes, setEditNotes] = useState("");
@@ -4140,6 +4145,21 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
       useEffect(() => {
     void loadSavedJumps();
   }, [supabaseSession, logbookTaskFilter]);
+
+  useEffect(() => {
+    if (!logbookActionMenu) {
+      return;
+    }
+
+    function closeLogbookActionMenu() {
+      setLogbookActionMenu(null);
+    }
+
+    window.addEventListener("pointerdown", closeLogbookActionMenu);
+    return () => {
+      window.removeEventListener("pointerdown", closeLogbookActionMenu);
+    };
+  }, [logbookActionMenu]);
 
     async function handleSignUp() {
     setAuthBusy(true);
@@ -5962,16 +5982,20 @@ if (activePage === "lane") {
                 .filter(Boolean)
                 .join(" ")}
               tabIndex={editingJumpId === jump.id ? undefined : 0}
-              onClick={() => {
+              onClick={(event) => {
                 if (editingJumpId === jump.id) {
                   return;
                 }
 
-                if (showCompareSelector) {
-                  toggleSavedJumpCompare(jump);
-                } else {
-                  void openSavedJump(jump);
-                }
+                event.stopPropagation();
+                setLogbookActionMenu({
+                  jumpId: jump.id,
+                  left: Math.min(
+                    Math.max(event.clientX, 130),
+                    window.innerWidth - 130
+                  ),
+                  top: Math.min(event.clientY + 10, window.innerHeight - 128),
+                });
               }}
               onKeyDown={(event) => {
                 if (
@@ -5979,12 +6003,15 @@ if (activePage === "lane") {
                   (event.key === "Enter" || event.key === " ")
                 ) {
                   event.preventDefault();
-
-                  if (showCompareSelector) {
-                    toggleSavedJumpCompare(jump);
-                  } else {
-                    void openSavedJump(jump);
-                  }
+                  const rowRect = event.currentTarget.getBoundingClientRect();
+                  setLogbookActionMenu({
+                    jumpId: jump.id,
+                    left: Math.min(
+                      Math.max(rowRect.left + 130, 130),
+                      window.innerWidth - 130
+                    ),
+                    top: Math.min(rowRect.bottom + 8, window.innerHeight - 128),
+                  });
                 }
               }}
             >
@@ -6052,88 +6079,9 @@ if (activePage === "lane") {
                     }
                   />
                 ) : (
-                  <div className="logbook-notes-actions">
-                    <button
-                      type="button"
-                      className="logbook-notes-label"
-                      onClick={(event) => event.stopPropagation()}
-                      onContextMenu={(event) => event.preventDefault()}
-                      onPointerEnter={(event) => {
-                        const rect =
-                          event.currentTarget.getBoundingClientRect();
-
-                        setNotesPopover({
-                          text:
-                            jump.notes || "No notes entered.",
-                          left: rect.left,
-                          top: rect.top - 8,
-                        });
-                      }}
-                      onPointerLeave={() =>
-                        setNotesPopover(null)
-                      }
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        const rect =
-                          event.currentTarget.getBoundingClientRect();
-
-                        setNotesPopover({
-                          text:
-                            jump.notes || "No notes entered.",
-                          left: rect.left,
-                          top: rect.top - 8,
-                        });
-                      }}
-                      onPointerUp={() =>
-                        setNotesPopover(null)
-                      }
-                      onPointerCancel={() =>
-                        setNotesPopover(null)
-                      }
-                    >
-                      Notes
-                    </button>
-
-                      <button
-                        type="button"
-                        className={
-                          selectedCompareTrackIds.includes("saved-" + jump.id)
-                            ? "compare-row-button active"
-                            : "compare-row-button"
-                        }
-                        disabled={!jump.raw_csv}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setShowCompareSelector(true);
-                          toggleSavedJumpCompare(jump);
-                        }}
-                      >
-                        {selectedCompareTrackIds.includes("saved-" + jump.id)
-                          ? "Selected"
-                          : "Compare"}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void editSavedJumpInTrackInfo(jump);
-                      }}
-                    >
-                      Edit
-                    </button>
-
-                    <button
-                      type="button"
-                      className="delete-jump-button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void deleteSavedJump(jump.id);
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </div>
+                  <span className="logbook-notes-preview">
+                    {jump.notes || "Tap row for actions"}
+                  </span>
                 )}
                 {editingJumpId === jump.id && (
                   <div
@@ -6169,6 +6117,79 @@ if (activePage === "lane") {
         </tbody>
       </table>
     </div>
+
+    {logbookActionMenu &&
+      (() => {
+        const menuJump = visibleSavedJumps.find(
+          (jump) => jump.id === logbookActionMenu.jumpId
+        );
+
+        if (!menuJump) {
+          return null;
+        }
+
+        return (
+          <div
+            className="logbook-action-menu"
+            style={{
+              left: logbookActionMenu.left,
+              top: logbookActionMenu.top,
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                void openSavedJump(menuJump);
+                setLogbookActionMenu(null);
+              }}
+            >
+              Open
+            </button>
+
+            <button
+              type="button"
+              className={
+                selectedCompareTrackIds.includes("saved-" + menuJump.id)
+                  ? "compare-row-button active"
+                  : "compare-row-button"
+              }
+              disabled={!menuJump.raw_csv}
+              onClick={() => {
+                setShowCompareSelector(true);
+                toggleSavedJumpCompare(menuJump);
+                setLogbookActionMenu(null);
+              }}
+            >
+              {selectedCompareTrackIds.includes("saved-" + menuJump.id)
+                ? "Selected"
+                : "Compare"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                void editSavedJumpInTrackInfo(menuJump);
+                setLogbookActionMenu(null);
+              }}
+            >
+              Edit
+            </button>
+
+            <button
+              type="button"
+              className="delete-jump-button"
+              onClick={() => {
+                void deleteSavedJump(menuJump.id);
+                setLogbookActionMenu(null);
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        );
+      })()}
 
     {notesPopover && (
       <div
