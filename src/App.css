@@ -2143,6 +2143,7 @@ button {
 }
 
 .graph-view-container,
+.compare-chart-anchor,
 .compare-chart-card,
 .competition-lane-card {
   width: 100%;
@@ -2275,6 +2276,7 @@ button {
     grid-area: graph;
   }
 
+  .gps-analyzer-desktop > .compare-chart-anchor,
   .gps-analyzer-desktop > .compare-chart-card {
     grid-area: compare;
   }

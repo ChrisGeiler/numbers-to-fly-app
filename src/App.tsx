@@ -4715,6 +4715,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [showCompareSelector, setShowCompareSelector] = useState(false);
   const [compareOptions, setCompareOptions] = useState<CompareTrackOption[]>([]);
   const [selectedCompareTrackIds, setSelectedCompareTrackIds] = useState<string[]>([]);
+  const [compareScrollRequested, setCompareScrollRequested] = useState(false);
   const [compareStatus, setCompareStatus] = useState("");
   const [historicalWinds, setHistoricalWinds] = useState<WindLayer[]>([]);
   const [historicalWindStatus, setHistoricalWindStatus] = useState("");
@@ -4744,6 +4745,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const flyMyLaneButtonRef = useRef<HTMLButtonElement | null>(null);
   const saveLaneButtonRef = useRef<HTMLButtonElement | null>(null);
   const logbookSectionRef = useRef<HTMLElement | null>(null);
+  const compareChartSectionRef = useRef<HTMLDivElement | null>(null);
 
   const visibleSavedJumps = useMemo(() => {
     const { filters, remainingQuery } =
@@ -4814,6 +4816,20 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const selectedCompareTracks = compareOptions.filter((option) =>
     selectedCompareTrackIds.includes(option.id)
   );
+
+  useEffect(() => {
+    if (!compareScrollRequested || selectedCompareTracks.length === 0) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      compareChartSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 50);
+    setCompareScrollRequested(false);
+  }, [compareScrollRequested, selectedCompareTracks.length]);
 
   function getSavedJumpCompareOption(jump: SavedJump): CompareTrackOption | null {
     if (!jump.raw_csv) {
@@ -6272,8 +6288,9 @@ if (activePage === "lane") {
               }
               disabled={!menuJump.raw_csv}
               onClick={() => {
-                setShowCompareSelector(true);
+                openCompareTracksSelector();
                 toggleSavedJumpCompare(menuJump);
+                setCompareScrollRequested(true);
                 setLogbookActionMenu(null);
               }}
             >
@@ -7115,10 +7132,12 @@ if (activePage === "lane") {
       </div>
 
       {selectedCompareTracks.length > 0 && (
-        <TrackComparisonChart
-          tracks={selectedCompareTracks}
-          windowOffsetM={windowOffsetM}
-        />
+        <div ref={compareChartSectionRef} className="compare-chart-anchor">
+          <TrackComparisonChart
+            tracks={selectedCompareTracks}
+            windowOffsetM={windowOffsetM}
+          />
+        </div>
       )}
 
       <section className="card competition-lane-card">
