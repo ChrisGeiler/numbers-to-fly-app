@@ -3723,6 +3723,32 @@ function TrackComparisonChart({
     };
   }
 
+  function getTrackTraceAtTime(
+    track: (typeof preparedTracks)[number],
+    timeSeconds: number
+  ) {
+    const currentPoint = getTrackPositionAtTime(track, timeSeconds);
+
+    if (!currentPoint) {
+      return [];
+    }
+
+    if (timeSeconds <= track.points[0].relativeTimeSeconds) {
+      return [currentPoint];
+    }
+
+    const completedPoints = track.points.filter(
+      (point) => point.relativeTimeSeconds < timeSeconds
+    );
+
+    return [...completedPoints, currentPoint];
+  }
+
+  const animatedTrackTraces = preparedTracks.map((track) => ({
+    track,
+    points: getTrackTraceAtTime(track, playheadSeconds),
+  }));
+
   const animatedDots = preparedTracks
     .map((track) => {
       const point = getTrackPositionAtTime(track, playheadSeconds);
@@ -3747,10 +3773,10 @@ function TrackComparisonChart({
     const timer = window.setInterval(() => {
       setPlayheadSeconds((current) => {
         const [playStartTime, playEndTime] = getPlaybackTimeRange();
-        const next = current + 0.4;
+        const next = current + 0.25;
         return next >= playEndTime ? playStartTime : next;
       });
-    }, 80);
+    }, 50);
 
     return () => window.clearInterval(timer);
   }, [isPlaying, maxTime, minTime, preparedTracks, visibleXDomain]);
@@ -3902,17 +3928,18 @@ function TrackComparisonChart({
                     position: "insideBottomRight",
                   }}
                 />
-                {preparedTracks.map((track) => (
+                {animatedTrackTraces.map(({ track, points }) => (
                   <Line
                     key={track.id}
                     type="monotone"
-                    data={track.points}
+                    data={points}
                     dataKey="altitudeM"
                     name={track.label}
                     stroke={track.color}
                     strokeWidth={2.8}
                     dot={false}
                     connectNulls={false}
+                    isAnimationActive={false}
                     activeDot={{ r: 5 }}
                   />
                 ))}
@@ -3930,6 +3957,7 @@ function TrackComparisonChart({
                     stroke="#ffffff"
                     strokeWidth={2}
                     ifOverflow="extendDomain"
+                    isAnimationActive={false}
                     onMouseDown={() => {
                       setIsPlaying(false);
                       setIsDraggingDot(true);
@@ -5743,6 +5771,93 @@ if (activePage === "lane") {
               </p>
             </header>
 
+            {showLogbookLogin && (
+              <div
+                className="auth-modal-backdrop"
+                onClick={() => setShowLogbookLogin(false)}
+              >
+                <section
+                  className="auth-modal"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    className="auth-modal-close"
+                    onClick={() => setShowLogbookLogin(false)}
+                    aria-label="Close sign-in window"
+                  >
+                    ×
+                  </button>
+
+                  <h2>Login/Signup</h2>
+
+                  {supabaseSession ? (
+                    <>
+                      <p className="subtitle">
+                        Signed in as <strong>{supabaseSession.user.email}</strong>
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={handleSignOut}
+                        disabled={authBusy}
+                      >
+                        {authBusy ? "Please wait..." : "Sign out"}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <label>
+                        Email
+                        <input
+                          type="email"
+                          value={authEmail}
+                          autoComplete="email"
+                          onChange={(event) => setAuthEmail(event.target.value)}
+                        />
+                      </label>
+
+                      <label>
+                        Password
+                        <input
+                          type="password"
+                          value={authPassword}
+                          autoComplete="current-password"
+                          onChange={(event) => setAuthPassword(event.target.value)}
+                        />
+                      </label>
+
+                      <div className="auth-modal-actions">
+                        <button
+                          type="button"
+                          onClick={handleSignIn}
+                          disabled={authBusy || !authEmail.trim() || !authPassword}
+                        >
+                          Sign in
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleSignUp}
+                          disabled={
+                            authBusy ||
+                            !authEmail.trim() ||
+                            authPassword.length < 6
+                          }
+                        >
+                          Create account
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {authStatus && (
+                    <p className="subtitle">{authStatus}</p>
+                  )}
+                </section>
+              </div>
+            )}
+
             <section className="card gps-upload-card">
               <h2>Import FlySight CSV</h2>
 
@@ -5875,7 +5990,7 @@ if (activePage === "lane") {
               )}
             </section>
             
-{supabaseSession && (
+{supabaseSession ? (
   <section ref={logbookSectionRef} className="card logbook-card">
     <h2>My Logbook</h2>
 
@@ -6202,6 +6317,20 @@ if (activePage === "lane") {
         {notesPopover.text}
       </div>
     )}
+  </section>
+) : (
+  <section className="card logbook-card logbook-placeholder-card">
+    <h2>My Logbook</h2>
+    <p className="subtitle">
+      Log in or sign up to access the logbook function.
+    </p>
+    <button
+      type="button"
+      className="logbook-account-toggle"
+      onClick={() => setShowLogbookLogin(true)}
+    >
+      Login/Signup
+    </button>
   </section>
 )}
 
@@ -7208,7 +7337,7 @@ if (activePage === "rules") {
             className="logbook-account-toggle"
             onClick={() => setShowLogbookLogin(true)}
           >
-            Logbook Account
+            Login/Signup
           </button>
 
           {showLogbookLogin && (
@@ -7229,7 +7358,7 @@ if (activePage === "rules") {
                   ×
                 </button>
 
-                <h2>Logbook Account</h2>
+                  <h2>Login/Signup</h2>
 
                 {supabaseSession ? (
                   <>

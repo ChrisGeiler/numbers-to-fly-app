@@ -1758,6 +1758,24 @@ button {
   text-align: center !important;
 }
 
+.logbook-placeholder-card {
+  display: flex;
+  min-height: 220px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.38);
+  border-style: dashed;
+}
+
+.logbook-placeholder-card .subtitle {
+  margin-bottom: 0;
+}
+
+.logbook-placeholder-card .logbook-account-toggle {
+  margin: 14px 0 0;
+}
+
 .logbook-row-clickable {
   cursor: pointer;
 }
@@ -2209,6 +2227,7 @@ button {
     grid-template-areas:
       "header header"
       "upload save"
+      "logbook save"
       "logbook summary"
       "graph graph"
       "compare compare"
@@ -2244,6 +2263,7 @@ button {
 
   .gps-analyzer-desktop > .logbook-card {
     grid-area: logbook;
+    align-self: stretch;
   }
 
   .gps-analyzer-desktop > .track-summary-card {
