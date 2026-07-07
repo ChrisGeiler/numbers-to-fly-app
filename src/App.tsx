@@ -326,7 +326,14 @@ const altitudes = [
   2500, 2400, 2300, 2200, 2100, 2000, 1900, 1800, 1700, 1600, 1500,
 ];
 
-const compareTrackColors = ["#ef4444", "#2563eb", "#39ff14", "#ff00ff"];
+const compareTrackColors = [
+  "#ef4444",
+  "#2563eb",
+  "#39ff14",
+  "#ff00ff",
+  "#ffffff",
+  "#f97316",
+];
 const comparePreWindowSeconds = 25;
 const comparePostWindowSeconds = 35;
 
@@ -3338,7 +3345,7 @@ function TrackComparisonChart({
   const preparedTracks = useMemo(
     () =>
       tracks
-        .slice(0, 4)
+        .slice(0, 6)
         .map((track, trackIndex) => {
           try {
             const parsedPoints = parseFlySightCsv(track.rawCsv);
@@ -3954,7 +3961,7 @@ function TrackComparisonChart({
                     y={dot.altitudeM}
                     r={7}
                     fill={dot.track.color}
-                    stroke="#ffffff"
+                    stroke={dot.track.color === "#ffffff" ? "#020617" : "#ffffff"}
                     strokeWidth={2}
                     ifOverflow="extendDomain"
                     isAnimationActive={false}
@@ -4872,8 +4879,8 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
         return currentIds.filter((id) => id !== optionId);
       }
 
-      if (currentIds.length >= 4) {
-        setCompareStatus("Maximum 4 tracks can be compared.");
+      if (currentIds.length >= 6) {
+        setCompareStatus("Maximum 6 tracks can be compared.");
         return currentIds;
       }
 
@@ -4884,7 +4891,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
 
         return [...currentOptions, option];
       });
-      setCompareStatus("Select up to 4 tracks.");
+      setCompareStatus("Select up to 6 tracks.");
       return [...currentIds, optionId];
     });
   }
@@ -6290,7 +6297,6 @@ if (activePage === "lane") {
               onClick={() => {
                 openCompareTracksSelector();
                 toggleSavedJumpCompare(menuJump);
-                setCompareScrollRequested(true);
                 setLogbookActionMenu(null);
               }}
             >
@@ -7169,15 +7175,6 @@ if (activePage === "lane") {
         />
       </div>
 
-      {selectedCompareTracks.length > 0 && (
-        <div ref={compareChartSectionRef} className="compare-chart-anchor">
-          <TrackComparisonChart
-            tracks={selectedCompareTracks}
-            windowOffsetM={windowOffsetM}
-          />
-        </div>
-      )}
-
       <section className="card competition-lane-card">
         <h2>Competition Lane</h2>
 
@@ -7281,6 +7278,15 @@ if (activePage === "lane") {
 
   })()}
 
+
+      {selectedCompareTracks.length > 0 && (
+        <div ref={compareChartSectionRef} className="compare-chart-anchor">
+          <TrackComparisonChart
+            tracks={selectedCompareTracks}
+            windowOffsetM={windowOffsetM}
+          />
+        </div>
+      )}
 
 
       <BottomBackButton
