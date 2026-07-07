@@ -6564,7 +6564,26 @@ if (activePage === "lane") {
     );
 
     if (!validatedJump.isValidJump) {
-      return null;
+      return (
+        <>
+          <section className="card track-summary-card">
+            <h2>Jump Metrics</h2>
+            <p className="subtitle">
+              A valid jump exit could not be detected in this track.
+            </p>
+          </section>
+
+          <section className="card graph-placeholder-card">
+            <h2>Interactive Jump Graph</h2>
+            <p className="subtitle">
+              Import a track with a detected jump exit to display the graph.
+            </p>
+            <div className="graph-placeholder">
+              No jump detected
+            </div>
+          </section>
+        </>
+      );
     }
 
     const jumpTrackPoints =
@@ -6583,7 +6602,26 @@ if (activePage === "lane") {
       );
 
     if (!scoringWindowResult) {
-      return null;
+      return (
+        <>
+          <section className="card track-summary-card">
+            <h2>Jump Metrics</h2>
+            <p className="subtitle">
+              A complete scoring window could not be detected for this track.
+            </p>
+          </section>
+
+          <section className="card graph-placeholder-card">
+            <h2>Interactive Jump Graph</h2>
+            <p className="subtitle">
+              Import a track that passes through the scoring window to display the graph.
+            </p>
+            <div className="graph-placeholder">
+              No complete scoring window
+            </div>
+          </section>
+        </>
+      );
     }
 
     const windowTrackPoints = getWindowTrackPoints(
