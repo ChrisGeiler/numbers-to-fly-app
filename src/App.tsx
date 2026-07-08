@@ -3964,7 +3964,6 @@ function TrackComparisonChart({
                     stroke={dot.track.color === "#ffffff" ? "#020617" : "#ffffff"}
                     strokeWidth={2}
                     ifOverflow="extendDomain"
-                    isAnimationActive={false}
                     onMouseDown={() => {
                       setIsPlaying(false);
                       setIsDraggingDot(true);
@@ -4022,11 +4021,6 @@ const [logbookTaskFilter, setLogbookTaskFilter] =
 const [logbookSearchQuery, setLogbookSearchQuery] = useState("");
 const [logbookStatus, setLogbookStatus] = useState("");
 const [editingJumpId, setEditingJumpId] = useState<string | null>(null);
-const [notesPopover, setNotesPopover] = useState<{
-  text: string;
-  left: number;
-  top: number;
-} | null>(null);
 const [logbookActionMenu, setLogbookActionMenu] = useState<{
   jumpId: string;
   left: number;
@@ -6329,17 +6323,6 @@ if (activePage === "lane") {
         );
       })()}
 
-    {notesPopover && (
-      <div
-        className="logbook-fixed-notes-popover"
-        style={{
-          left: notesPopover.left,
-          top: notesPopover.top,
-        }}
-      >
-        {notesPopover.text}
-      </div>
-    )}
   </section>
 ) : (
   <section className="card logbook-card logbook-placeholder-card">
@@ -7743,7 +7726,7 @@ if (activePage === "rules") {
                   <h2>Flying Speed Numbers</h2>
 
                   <p>
-                    For Speed, you will be shown a start GR and an end GR. The
+                    For Speed, you will be shown a start GR, and an end GR. The
                     idea is that if you fly too steep, you will not create
                     enough horizontal speed. If you fly too flat, you will
                     present too much surface area and make your angle of
