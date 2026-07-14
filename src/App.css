@@ -485,6 +485,10 @@ tr:last-child td {
     0 0 18px rgba(56, 189, 248, 0.8);
 }
 
+.leaflet-control-attribution {
+  background: transparent !important;
+}
+
 .alarm-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -558,10 +562,14 @@ button:disabled {
 }
 
 .tutorial-card p {
-  text-align: left;
+  text-align: center;
   color: #c7f9ff;
   line-height: 1.6;
   margin: 0 0 18px;
+}
+
+.calculator-disclaimer {
+  text-align: center;
 }
 
 .tutorial-card p:last-child {
