@@ -491,6 +491,26 @@ tr:last-child td {
   gap: 14px;
 }
 
+.alarm-help-action {
+  display: flex;
+  justify-content: center;
+  margin: -4px 0 20px;
+}
+
+.alarm-help-action button {
+  margin: 0;
+}
+
+.alarm-help-modal h3 {
+  margin: 22px 0 8px;
+  color: #67e8f9;
+  font-size: 1.05rem;
+}
+
+.alarm-help-modal h3 + p {
+  margin-top: 0;
+}
+
 .config-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;

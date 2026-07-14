@@ -4990,7 +4990,23 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [configAlarmBeep, setConfigAlarmBeep] = useState("2500");
   const [configAlarmFlare, setConfigAlarmFlare] = useState("1600");
   const [configAlarmTask, setConfigAlarmTask] = useState("1450");
+  const [showAlarmHelp, setShowAlarmHelp] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
+
+  useEffect(() => {
+    if (!showAlarmHelp) {
+      return;
+    }
+
+    function closeAlarmHelpOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setShowAlarmHelp(false);
+      }
+    }
+
+    window.addEventListener("keydown", closeAlarmHelpOnEscape);
+    return () => window.removeEventListener("keydown", closeAlarmHelpOnEscape);
+  }, [showAlarmHelp]);
 
   const foundNumbers = useMemo(
     () =>
@@ -7730,7 +7746,7 @@ if (activePage === "rules") {
                     idea is that if you fly too steep, you will not create
                     enough horizontal speed. If you fly too flat, you will
                     present too much surface area and make your angle of
-                    attack to high, which will slow you down.
+                    attack too high, which will slow you down.
                   </p>
 
                   <p>
@@ -7850,6 +7866,13 @@ if (activePage === "rules") {
                 FlySight config files may need to change between different days
                 as conditions change.
               </p>
+
+                <p>
+                    You can go directly to "Config your Flysight" if you know the 
+                    adjusted numbers you want to fly. Follow the steps through 
+                    "Numbers to Fly" - "Fly the Window" - "Config your Flysight"
+                    if you need more help to determine your numbers. 
+                  </p>
             </section>
           </div>
         )}
@@ -8146,8 +8169,82 @@ if (activePage === "rules") {
           </p>
           <p className="subtitle">
             The “9” alarm is the maximum competition exit altitude warning. If you hear
-            it, the aircraft is too high and any record score may be void.
+            it, the aircraft is too high and any record may be void.
           </p>
+
+          <div className="alarm-help-action">
+            <button type="button" onClick={() => setShowAlarmHelp(true)}>
+              How do I use these alarms?
+            </button>
+          </div>
+
+          {showAlarmHelp && (
+            <div
+              className="find-help-overlay"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="alarm-help-title"
+              onClick={() => setShowAlarmHelp(false)}
+            >
+              <section
+                className="find-help-modal alarm-help-modal"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="find-help-close"
+                  aria-label="Close alarm help"
+                  onClick={() => setShowAlarmHelp(false)}
+                >
+                  ×
+                </button>
+
+                <h2 id="alarm-help-title">How to use the alarms</h2>
+
+                <p>
+                  For Time and Distance, the countdown alarms are spaced 100 m apart.
+                  Use them to time a smooth transition from a steep dive into flat
+                  flight before the scoring window begins.
+                </p>
+
+                <h3>Build speed, then recover smoothly</h3>
+                <p>
+                  Holding a steeper dive builds vertical speed. A well-timed recovery
+                  converts that energy into horizontal speed and lift. The aim is not
+                  to pull out abruptly, but to use the countdown to make one smooth,
+                  controlled transition.
+                </p>
+
+                <h3>When to start the recovery</h3>
+                <p>
+                  If you have not built up the confidence for a very steep dive, 
+                  or are flying a suit with a shorter recovery arc than a competition suit,
+                  you may only need to start coming out of the dive when you hear “3”.
+                  Aim to be in flat flight with a glide ratio above 2 just before
+                  the beep that starts the scoring window. You will then be ready to flare
+                  and boost your Time or Distance score.
+                </p>
+
+                <h3>Time and Distance need different flares</h3>
+                <p>
+                  For Time, the flare can be more aggressive because you can use more
+                  of your excess speed to create lift and stay in the window longer.
+                  For Distance, preserve more horizontal speed and project the flight
+                  forward. The target speed for Distance is often around 20% higher
+                  than for Time—for example, about 185 km/h for Distance versus 150
+                  km/h for Time—so avoid spending too much energy gaining altitude.
+                </p>
+
+                <h3>Speed task</h3>
+                <p>
+                  For Speed, the countdown alarms are set with the same interval, but 100 m above the scoring
+                  window. This lets you hear the glide-ratio feedback before you enter
+                  the window, giving you time to settle onto the required start glide
+                  ratio.
+                </p>
+              </section>
+            </div>
+          )}
 
           {configTask === "speed" && (
             <p className="subtitle">
