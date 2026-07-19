@@ -1663,6 +1663,13 @@ button {
   margin: 0 0 18px;
 }
 
+.auth-modal-intro {
+  margin: 0 0 20px;
+  color: #c7f9ff;
+  line-height: 1.55;
+  text-align: center;
+}
+
 .auth-modal label {
   display: block;
   margin-bottom: 14px;
@@ -1683,6 +1690,66 @@ button {
 .auth-modal-actions button {
   min-width: 140px;
   white-space: nowrap;
+}
+
+.google-sign-in-button,
+.email-link-sign-in-button {
+  width: 100%;
+  margin: 0;
+}
+
+.google-sign-in-button {
+  gap: 12px;
+  border-color: #d1d5db;
+  background: #ffffff;
+  color: #172033;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+}
+
+.google-sign-in-button:hover {
+  background: #f8fafc;
+  color: #172033;
+}
+
+.google-sign-in-button svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 4px;
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(148, 163, 184, 0.35);
+}
+
+.auth-session-note,
+.auth-status {
+  margin: 14px 0 0;
+  color: #a5f3fc;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.auth-session-note {
+  font-size: 0.9rem;
+}
+
+.auth-status {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(8, 145, 178, 0.14);
 }
 
 .auth-modal-close {

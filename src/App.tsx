@@ -3983,10 +3983,148 @@ function TrackComparisonChart({
   );
 }
 
+type AuthModalProps = {
+  session: Session | null;
+  email: string;
+  status: string;
+  busy: boolean;
+  onEmailChange: (email: string) => void;
+  onGoogleSignIn: () => void;
+  onEmailLinkSignIn: () => void;
+  onSignOut: () => void;
+  onClose: () => void;
+};
+
+function AuthModal({
+  session,
+  email,
+  status,
+  busy,
+  onEmailChange,
+  onGoogleSignIn,
+  onEmailLinkSignIn,
+  onSignOut,
+  onClose,
+}: AuthModalProps) {
+  return (
+    <div
+      className="auth-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="auth-modal-title"
+      onClick={onClose}
+    >
+      <section
+        className="auth-modal"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="auth-modal-close"
+          onClick={onClose}
+          aria-label="Close sign-in window"
+        >
+          ×
+        </button>
+
+        <h2 id="auth-modal-title">
+          {session ? "Your logbook account" : "Sign in to your logbook"}
+        </h2>
+
+        {session ? (
+          <>
+            <p className="subtitle">
+              Signed in as <strong>{session.user.email}</strong>
+            </p>
+
+            <div className="auth-modal-actions">
+              <button type="button" onClick={onSignOut} disabled={busy}>
+                {busy ? "Please wait..." : "Sign out"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="auth-modal-intro">
+              Use Google for the quickest sign-in, or receive a secure sign-in
+              link by email. No password is required.
+            </p>
+
+            <button
+              type="button"
+              className="google-sign-in-button"
+              onClick={onGoogleSignIn}
+              disabled={busy}
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path
+                  fill="#4285f4"
+                  d="M21.6 12.23c0-.71-.06-1.4-.18-2.07H12v3.92h5.38a4.6 4.6 0 0 1-2 3.02v2.55h3.24c1.9-1.75 2.98-4.33 2.98-7.42Z"
+                />
+                <path
+                  fill="#34a853"
+                  d="M12 22c2.7 0 4.98-.9 6.63-2.35l-3.25-2.55c-.9.6-2.05.96-3.38.96-2.61 0-4.82-1.76-5.61-4.13H3.04v2.62A10 10 0 0 0 12 22Z"
+                />
+                <path
+                  fill="#fbbc05"
+                  d="M6.39 13.93A6.02 6.02 0 0 1 6.07 12c0-.67.11-1.32.32-1.93V7.45H3.04A10 10 0 0 0 2 12c0 1.64.39 3.2 1.04 4.55l3.35-2.62Z"
+                />
+                <path
+                  fill="#ea4335"
+                  d="M12 5.94c1.47 0 2.79.5 3.82 1.5l2.88-2.88A9.65 9.65 0 0 0 12 2a10 10 0 0 0-8.96 5.45l3.35 2.62C7.18 7.7 9.39 5.94 12 5.94Z"
+                />
+              </svg>
+              {busy ? "Please wait..." : "Continue with Google"}
+            </button>
+
+            <div className="auth-divider" aria-hidden="true">
+              <span>or</span>
+            </div>
+
+            <label>
+              Email address
+              <input
+                type="email"
+                value={email}
+                autoComplete="email"
+                placeholder="you@example.com"
+                onChange={(event) => onEmailChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && email.trim() && !busy) {
+                    onEmailLinkSignIn();
+                  }
+                }}
+              />
+            </label>
+
+            <button
+              type="button"
+              className="email-link-sign-in-button"
+              onClick={onEmailLinkSignIn}
+              disabled={busy || !email.trim()}
+            >
+              {busy ? "Please wait..." : "Email me a sign-in link"}
+            </button>
+
+            <p className="auth-session-note">
+              You will stay signed in on this device until you sign out.
+            </p>
+          </>
+        )}
+
+        {status && (
+          <p className="auth-status" aria-live="polite">
+            {status}
+          </p>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const [supabaseSession, setSupabaseSession] = useState<Session | null>(null);
   const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
   const [authStatus, setAuthStatus] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [graphView, setGraphView] = useState<"comp" | "full">("comp");
@@ -4190,45 +4328,50 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     };
   }, [logbookActionMenu]);
 
-    async function handleSignUp() {
+  function getAuthRedirectUrl() {
+    return new URL(import.meta.env.BASE_URL, window.location.origin).toString();
+  }
+
+  async function handleGoogleSignIn() {
     setAuthBusy(true);
     setAuthStatus("");
 
-    const { error } = await supabase.auth.signUp({
-      email: authEmail.trim(),
-      password: authPassword,
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: getAuthRedirectUrl(),
+      },
+    });
+
+    if (error) {
+      setAuthStatus(error.message);
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleEmailLinkSignIn() {
+    setAuthBusy(true);
+    setAuthStatus("");
+
+    const email = authEmail.trim();
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: getAuthRedirectUrl(),
+        shouldCreateUser: true,
+      },
     });
 
     if (error) {
       setAuthStatus(error.message);
     } else {
-      setAuthStatus(
-        "Account created. Check your email for the confirmation link."
-      );
+      setAuthStatus(`Check ${email} for your secure sign-in link.`);
     }
 
     setAuthBusy(false);
   }
 
-    async function handleSignIn() {
-    setAuthBusy(true);
-    setAuthStatus("");
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email: authEmail.trim(),
-      password: authPassword,
-    });
-
-    if (error) {
-      setAuthStatus(error.message);
-    } else {
-      setAuthStatus("Signed in successfully.");
-    }
-
-    setAuthBusy(false);
-  }
-
-    async function handleSignOut() {
+  async function handleSignOut() {
     setAuthBusy(true);
     setAuthStatus("");
 
@@ -4238,7 +4381,6 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
       setAuthStatus(error.message);
     } else {
       setAuthStatus("Signed out.");
-      setAuthPassword("");
     }
 
     setAuthBusy(false);
@@ -5805,90 +5947,17 @@ if (activePage === "lane") {
             </header>
 
             {showLogbookLogin && (
-              <div
-                className="auth-modal-backdrop"
-                onClick={() => setShowLogbookLogin(false)}
-              >
-                <section
-                  className="auth-modal"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <button
-                    type="button"
-                    className="auth-modal-close"
-                    onClick={() => setShowLogbookLogin(false)}
-                    aria-label="Close sign-in window"
-                  >
-                    ×
-                  </button>
-
-                  <h2>Login/Signup</h2>
-
-                  {supabaseSession ? (
-                    <>
-                      <p className="subtitle">
-                        Signed in as <strong>{supabaseSession.user.email}</strong>
-                      </p>
-
-                      <button
-                        type="button"
-                        onClick={handleSignOut}
-                        disabled={authBusy}
-                      >
-                        {authBusy ? "Please wait..." : "Sign out"}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <label>
-                        Email
-                        <input
-                          type="email"
-                          value={authEmail}
-                          autoComplete="email"
-                          onChange={(event) => setAuthEmail(event.target.value)}
-                        />
-                      </label>
-
-                      <label>
-                        Password
-                        <input
-                          type="password"
-                          value={authPassword}
-                          autoComplete="current-password"
-                          onChange={(event) => setAuthPassword(event.target.value)}
-                        />
-                      </label>
-
-                      <div className="auth-modal-actions">
-                        <button
-                          type="button"
-                          onClick={handleSignIn}
-                          disabled={authBusy || !authEmail.trim() || !authPassword}
-                        >
-                          Sign in
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={handleSignUp}
-                          disabled={
-                            authBusy ||
-                            !authEmail.trim() ||
-                            authPassword.length < 6
-                          }
-                        >
-                          Create account
-                        </button>
-                      </div>
-                    </>
-                  )}
-
-                  {authStatus && (
-                    <p className="subtitle">{authStatus}</p>
-                  )}
-                </section>
-              </div>
+              <AuthModal
+                session={supabaseSession}
+                email={authEmail}
+                status={authStatus}
+                busy={authBusy}
+                onEmailChange={setAuthEmail}
+                onGoogleSignIn={handleGoogleSignIn}
+                onEmailLinkSignIn={handleEmailLinkSignIn}
+                onSignOut={handleSignOut}
+                onClose={() => setShowLogbookLogin(false)}
+              />
             )}
 
             <section className="card gps-upload-card">
@@ -6351,7 +6420,7 @@ if (activePage === "lane") {
       className="logbook-account-toggle"
       onClick={() => setShowLogbookLogin(true)}
     >
-      Login/Signup
+      {supabaseSession ? "Logbook account" : "Sign in / Create account"}
     </button>
   </section>
 )}
@@ -7399,94 +7468,21 @@ if (activePage === "rules") {
             className="logbook-account-toggle"
             onClick={() => setShowLogbookLogin(true)}
           >
-            Login/Signup
+            {supabaseSession ? "Logbook account" : "Sign in / Create account"}
           </button>
 
           {showLogbookLogin && (
-            <div
-              className="auth-modal-backdrop"
-              onClick={() => setShowLogbookLogin(false)}
-            >
-              <section
-                className="auth-modal"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  className="auth-modal-close"
-                  onClick={() => setShowLogbookLogin(false)}
-                  aria-label="Close sign-in window"
-                >
-                  ×
-                </button>
-
-                  <h2>Login/Signup</h2>
-
-                {supabaseSession ? (
-                  <>
-                    <p className="subtitle">
-                      Signed in as <strong>{supabaseSession.user.email}</strong>
-                    </p>
-
-                    <button
-                      type="button"
-                      onClick={handleSignOut}
-                      disabled={authBusy}
-                    >
-                      {authBusy ? "Please wait..." : "Sign out"}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <label>
-                      Email
-                      <input
-                        type="email"
-                        value={authEmail}
-                        autoComplete="email"
-                        onChange={(event) => setAuthEmail(event.target.value)}
-                      />
-                    </label>
-
-                    <label>
-                      Password
-                      <input
-                        type="password"
-                        value={authPassword}
-                        autoComplete="current-password"
-                        onChange={(event) => setAuthPassword(event.target.value)}
-                      />
-                    </label>
-
-                    <div className="auth-modal-actions">
-                      <button
-                        type="button"
-                        onClick={handleSignIn}
-                        disabled={authBusy || !authEmail.trim() || !authPassword}
-                      >
-                        Sign in
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleSignUp}
-                        disabled={
-                          authBusy ||
-                          !authEmail.trim() ||
-                          authPassword.length < 6
-                        }
-                      >
-                        Create account
-                      </button>
-                    </div>
-                  </>
-                )}
-
-                {authStatus && (
-                  <p className="subtitle">{authStatus}</p>
-                )}
-              </section>
-            </div>
+            <AuthModal
+              session={supabaseSession}
+              email={authEmail}
+              status={authStatus}
+              busy={authBusy}
+              onEmailChange={setAuthEmail}
+              onGoogleSignIn={handleGoogleSignIn}
+              onEmailLinkSignIn={handleEmailLinkSignIn}
+              onSignOut={handleSignOut}
+              onClose={() => setShowLogbookLogin(false)}
+            />
           )}
           <div className="landing-actions">
             <button type="button" onClick={() => setActivePage("find")}>
