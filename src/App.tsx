@@ -63,6 +63,102 @@ import "leaflet/dist/leaflet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./App.css";
 
+type GoogleCredentialResponse = {
+  credential?: string;
+};
+
+type GoogleIdentityServices = {
+  accounts: {
+    id: {
+      initialize: (options: {
+        client_id: string;
+        callback: (response: GoogleCredentialResponse) => void;
+        nonce?: string;
+        use_fedcm_for_prompt?: boolean;
+      }) => void;
+      renderButton: (
+        parent: HTMLElement,
+        options: {
+          type: "standard";
+          theme: "outline";
+          size: "large";
+          shape: "rectangular";
+          text: "continue_with";
+          logo_alignment: "left";
+          width: number;
+        },
+      ) => void;
+    };
+  };
+};
+
+declare global {
+  interface Window {
+    google?: GoogleIdentityServices;
+  }
+}
+
+const GOOGLE_CLIENT_ID =
+  import.meta.env.VITE_GOOGLE_CLIENT_ID ??
+  "287085993983-2l0111ru255rff5rjeaa7fimprq6fe0a.apps.googleusercontent.com";
+
+let googleIdentityScriptPromise: Promise<GoogleIdentityServices> | null = null;
+
+function loadGoogleIdentityServices() {
+  if (window.google) {
+    return Promise.resolve(window.google);
+  }
+
+  if (googleIdentityScriptPromise) {
+    return googleIdentityScriptPromise;
+  }
+
+  googleIdentityScriptPromise = new Promise((resolve, reject) => {
+    const existingScript = document.querySelector<HTMLScriptElement>(
+      'script[src="https://accounts.google.com/gsi/client"]',
+    );
+    const script = existingScript ?? document.createElement("script");
+
+    const handleLoad = () => {
+      if (window.google) {
+        resolve(window.google);
+      } else {
+        googleIdentityScriptPromise = null;
+        reject(new Error("Google sign-in did not load correctly."));
+      }
+    };
+
+    const handleError = () => {
+      googleIdentityScriptPromise = null;
+      reject(new Error("Google sign-in could not be loaded."));
+    };
+
+    script.addEventListener("load", handleLoad, { once: true });
+    script.addEventListener("error", handleError, { once: true });
+
+    if (!existingScript) {
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+  });
+
+  return googleIdentityScriptPromise;
+}
+
+async function createGoogleSignInNonce() {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+  const nonce = btoa(String.fromCharCode(...randomBytes));
+  const encodedNonce = new TextEncoder().encode(nonce);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", encodedNonce);
+  const hashedNonce = Array.from(new Uint8Array(hashBuffer))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+
+  return { nonce, hashedNonce };
+}
+
 type AppMode = "phone" | "desktop";
 type AppPage =
   | "landing"
@@ -3989,11 +4085,93 @@ type AuthModalProps = {
   status: string;
   busy: boolean;
   onEmailChange: (email: string) => void;
-  onGoogleSignIn: () => void;
+  onGoogleSignIn: (credential: string, nonce: string) => void;
+  onGoogleSignInError: (message: string) => void;
   onEmailLinkSignIn: () => void;
   onSignOut: () => void;
   onClose: () => void;
 };
+
+function GoogleSignInButton({
+  busy,
+  onCredential,
+  onError,
+}: {
+  busy: boolean;
+  onCredential: (credential: string, nonce: string) => void;
+  onError: (message: string) => void;
+}) {
+  const buttonContainerRef = useRef<HTMLDivElement>(null);
+  const credentialHandlerRef = useRef(onCredential);
+  const errorHandlerRef = useRef(onError);
+
+  useEffect(() => {
+    credentialHandlerRef.current = onCredential;
+    errorHandlerRef.current = onError;
+  }, [onCredential, onError]);
+
+  useEffect(() => {
+    let active = true;
+
+    void Promise.all([
+      loadGoogleIdentityServices(),
+      createGoogleSignInNonce(),
+    ])
+      .then(([google, { nonce, hashedNonce }]) => {
+        const container = buttonContainerRef.current;
+        if (!active || !container) {
+          return;
+        }
+
+        google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: (response) => {
+            if (response.credential) {
+              credentialHandlerRef.current(response.credential, nonce);
+            } else {
+              errorHandlerRef.current(
+                "Google did not return a sign-in credential. Please try again.",
+              );
+            }
+          },
+          nonce: hashedNonce,
+          use_fedcm_for_prompt: true,
+        });
+
+        container.replaceChildren();
+        google.accounts.id.renderButton(container, {
+          type: "standard",
+          theme: "outline",
+          size: "large",
+          shape: "rectangular",
+          text: "continue_with",
+          logo_alignment: "left",
+          width: Math.max(200, Math.min(400, container.clientWidth)),
+        });
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          errorHandlerRef.current(
+            error instanceof Error
+              ? error.message
+              : "Google sign-in could not be loaded.",
+          );
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return (
+    <div
+      className={`google-sign-in-container${busy ? " is-busy" : ""}`}
+      aria-busy={busy}
+      ref={buttonContainerRef}
+    />
+  );
+}
 
 function AuthModal({
   session,
@@ -4002,6 +4180,7 @@ function AuthModal({
   busy,
   onEmailChange,
   onGoogleSignIn,
+  onGoogleSignInError,
   onEmailLinkSignIn,
   onSignOut,
   onClose,
@@ -4050,32 +4229,11 @@ function AuthModal({
               link by email. No password is required.
             </p>
 
-            <button
-              type="button"
-              className="google-sign-in-button"
-              onClick={onGoogleSignIn}
-              disabled={busy}
-            >
-              <svg aria-hidden="true" viewBox="0 0 24 24">
-                <path
-                  fill="#4285f4"
-                  d="M21.6 12.23c0-.71-.06-1.4-.18-2.07H12v3.92h5.38a4.6 4.6 0 0 1-2 3.02v2.55h3.24c1.9-1.75 2.98-4.33 2.98-7.42Z"
-                />
-                <path
-                  fill="#34a853"
-                  d="M12 22c2.7 0 4.98-.9 6.63-2.35l-3.25-2.55c-.9.6-2.05.96-3.38.96-2.61 0-4.82-1.76-5.61-4.13H3.04v2.62A10 10 0 0 0 12 22Z"
-                />
-                <path
-                  fill="#fbbc05"
-                  d="M6.39 13.93A6.02 6.02 0 0 1 6.07 12c0-.67.11-1.32.32-1.93V7.45H3.04A10 10 0 0 0 2 12c0 1.64.39 3.2 1.04 4.55l3.35-2.62Z"
-                />
-                <path
-                  fill="#ea4335"
-                  d="M12 5.94c1.47 0 2.79.5 3.82 1.5l2.88-2.88A9.65 9.65 0 0 0 12 2a10 10 0 0 0-8.96 5.45l3.35 2.62C7.18 7.7 9.39 5.94 12 5.94Z"
-                />
-              </svg>
-              {busy ? "Please wait..." : "Continue with Google"}
-            </button>
+            <GoogleSignInButton
+              busy={busy}
+              onCredential={onGoogleSignIn}
+              onError={onGoogleSignInError}
+            />
 
             <div className="auth-divider" aria-hidden="true">
               <span>or</span>
@@ -4332,21 +4490,28 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     return new URL(import.meta.env.BASE_URL, window.location.origin).toString();
   }
 
-  async function handleGoogleSignIn() {
+  async function handleGoogleSignIn(credential: string, nonce: string) {
     setAuthBusy(true);
     setAuthStatus("");
 
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { error } = await supabase.auth.signInWithIdToken({
       provider: "google",
-      options: {
-        redirectTo: getAuthRedirectUrl(),
-      },
+      token: credential,
+      nonce,
     });
 
     if (error) {
       setAuthStatus(error.message);
-      setAuthBusy(false);
+    } else {
+      setShowLogbookLogin(false);
     }
+
+    setAuthBusy(false);
+  }
+
+  function handleGoogleSignInError(message: string) {
+    setAuthStatus(message);
+    setAuthBusy(false);
   }
 
   async function handleEmailLinkSignIn() {
@@ -5954,6 +6119,7 @@ if (activePage === "lane") {
                 busy={authBusy}
                 onEmailChange={setAuthEmail}
                 onGoogleSignIn={handleGoogleSignIn}
+                onGoogleSignInError={handleGoogleSignInError}
                 onEmailLinkSignIn={handleEmailLinkSignIn}
                 onSignOut={handleSignOut}
                 onClose={() => setShowLogbookLogin(false)}
@@ -7479,6 +7645,7 @@ if (activePage === "rules") {
               busy={authBusy}
               onEmailChange={setAuthEmail}
               onGoogleSignIn={handleGoogleSignIn}
+              onGoogleSignInError={handleGoogleSignInError}
               onEmailLinkSignIn={handleEmailLinkSignIn}
               onSignOut={handleSignOut}
               onClose={() => setShowLogbookLogin(false)}

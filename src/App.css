@@ -1692,29 +1692,22 @@ button {
   white-space: nowrap;
 }
 
-.google-sign-in-button,
 .email-link-sign-in-button {
   width: 100%;
   margin: 0;
 }
 
-.google-sign-in-button {
-  gap: 12px;
-  border-color: #d1d5db;
-  background: #ffffff;
-  color: #172033;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+.google-sign-in-container {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
 }
 
-.google-sign-in-button:hover {
-  background: #f8fafc;
-  color: #172033;
-}
-
-.google-sign-in-button svg {
-  width: 22px;
-  height: 22px;
-  flex: 0 0 auto;
+.google-sign-in-container.is-busy {
+  pointer-events: none;
+  opacity: 0.65;
 }
 
 .auth-divider {
