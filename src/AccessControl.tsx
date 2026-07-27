@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
@@ -18,6 +18,101 @@ type AccessControlProps = {
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const GOOGLE_CLIENT_ID =
+  import.meta.env.VITE_GOOGLE_CLIENT_ID ??
+  "287085993983-2l0111ru255rff5rjeaa7fimprq6fe0a.apps.googleusercontent.com";
+
+type GoogleCredentialResponse = {
+  credential?: string;
+};
+
+type GoogleIdentityServices = {
+  accounts: {
+    id: {
+      initialize: (options: {
+        client_id: string;
+        callback: (response: GoogleCredentialResponse) => void;
+        nonce?: string;
+        use_fedcm_for_prompt?: boolean;
+      }) => void;
+      renderButton: (
+        parent: HTMLElement,
+        options: {
+          type: "standard";
+          theme: "outline";
+          size: "large";
+          shape: "rectangular";
+          text: "continue_with";
+          logo_alignment: "left";
+          width: number;
+        },
+      ) => void;
+    };
+  };
+};
+
+let googleIdentityScriptPromise: Promise<GoogleIdentityServices> | null = null;
+
+function getGoogleIdentityServices() {
+  return (window as Window & { google?: GoogleIdentityServices }).google;
+}
+
+function loadGoogleIdentityServices() {
+  const loadedGoogle = getGoogleIdentityServices();
+  if (loadedGoogle) {
+    return Promise.resolve(loadedGoogle);
+  }
+
+  if (googleIdentityScriptPromise) {
+    return googleIdentityScriptPromise;
+  }
+
+  googleIdentityScriptPromise = new Promise((resolve, reject) => {
+    const existingScript = document.querySelector<HTMLScriptElement>(
+      'script[src="https://accounts.google.com/gsi/client"]',
+    );
+    const script = existingScript ?? document.createElement("script");
+
+    const handleLoad = () => {
+      const google = getGoogleIdentityServices();
+      if (google) {
+        resolve(google);
+      } else {
+        googleIdentityScriptPromise = null;
+        reject(new Error("Google sign-in did not load correctly."));
+      }
+    };
+
+    const handleError = () => {
+      googleIdentityScriptPromise = null;
+      reject(new Error("Google sign-in could not be loaded."));
+    };
+
+    script.addEventListener("load", handleLoad, { once: true });
+    script.addEventListener("error", handleError, { once: true });
+
+    if (!existingScript) {
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+  });
+
+  return googleIdentityScriptPromise;
+}
+
+async function createGoogleSignInNonce() {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+  const nonce = btoa(String.fromCharCode(...randomBytes));
+  const encodedNonce = new TextEncoder().encode(nonce);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", encodedNonce);
+  const hashedNonce = Array.from(new Uint8Array(hashBuffer))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+
+  return { nonce, hashedNonce };
+}
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -25,6 +120,87 @@ function normalizeEmail(email: string) {
 
 function getAuthRedirectUrl() {
   return new URL(import.meta.env.BASE_URL, window.location.origin).toString();
+}
+
+function GoogleAccessSignInButton({
+  busy,
+  onCredential,
+  onError,
+}: {
+  busy: boolean;
+  onCredential: (credential: string, nonce: string) => void;
+  onError: (message: string) => void;
+}) {
+  const buttonContainerRef = useRef<HTMLDivElement>(null);
+  const credentialHandlerRef = useRef(onCredential);
+  const errorHandlerRef = useRef(onError);
+
+  useEffect(() => {
+    credentialHandlerRef.current = onCredential;
+    errorHandlerRef.current = onError;
+  }, [onCredential, onError]);
+
+  useEffect(() => {
+    let active = true;
+
+    void Promise.all([
+      loadGoogleIdentityServices(),
+      createGoogleSignInNonce(),
+    ])
+      .then(([google, { nonce, hashedNonce }]) => {
+        const container = buttonContainerRef.current;
+        if (!active || !container) {
+          return;
+        }
+
+        google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: (response) => {
+            if (response.credential) {
+              credentialHandlerRef.current(response.credential, nonce);
+            } else {
+              errorHandlerRef.current(
+                "Google did not return a sign-in credential. Please try again.",
+              );
+            }
+          },
+          nonce: hashedNonce,
+          use_fedcm_for_prompt: true,
+        });
+
+        container.replaceChildren();
+        google.accounts.id.renderButton(container, {
+          type: "standard",
+          theme: "outline",
+          size: "large",
+          shape: "rectangular",
+          text: "continue_with",
+          logo_alignment: "left",
+          width: Math.max(200, Math.min(400, container.clientWidth)),
+        });
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          errorHandlerRef.current(
+            error instanceof Error
+              ? error.message
+              : "Google sign-in could not be loaded.",
+          );
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return (
+    <div
+      className={`access-google-sign-in${busy ? " is-busy" : ""}`}
+      aria-busy={busy}
+      ref={buttonContainerRef}
+    />
+  );
 }
 
 function AccessManager({
@@ -319,6 +495,23 @@ export default function AccessControl({ children }: AccessControlProps) {
     setAuthBusy(false);
   }
 
+  async function signInWithGoogle(credential: string, nonce: string) {
+    setAuthBusy(true);
+    setAuthStatus("");
+
+    const { error } = await supabase.auth.signInWithIdToken({
+      provider: "google",
+      token: credential,
+      nonce,
+    });
+
+    if (error) {
+      setAuthStatus(error.message);
+    }
+
+    setAuthBusy(false);
+  }
+
   async function signOut() {
     setAuthBusy(true);
     setAuthStatus("");
@@ -378,6 +571,16 @@ export default function AccessControl({ children }: AccessControlProps) {
             <p>
               Sign in with an approved email address to continue to the app.
             </p>
+            <GoogleAccessSignInButton
+              busy={authBusy}
+              onCredential={(credential, nonce) =>
+                void signInWithGoogle(credential, nonce)
+              }
+              onError={setAuthStatus}
+            />
+            <div className="access-sign-in-divider" aria-hidden="true">
+              <span>or use an email link</span>
+            </div>
             <label htmlFor="sign-in-email">Email address</label>
             <input
               id="sign-in-email"

@@ -130,6 +130,42 @@
   color: #87a7ba;
 }
 
+.access-google-sign-in {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 22px;
+}
+
+.access-google-sign-in.is-busy {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.access-sign-in-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0 0;
+  color: #7798ab;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.access-sign-in-divider::before,
+.access-sign-in-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(148, 210, 239, 0.18);
+}
+
+.access-sign-in-divider span {
+  white-space: nowrap;
+}
+
 .access-muted {
   color: #87a7ba !important;
 }
