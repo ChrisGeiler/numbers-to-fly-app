@@ -21,6 +21,7 @@ export const GPS_SAMPLE_PERIOD_SECONDS = 0.2;
 const EXIT_VERTICAL_SPEED_TRIGGER_KMH = 9;
 const EXIT_CONFIRMATION_ALTITUDE_LOSS_M = 50;
 const COMPETITION_MAX_EXIT_ALTITUDE_M = 3353;
+const COMPETITION_WINDOW_TOP_M = 2500;
 const COMPETITION_DIVE_TRIGGER_DEG = 40;
 const COMPETITION_DIVE_ANGLE_TOLERANCE_DEG = 1.5;
 const COMPETITION_DIVE_MIN_RISE_DEG = 10;
@@ -731,6 +732,13 @@ function findCompetitionDiveStartIndex(
 
     if (currentAltitudeAglM > COMPETITION_MAX_EXIT_ALTITUDE_M) {
       continue;
+    }
+
+    // A dive detected after the scoring window has already started cannot be
+    // used as the beginning of the jump track. Doing so removes the 2,500 m
+    // entry crossing and makes an otherwise complete track look incomplete.
+    if (currentAltitudeAglM <= COMPETITION_WINDOW_TOP_M) {
+      break;
     }
 
     const previousAngleDeg = getPointDiveAngleDeg(points[index - 1]);
