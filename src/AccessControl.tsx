@@ -21,6 +21,37 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const GOOGLE_CLIENT_ID =
   import.meta.env.VITE_GOOGLE_CLIENT_ID ??
   "287085993983-2l0111ru255rff5rjeaa7fimprq6fe0a.apps.googleusercontent.com";
+const PUBLIC_BASE_URL = import.meta.env.BASE_URL;
+const DEMO_SLIDES = [
+  {
+    src: `${PUBLIC_BASE_URL}demo/01-home.jpg`,
+    title: "Choose your training tool",
+    description:
+      "Move from planning to GPS analysis, flight-window practice, FlySight setup, and rules guidance.",
+    alt: "Numbers to Fly home screen with the main training tools",
+  },
+  {
+    src: `${PUBLIC_BASE_URL}demo/02-analyzer.jpg`,
+    title: "Review FlySight performance",
+    description:
+      "Import a FlySight track to see competition-window scores, flight metrics, and performance graphs.",
+    alt: "Anonymized GPS Track Analyzer results showing wingsuit performance metrics",
+  },
+  {
+    src: `${PUBLIC_BASE_URL}demo/03-numbers.jpg`,
+    title: "Find your starting numbers",
+    description:
+      "Estimate useful speed and glide-ratio targets from pilot measurements and suit setup.",
+    alt: "Find your Numbers screen with example pilot details and estimated targets",
+  },
+  {
+    src: `${PUBLIC_BASE_URL}demo/04-config.jpg`,
+    title: "Build a FlySight configuration",
+    description:
+      "Generate task-specific FlySight tone and alarm settings for training.",
+    alt: "FlySight Config Builder set up for a distance task",
+  },
+] as const;
 
 type GoogleCredentialResponse = {
   credential?: string;
@@ -200,6 +231,119 @@ function GoogleAccessSignInButton({
       aria-busy={busy}
       ref={buttonContainerRef}
     />
+  );
+}
+
+function AppDemoCarousel() {
+  const [activeSlide, setActiveSlide] = useState(0);
+  const touchStartX = useRef<number | null>(null);
+  const slide = DEMO_SLIDES[activeSlide];
+
+  function showPreviousSlide() {
+    setActiveSlide(
+      (current) => (current - 1 + DEMO_SLIDES.length) % DEMO_SLIDES.length,
+    );
+  }
+
+  function showNextSlide() {
+    setActiveSlide((current) => (current + 1) % DEMO_SLIDES.length);
+  }
+
+  return (
+    <section
+      className="access-demo"
+      aria-labelledby="access-demo-title"
+      aria-roledescription="carousel"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          showPreviousSlide();
+        } else if (event.key === "ArrowRight") {
+          event.preventDefault();
+          showNextSlide();
+        }
+      }}
+    >
+      <div className="access-demo-heading">
+        <div>
+          <p className="access-eyebrow">App preview</p>
+          <h2 id="access-demo-title">See what is inside</h2>
+        </div>
+        <span>
+          {activeSlide + 1} / {DEMO_SLIDES.length}
+        </span>
+      </div>
+
+      <div
+        className="access-demo-frame"
+        onTouchStart={(event) => {
+          touchStartX.current = event.touches[0]?.clientX ?? null;
+        }}
+        onTouchEnd={(event) => {
+          const startX = touchStartX.current;
+          const endX = event.changedTouches[0]?.clientX;
+          touchStartX.current = null;
+
+          if (startX === null || endX === undefined) {
+            return;
+          }
+
+          const swipeDistance = endX - startX;
+          if (Math.abs(swipeDistance) < 45) {
+            return;
+          }
+
+          if (swipeDistance > 0) {
+            showPreviousSlide();
+          } else {
+            showNextSlide();
+          }
+        }}
+      >
+        <img
+          key={slide.src}
+          src={slide.src}
+          alt={slide.alt}
+          loading={activeSlide === 0 ? "eager" : "lazy"}
+        />
+        <button
+          type="button"
+          className="access-demo-arrow access-demo-arrow-previous"
+          onClick={showPreviousSlide}
+          aria-label="Show previous app screenshot"
+        >
+          ‹
+        </button>
+        <button
+          type="button"
+          className="access-demo-arrow access-demo-arrow-next"
+          onClick={showNextSlide}
+          aria-label="Show next app screenshot"
+        >
+          ›
+        </button>
+      </div>
+
+      <div className="access-demo-caption" aria-live="polite">
+        <h3>{slide.title}</h3>
+        <p>{slide.description}</p>
+      </div>
+
+      <div className="access-demo-dots" aria-label="Choose an app screenshot">
+        {DEMO_SLIDES.map((demoSlide, index) => (
+          <button
+            type="button"
+            key={demoSlide.src}
+            className={index === activeSlide ? "is-active" : ""}
+            onClick={() => setActiveSlide(index)}
+            aria-label={`Show screenshot ${index + 1}: ${demoSlide.title}`}
+            aria-current={index === activeSlide ? "true" : undefined}
+          />
+        ))}
+      </div>
+      <p className="access-demo-hint">Swipe, use the arrows, or press ← and →.</p>
+    </section>
   );
 }
 
@@ -552,7 +696,8 @@ export default function AccessControl({ children }: AccessControlProps) {
 
   return (
     <main className="access-gate">
-      <section className="access-gate-card">
+      <div className="access-public-shell">
+        <section className="access-gate-card">
         <div className="access-gate-mark" aria-hidden="true">
           NF
         </div>
@@ -653,12 +798,39 @@ export default function AccessControl({ children }: AccessControlProps) {
           </>
         )}
 
-        {authStatus && (
-          <p className="access-status" aria-live="polite">
-            {authStatus}
+          {authStatus && (
+            <p className="access-status" aria-live="polite">
+              {authStatus}
+            </p>
+          )}
+
+          <div className="access-public-links">
+            <a href={`${PUBLIC_BASE_URL}privacy.html`}>Privacy policy</a>
+            <a href="mailto:flywithcruza@gmail.com">Contact the app owner</a>
+          </div>
+        </section>
+
+        <AppDemoCarousel />
+
+        <section className="access-about" aria-labelledby="access-about-title">
+          <p className="access-eyebrow">Performance wingsuiting toolkit</p>
+          <h2 id="access-about-title">Plan, fly, and review with better data</h2>
+          <p>
+            Numbers to Fly helps approved pilots plan target numbers, practise a
+            competition window, review FlySight GPS tracks, build FlySight
+            settings, and search wingsuit competition rules.
           </p>
-        )}
-      </section>
+          <ul>
+            <li>Estimate speed and glide-ratio targets for your suit.</li>
+            <li>Review competition-window metrics from a FlySight CSV.</li>
+            <li>Generate task-specific tones and altitude reminders.</li>
+          </ul>
+          <p className="access-about-note">
+            The app is private. Access is granted by the owner to individual
+            email addresses.
+          </p>
+        </section>
+      </div>
     </main>
   );
 }
