@@ -268,7 +268,7 @@ function AppDemoCarousel() {
       <div className="access-demo-heading">
         <div>
           <p className="access-eyebrow">App preview</p>
-          <h2 id="access-demo-title">See what is inside</h2>
+          <h2 id="access-demo-title">See what's inside</h2>
         </div>
         <span>
           {activeSlide + 1} / {DEMO_SLIDES.length}
