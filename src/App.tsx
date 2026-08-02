@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   PointerEvent as ReactPointerEvent,
   WheelEvent as ReactWheelEvent,
@@ -204,6 +204,60 @@ type SuitSetup =
   | "freak-atc"
   | "swift";
 type UnitSystem = "metric" | "imperial";
+type SavedFindDetails = {
+  version: 1;
+  unitSystem: UnitSystem;
+  weight: string;
+  heightCm: string;
+  heightFeet: string;
+  heightInches: string;
+  suitSetup: Exclude<SuitSetup, "">;
+};
+
+const FIND_DETAILS_METADATA_KEY = "numbers_to_fly_details";
+const SAVABLE_SUIT_SETUPS: readonly Exclude<SuitSetup, "">[] = [
+  "crplus-no-wingtips",
+  "crplus-wingtips",
+  "freak-atc",
+  "swift",
+];
+
+function getSavedFindDetails(session: Session | null): SavedFindDetails | null {
+  const value = session?.user.user_metadata?.[FIND_DETAILS_METADATA_KEY];
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const details = value as Record<string, unknown>;
+  const unitSystem = details.unitSystem;
+  const suitSetup = details.suitSetup;
+
+  if (
+    details.version !== 1 ||
+    (unitSystem !== "metric" && unitSystem !== "imperial") ||
+    typeof details.weight !== "string" ||
+    typeof details.heightCm !== "string" ||
+    typeof details.heightFeet !== "string" ||
+    typeof details.heightInches !== "string" ||
+    !SAVABLE_SUIT_SETUPS.includes(
+      suitSetup as Exclude<SuitSetup, "">,
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    version: 1,
+    unitSystem,
+    weight: details.weight,
+    heightCm: details.heightCm,
+    heightFeet: details.heightFeet,
+    heightInches: details.heightInches,
+    suitSetup: suitSetup as Exclude<SuitSetup, "">,
+  };
+}
+
 type ConfigTask = "distance" | "speed" | "time";
 
 type StoredConfigTonePresets = Partial<
@@ -4304,6 +4358,15 @@ function AuthModal({
 
 function App() {
   const [supabaseSession, setSupabaseSession] = useState<Session | null>(null);
+  const loadedFindDetailsUserIdRef = useRef<string | null>(null);
+  const [findUnitSystem, setFindUnitSystem] = useState<UnitSystem>("metric");
+  const [findWeight, setFindWeight] = useState("");
+  const [findHeightCm, setFindHeightCm] = useState("");
+  const [findHeightFeet, setFindHeightFeet] = useState("");
+  const [findHeightInches, setFindHeightInches] = useState("");
+  const [findSuitSetup, setFindSuitSetup] = useState<SuitSetup>("");
+  const [findDetailsStatus, setFindDetailsStatus] = useState("");
+  const [findDetailsBusy, setFindDetailsBusy] = useState(false);
   const [authEmail, setAuthEmail] = useState("");
   const [authStatus, setAuthStatus] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
@@ -4347,6 +4410,34 @@ const [logbookActionMenu, setLogbookActionMenu] = useState<{
 const [editLocationName, setEditLocationName] = useState("");
 const [editSuitName, setEditSuitName] = useState("");
 const [editNotes, setEditNotes] = useState("");
+
+const loadFindDetailsFromSession = useCallback((session: Session | null) => {
+  const userId = session?.user.id ?? null;
+
+  if (!userId) {
+    loadedFindDetailsUserIdRef.current = null;
+    return;
+  }
+
+  if (loadedFindDetailsUserIdRef.current === userId) {
+    return;
+  }
+
+  loadedFindDetailsUserIdRef.current = userId;
+  const savedDetails = getSavedFindDetails(session);
+
+  if (!savedDetails) {
+    return;
+  }
+
+  setFindUnitSystem(savedDetails.unitSystem);
+  setFindWeight(savedDetails.weight);
+  setFindHeightCm(savedDetails.heightCm);
+  setFindHeightFeet(savedDetails.heightFeet);
+  setFindHeightInches(savedDetails.heightInches);
+  setFindSuitSetup(savedDetails.suitSetup);
+  setFindDetailsStatus("Your saved details have been loaded.");
+}, []);
 
 function getLogbookScoreForTask(jump: SavedJump, task: TaskMode): number | null {
   if (task === "speed") return jump.window_speed_kmh;
@@ -4476,18 +4567,20 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
       }
 
       setSupabaseSession(data.session);
+      loadFindDetailsFromSession(data.session);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSupabaseSession(session);
+      loadFindDetailsFromSession(session);
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [loadFindDetailsFromSession]);
 
       useEffect(() => {
     void loadSavedJumps();
@@ -5036,14 +5129,9 @@ useEffect(() => {
 }, [activePage]);
 
 const [rulesSearchQuery, setRulesSearchQuery] = useState("");
-  const [findUnitSystem, setFindUnitSystem] = useState<UnitSystem>("metric");
   const [activeFindHelp, setActiveFindHelp] = useState<
     "speed" | "time" | "distance" | null
   >(null);
-  const [findWeight, setFindWeight] = useState("");
-  const [findHeightCm, setFindHeightCm] = useState("");
-  const [findHeightFeet, setFindHeightFeet] = useState("");
-  const [findHeightInches, setFindHeightInches] = useState("");
   const [savedLaneAvailable, setSavedLaneAvailable] = useState(false);
   const [gpsFileName, setGpsFileName] = useState("");
   const [dzElevationM, setDzElevationM] = useState("");
@@ -5057,9 +5145,6 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [compareStatus, setCompareStatus] = useState("");
   const [historicalWinds, setHistoricalWinds] = useState<WindLayer[]>([]);
   const [historicalWindStatus, setHistoricalWindStatus] = useState("");
-  const [findSuitSetup, setFindSuitSetup] =
-    useState<SuitSetup>("");
-
   const [taskMode, setTaskMode] = useState<TaskMode>("distance");
 
   const [windSource, setWindSource] =
@@ -5485,6 +5570,8 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   }
 
   function toggleFindUnitSystem() {
+    setFindDetailsStatus("");
+
     if (findUnitSystem === "metric") {
       const weightKg = optionalNumberFromInput(findWeight);
       if (weightKg !== null) {
@@ -5517,6 +5604,45 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     }
 
     setFindUnitSystem("metric");
+  }
+
+  async function saveFindDetails() {
+    if (!supabaseSession) {
+      setFindDetailsStatus("Your signed-in session is still loading. Please try again.");
+      return;
+    }
+
+    if (!hasFindInputs || !findSuitSetup) {
+      setFindDetailsStatus("Enter your height, weight and suit before saving.");
+      return;
+    }
+
+    const savedDetails: SavedFindDetails = {
+      version: 1,
+      unitSystem: findUnitSystem,
+      weight: findWeight,
+      heightCm: findHeightCm,
+      heightFeet: findHeightFeet,
+      heightInches: findHeightInches,
+      suitSetup: findSuitSetup,
+    };
+
+    setFindDetailsBusy(true);
+    setFindDetailsStatus("");
+
+    const { error } = await supabase.auth.updateUser({
+      data: {
+        [FIND_DETAILS_METADATA_KEY]: savedDetails,
+      },
+    });
+
+    if (error) {
+      setFindDetailsStatus(`Could not save your details: ${error.message}`);
+    } else {
+      setFindDetailsStatus("Your details have been saved to your account.");
+    }
+
+    setFindDetailsBusy(false);
   }
 
 function pushAllFoundNumbersToFlyPage() {
@@ -7747,15 +7873,32 @@ if (activePage === "rules") {
             Enter your body details and suit to estimate starting numbers.
           </p>
 
-          <button
-            type="button"
-            className="primary-action-button"
-            onClick={toggleFindUnitSystem}
-          >
-            {findUnitSystem === "metric"
-              ? "Switch to Imperial"
-              : "Switch to Metric"}
-          </button>
+          <div className="find-details-actions">
+            <button
+              type="button"
+              className="primary-action-button"
+              onClick={toggleFindUnitSystem}
+            >
+              {findUnitSystem === "metric"
+                ? "Switch to Imperial"
+                : "Switch to Metric"}
+            </button>
+
+            <button
+              type="button"
+              className="primary-action-button"
+              onClick={() => void saveFindDetails()}
+              disabled={findDetailsBusy || !hasFindInputs || !supabaseSession}
+            >
+              {findDetailsBusy ? "Saving..." : "Save my details"}
+            </button>
+          </div>
+
+          {findDetailsStatus && (
+            <p className="find-details-status" aria-live="polite">
+              {findDetailsStatus}
+            </p>
+          )}
 
           <div className="manual-wind-controls">
             <label>
@@ -7766,7 +7909,10 @@ if (activePage === "rules") {
                 placeholder={
                   findUnitSystem === "metric" ? "Example 78" : "Example 175"
                 }
-                onChange={(e) => setFindWeight(e.target.value)}
+                onChange={(e) => {
+                  setFindWeight(e.target.value);
+                  setFindDetailsStatus("");
+                }}
               />
             </label>
 
@@ -7777,7 +7923,10 @@ if (activePage === "rules") {
                   type="number"
                   value={findHeightCm}
                   placeholder="Example 180"
-                  onChange={(e) => setFindHeightCm(e.target.value)}
+                  onChange={(e) => {
+                    setFindHeightCm(e.target.value);
+                    setFindDetailsStatus("");
+                  }}
                 />
               </label>
             ) : (
@@ -7788,7 +7937,10 @@ if (activePage === "rules") {
                     type="number"
                     value={findHeightFeet}
                     placeholder="Example 5"
-                    onChange={(e) => setFindHeightFeet(e.target.value)}
+                    onChange={(e) => {
+                      setFindHeightFeet(e.target.value);
+                      setFindDetailsStatus("");
+                    }}
                   />
                 </label>
 
@@ -7798,7 +7950,10 @@ if (activePage === "rules") {
                     type="number"
                     value={findHeightInches}
                     placeholder="Example 11"
-                    onChange={(e) => setFindHeightInches(e.target.value)}
+                    onChange={(e) => {
+                      setFindHeightInches(e.target.value);
+                      setFindDetailsStatus("");
+                    }}
                   />
                 </label>
               </>
@@ -7809,7 +7964,10 @@ if (activePage === "rules") {
             Suit setup
             <select
               value={findSuitSetup}
-              onChange={(e) => setFindSuitSetup(e.target.value as SuitSetup)}
+              onChange={(e) => {
+                setFindSuitSetup(e.target.value as SuitSetup);
+                setFindDetailsStatus("");
+              }}
             >
               <option value="" disabled>
                 Select suit

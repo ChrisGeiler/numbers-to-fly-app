@@ -583,6 +583,30 @@ button:disabled {
   margin-top: 18px;
 }
 
+.find-details-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0 6px;
+}
+
+.find-details-actions button {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+.find-details-status {
+  margin: 12px 0 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(8, 145, 178, 0.14);
+  color: #a5f3fc;
+  text-align: center;
+  line-height: 1.45;
+}
+
 .find-help-button {
   min-height: 48px;
   padding: 12px 14px;
