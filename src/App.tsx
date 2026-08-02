@@ -4437,6 +4437,15 @@ const loadFindDetailsFromSession = useCallback((session: Session | null) => {
   setFindHeightInches(savedDetails.heightInches);
   setFindSuitSetup(savedDetails.suitSetup);
   setFindDetailsStatus("Your saved details have been loaded.");
+
+  const savedNumbers = calculateFindYourNumbers(savedDetails);
+  const distanceSpeed = String(savedNumbers.distanceSpeedKph);
+
+  setSavedDistanceSpeedKph(distanceSpeed);
+  setSavedTimeSpeedKph(String(savedNumbers.timeSpeedKph));
+  setZeroWindSpeedKph(distanceSpeed);
+  setStartGR(savedNumbers.speedStartGR.toFixed(2));
+  setEndGR(savedNumbers.speedEndGR.toFixed(2));
 }, []);
 
 function getLogbookScoreForTask(jump: SavedJump, task: TaskMode): number | null {
@@ -5645,11 +5654,34 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     setFindDetailsBusy(false);
   }
 
-function pushAllFoundNumbersToFlyPage() {
+function syncFoundNumbersToFlyPage(nextTaskMode: TaskMode = taskMode) {
   const distanceSpeed = String(foundNumbers.distanceSpeedKph);
   const timeSpeed = String(foundNumbers.timeSpeedKph);
   const speedStart = foundNumbers.speedStartGR.toFixed(2);
   const speedEnd = foundNumbers.speedEndGR.toFixed(2);
+
+  setSavedDistanceSpeedKph(distanceSpeed);
+  setSavedTimeSpeedKph(timeSpeed);
+  setStartGR(speedStart);
+  setEndGR(speedEnd);
+
+  if (nextTaskMode === "distance") {
+    setZeroWindSpeedKph(distanceSpeed);
+  } else if (nextTaskMode === "time") {
+    setZeroWindSpeedKph(timeSpeed);
+  }
+}
+
+function openFlyNumbersPage() {
+  if (hasFindInputs) {
+    syncFoundNumbersToFlyPage();
+  }
+
+  setActivePage("fly");
+}
+
+function pushAllFoundNumbersToFlyPage() {
+  syncFoundNumbersToFlyPage("distance");
 
   const nextConfigSuit = mapSuitSetupToConfigSuit(findSuitSetup);
 
@@ -5666,13 +5698,6 @@ function pushAllFoundNumbersToFlyPage() {
     configSuit: nextConfigSuit,
     bodyAdjustmentKph,
   });
-
-  setSavedDistanceSpeedKph(distanceSpeed);
-  setSavedTimeSpeedKph(timeSpeed);
-
-  setZeroWindSpeedKph(distanceSpeed);
-  setStartGR(speedStart);
-  setEndGR(speedEnd);
 
   setConfigSuit(nextConfigSuit);
   setConfigTask("distance");
@@ -7812,7 +7837,7 @@ if (activePage === "rules") {
               Numbers to fly
             </button>
 
-            <button type="button" onClick={() => setActivePage("fly")}>
+            <button type="button" onClick={openFlyNumbersPage}>
               Fly the window
             </button>
 
@@ -8752,6 +8777,11 @@ if (activePage === "rules") {
 
       <section className="card">
         <h2>Setup</h2>
+
+        <p className="subtitle">
+          These targets automatically follow your current Find Your Numbers
+          details. You can still adjust them here for a specific jump.
+        </p>
 
         <label>
           Task
