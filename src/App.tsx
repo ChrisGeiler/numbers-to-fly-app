@@ -168,6 +168,28 @@ type AppPage =
   | "lane"
   | "rules"
   | "gps";
+const APP_PAGE_STORAGE_KEY = "numbers-to-fly:active-page";
+const APP_PAGES: readonly AppPage[] = [
+  "landing",
+  "find",
+  "fly",
+  "config",
+  "lane",
+  "rules",
+  "gps",
+];
+
+function getSavedAppPage(): AppPage {
+  try {
+    const savedPage = window.sessionStorage.getItem(APP_PAGE_STORAGE_KEY);
+    return APP_PAGES.includes(savedPage as AppPage)
+      ? (savedPage as AppPage)
+      : "landing";
+  } catch {
+    return "landing";
+  }
+}
+
 type TaskMode = "time" | "distance" | "speed";
 type WindSource =
   | "manual"
@@ -4969,7 +4991,7 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     void loadSavedJumps();
   }
 
-  const [activePage, setActivePage] = useState<AppPage>("landing");
+  const [activePage, setActivePage] = useState<AppPage>(getSavedAppPage);
   const [appMode, setAppMode] = useState<AppMode>(() =>
   window.matchMedia("(min-width: 900px)").matches
     ? "desktop"
@@ -4989,6 +5011,14 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
       mediaQuery.removeEventListener("change", updateAppMode);
   };
 }, []);
+
+useEffect(() => {
+  try {
+    window.sessionStorage.setItem(APP_PAGE_STORAGE_KEY, activePage);
+  } catch {
+    // The app still works when browser storage is unavailable.
+  }
+}, [activePage]);
 
 useEffect(() => {
   if (activePage !== "lane") {

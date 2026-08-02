@@ -529,6 +529,7 @@ function AccessManager({
 
 export default function AccessControl({ children }: AccessControlProps) {
   const [session, setSession] = useState<Session | null>(null);
+  const sessionUserIdRef = useRef<string | null>(null);
   const [accessState, setAccessState] = useState<AccessState>("checking");
   const [accessRole, setAccessRole] = useState<AccessRole | null>(null);
   const [email, setEmail] = useState("");
@@ -550,6 +551,7 @@ export default function AccessControl({ children }: AccessControlProps) {
         return;
       }
 
+      sessionUserIdRef.current = data.session?.user.id ?? null;
       setSession(data.session);
       if (!data.session) {
         setAccessState("signed-out");
@@ -559,9 +561,19 @@ export default function AccessControl({ children }: AccessControlProps) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      const nextUserId = nextSession?.user.id ?? null;
+      const userChanged = sessionUserIdRef.current !== nextUserId;
+
+      sessionUserIdRef.current = nextUserId;
       setSession(nextSession);
-      setAccessRole(null);
-      setAccessState(nextSession ? "checking" : "signed-out");
+
+      // Supabase can emit SIGNED_IN or TOKEN_REFRESHED when a background tab
+      // becomes active again. Keep the authorised app mounted when the user is
+      // unchanged so its current page and in-progress state are preserved.
+      if (userChanged || !nextSession) {
+        setAccessRole(null);
+        setAccessState(nextSession ? "checking" : "signed-out");
+      }
     });
 
     return () => {
@@ -609,7 +621,7 @@ export default function AccessControl({ children }: AccessControlProps) {
     return () => {
       active = false;
     };
-  }, [session, accessCheckNumber]);
+  }, [session?.user.id, session?.user.email, accessCheckNumber]);
 
   async function sendSignInLink() {
     const normalizedEmail = normalizeEmail(email);
