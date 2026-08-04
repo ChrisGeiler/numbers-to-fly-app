@@ -22,6 +22,8 @@ const EXIT_VERTICAL_SPEED_TRIGGER_KMH = 9;
 const EXIT_CONFIRMATION_ALTITUDE_LOSS_M = 50;
 const COMPETITION_MAX_EXIT_ALTITUDE_M = 3353;
 const COMPETITION_WINDOW_TOP_M = 2500;
+const FLARE_GLIDE_RATIO_TRIGGER = 3;
+const FLARE_TRIGGER_DEADLINE_M = 2300;
 const COMPETITION_DIVE_TRIGGER_DEG = 40;
 const COMPETITION_DIVE_ANGLE_TOLERANCE_DEG = 1.5;
 const COMPETITION_DIVE_MIN_RISE_DEG = 10;
@@ -868,13 +870,31 @@ export function getTop100mFlareResult(
     return null;
   }
 
-  const flareStartIndex = points.findIndex(
+  const glideRatioFlareStartIndex = points.findIndex(
     (point) =>
       point.altitudeM <= 2550 &&
-      point.altitudeM >= 2400 &&
+      point.altitudeM >= FLARE_TRIGGER_DEADLINE_M &&
       point.glideRatio !== null &&
-      point.glideRatio >= 3
+      point.glideRatio >= FLARE_GLIDE_RATIO_TRIGGER
   );
+
+  const windowStartIndex = points.findIndex(
+    (point, index) =>
+      index > 0 &&
+      points[index - 1].altitudeM > COMPETITION_WINDOW_TOP_M &&
+      point.altitudeM <= COMPETITION_WINDOW_TOP_M
+  );
+
+  const hasReachedFlareTriggerDeadline = points.some(
+    (point) => point.altitudeM <= FLARE_TRIGGER_DEADLINE_M
+  );
+
+  const flareStartIndex =
+    glideRatioFlareStartIndex !== -1
+      ? glideRatioFlareStartIndex
+      : hasReachedFlareTriggerDeadline
+        ? windowStartIndex
+        : -1;
 
   if (flareStartIndex === -1) {
     return null;
