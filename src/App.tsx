@@ -7115,6 +7115,11 @@ if (activePage === "lane") {
           )
         : null;
 
+    const last800mAverageGlideRatio =
+      last800mAltitudeLossM > 0
+        ? last800mDistanceM / last800mAltitudeLossM
+        : null;
+
     const isSpeedRun =
       timeInWindowSeconds > 0 &&
       timeInWindowSeconds <= 40;
@@ -7570,6 +7575,17 @@ if (activePage === "lane") {
                       1
                     )}{" "}
                     km/h
+                  </strong>
+                </div>
+
+                <div>
+                  <span>
+                    {usingCorrectedScores
+                      ? "Corrected Avg. Glide Ratio: "
+                      : "Avg. Glide Ratio: "}
+                  </span>
+                  <strong>
+                    {formatNumber(last800mAverageGlideRatio, 2)}
                   </strong>
                 </div>
               </div>
