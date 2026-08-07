@@ -174,6 +174,8 @@ const APP_PAGE_STORAGE_KEY = "numbers-to-fly:active-page";
 const REFERENCE_POINT_GROUPS_STORAGE_KEY =
   "numbers-to-fly:reference-point-groups";
 const MAX_REFERENCE_POINTS_PER_GROUP = 12;
+const ANALYZER_REFERENCE_GROUP_MATCH_RADIUS_M = 5 * 1852;
+const DESIGNATED_LANE_HALF_WIDTH_M = 300;
 const APP_PAGES: readonly AppPage[] = [
   "landing",
   "find",
@@ -329,6 +331,110 @@ function getSavedReferencePointStore(): SavedReferencePointStore {
   } catch {
     return emptyStore;
   }
+}
+
+type LanePenaltyEstimate = {
+  severity: "none" | "ten" | "twenty" | "major";
+  label: string;
+  maxCenterlineDistanceM: number;
+  maxOutsideLaneM: number;
+};
+
+function distanceBetweenLatLonM(first: LatLon, second: LatLon) {
+  const earthRadiusM = 6371000;
+  const firstLatRad = degToRad(first.lat);
+  const secondLatRad = degToRad(second.lat);
+  const deltaLatRad = degToRad(second.lat - first.lat);
+  const deltaLonRad = degToRad(second.lon - first.lon);
+  const haversineValue =
+    Math.sin(deltaLatRad / 2) ** 2 +
+    Math.cos(firstLatRad) *
+      Math.cos(secondLatRad) *
+      Math.sin(deltaLonRad / 2) ** 2;
+  const clampedValue = Math.min(1, Math.max(0, haversineValue));
+
+  return (
+    earthRadiusM *
+    2 *
+    Math.atan2(Math.sqrt(clampedValue), Math.sqrt(1 - clampedValue))
+  );
+}
+
+function distanceFromLaneCenterlineM(
+  point: LatLon,
+  laneStart: LatLon,
+  laneEnd: LatLon,
+) {
+  const earthRadiusM = 6371000;
+  const referenceLatRad = degToRad((laneStart.lat + laneEnd.lat) / 2);
+  const metresPerDegreeLat = (Math.PI / 180) * earthRadiusM;
+  const metresPerDegreeLon = metresPerDegreeLat * Math.cos(referenceLatRad);
+  const laneX = (laneEnd.lon - laneStart.lon) * metresPerDegreeLon;
+  const laneY = (laneEnd.lat - laneStart.lat) * metresPerDegreeLat;
+  const pointX = (point.lon - laneStart.lon) * metresPerDegreeLon;
+  const pointY = (point.lat - laneStart.lat) * metresPerDegreeLat;
+  const laneLengthM = Math.hypot(laneX, laneY);
+
+  if (laneLengthM < 1) {
+    return null;
+  }
+
+  return Math.abs(pointX * laneY - pointY * laneX) / laneLengthM;
+}
+
+function estimateLanePenalty(
+  points: LatLon[],
+  laneStart: LatLon,
+  laneEnd: LatLon,
+): LanePenaltyEstimate | null {
+  const lateralDistances = points
+    .map((point) => distanceFromLaneCenterlineM(point, laneStart, laneEnd))
+    .filter((distance): distance is number => distance !== null);
+
+  if (lateralDistances.length === 0) {
+    return null;
+  }
+
+  const maxCenterlineDistanceM = Math.max(...lateralDistances);
+  const maxOutsideLaneM = Math.max(
+    0,
+    maxCenterlineDistanceM - DESIGNATED_LANE_HALF_WIDTH_M,
+  );
+
+  if (maxOutsideLaneM <= 0) {
+    return {
+      severity: "none",
+      label: "Inside the designated lane — no lane penalty indicated",
+      maxCenterlineDistanceM,
+      maxOutsideLaneM,
+    };
+  }
+
+  if (maxOutsideLaneM < 150) {
+    return {
+      severity: "ten",
+      label: "Estimated 10% result reduction",
+      maxCenterlineDistanceM,
+      maxOutsideLaneM,
+    };
+  }
+
+  if (maxOutsideLaneM <= 300) {
+    return {
+      severity: "twenty",
+      label: "Estimated 20% result reduction",
+      maxCenterlineDistanceM,
+      maxOutsideLaneM,
+    };
+  }
+
+  return {
+    severity: "major",
+    label:
+      "Estimated 50% reduction for a first infringement, or zero for a subsequent infringement",
+    maxCenterlineDistanceM,
+    maxOutsideLaneM,
+  };
 }
 
 type TaskMode = "time" | "distance" | "speed";
@@ -2019,27 +2125,33 @@ function MapViewportUpdater({
   referenceLon,
   userMapLocation,
   savedReferencePoints,
+  trackPoints,
 }: {
   referenceLat: string;
   referenceLon: string;
   userMapLocation: LatLon | null;
   savedReferencePoints: SavedReferencePoint[];
+  trackPoints: GpsTrackPoint[];
 }) {
   const map = useMap();
 
   useEffect(() => {
     const lat = optionalNumberFromInput(referenceLat);
     const lon = optionalNumberFromInput(referenceLon);
+    const savedLocationViewportPoints =
+      savedReferencePoints.length > 0
+        ? [...savedReferencePoints, ...trackPoints]
+        : [];
 
-    if (savedReferencePoints.length === 1) {
-      const [point] = savedReferencePoints;
+    if (savedLocationViewportPoints.length === 1) {
+      const [point] = savedLocationViewportPoints;
       map.setView([point.lat, point.lon], 14);
       return;
     }
 
-    if (savedReferencePoints.length > 1) {
+    if (savedLocationViewportPoints.length > 1) {
       map.fitBounds(
-        savedReferencePoints.map(
+        savedLocationViewportPoints.map(
           (point) => [point.lat, point.lon] as [number, number],
         ),
         {
@@ -2063,6 +2175,7 @@ function MapViewportUpdater({
     referenceLat,
     referenceLon,
     savedReferencePoints,
+    trackPoints,
     userMapLocation,
   ]);
 
@@ -2202,6 +2315,7 @@ function MapClickPicker({
           referenceLon={referenceLon}
           userMapLocation={userMapLocation}
           savedReferencePoints={savedReferencePoints}
+          trackPoints={trackPoints}
         />
 
         <TileLayer
@@ -5198,6 +5312,10 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
       }
       setRawGpsCsv(jump.raw_csv);
       setGpsTrackPoints(parsedPoints);
+      setCompetitionReferenceLat("");
+      setCompetitionReferenceLon("");
+      setCompetitionReferenceGroupId(null);
+      setShowCompetitionReferencePicker(false);
       setHistoricalWinds([]);
       setHistoricalWindStatus("Loading historical winds...");
 
@@ -5563,6 +5681,8 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [competitionReferenceLon, setCompetitionReferenceLon] = useState("");
   const [showCompetitionReferencePicker, setShowCompetitionReferencePicker] =
     useState(false);
+  const [competitionReferenceGroupId, setCompetitionReferenceGroupId] =
+    useState<string | null>(null);
 
       useEffect(() => {
       if (windSource !== "open-meteo" && windSource !== "meteomatics") {
@@ -5613,6 +5733,10 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const selectedReferencePointGroup =
     savedReferencePointStore.groups.find(
       (group) => group.id === savedReferencePointStore.activeGroupId,
+    ) ?? null;
+  const selectedCompetitionReferenceGroup =
+    savedReferencePointStore.groups.find(
+      (group) => group.id === competitionReferenceGroupId,
     ) ?? null;
   const totalSavedReferencePoints = savedReferencePointStore.groups.reduce(
     (total, group) => total + group.points.length,
@@ -6538,6 +6662,25 @@ function downloadGeneratedConfig() {
     setSavedReferencePointStatus(`Loaded ${point.name} from ${group.name}.`);
   }
 
+  function selectAnalyzerSavedReferencePoint(
+    group: SavedReferencePointGroup,
+    point: SavedReferencePoint,
+  ) {
+    setCompetitionReferenceGroupId(group.id);
+    setCompetitionReferenceLat(point.lat.toFixed(6));
+    setCompetitionReferenceLon(point.lon.toFixed(6));
+    setShowCompetitionReferencePicker(true);
+
+    window.setTimeout(() => {
+      document
+        .querySelector(".competition-lane-card .map-picker")
+        ?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+    }, 150);
+  }
+
   function deleteSavedReferencePoint(
     group: SavedReferencePointGroup,
     point: SavedReferencePoint,
@@ -6799,6 +6942,10 @@ if (activePage === "lane") {
                     if (!file) {
                       setGpsFileName("");
                       setGpsTrackPoints([]);
+                      setCompetitionReferenceLat("");
+                      setCompetitionReferenceLon("");
+                      setCompetitionReferenceGroupId(null);
+                      setShowCompetitionReferencePicker(false);
                       setTrackInfoEditJumpId(null);
                       setJumpLocationName("");
                       setJumpSuitName("");
@@ -6810,6 +6957,10 @@ if (activePage === "lane") {
                     setGpsFileName(file.name);
 
                     setTrackInfoEditJumpId(null);
+                    setCompetitionReferenceLat("");
+                    setCompetitionReferenceLon("");
+                    setCompetitionReferenceGroupId(null);
+                    setShowCompetitionReferencePicker(false);
                     setJumpLocationName("");
                     setJumpSuitName("");
                     setJumpNotes("");
@@ -7743,6 +7894,45 @@ if (activePage === "lane") {
             )
           )
         : "";
+    const savedReferenceGroupMatches =
+      pointA === null
+        ? []
+        : savedReferencePointStore.groups
+            .flatMap((group) => {
+              if (group.points.length === 0) {
+                return [];
+              }
+
+              const nearestDistanceM = Math.min(
+                ...group.points.map((point) =>
+                  distanceBetweenLatLonM(pointA, point),
+                ),
+              );
+
+              return nearestDistanceM <=
+                ANALYZER_REFERENCE_GROUP_MATCH_RADIUS_M
+                ? [{ group, nearestDistanceM }]
+                : [];
+            })
+            .sort(
+              (first, second) =>
+                first.nearestDistanceM - second.nearestDistanceM,
+            );
+    const validationStartIndex = Math.min(
+      Math.round(9 / GPS_SAMPLE_PERIOD_SECONDS),
+      jumpTrackPoints.length - 1,
+    );
+    const laneEvaluationPoints =
+      scoringWindowResult.endIndex >= validationStartIndex
+        ? jumpTrackPoints.slice(
+            validationStartIndex,
+            scoringWindowResult.endIndex + 1,
+          )
+        : [];
+    const lanePenaltyEstimate =
+      pointA !== null && pointB !== null
+        ? estimateLanePenalty(laneEvaluationPoints, pointA, pointB)
+        : null;
 
     return (
     <>
@@ -8090,6 +8280,65 @@ if (activePage === "lane") {
           </strong>
         </div>
 
+        {savedReferenceGroupMatches.length > 0 && (
+          <div className="analyzer-reference-suggestions">
+            <h3>Saved competition location detected</h3>
+            <p>
+              Point A is near saved reference points. Choose the assigned point
+              to check the flown track against its 600 m lane.
+            </p>
+
+            {savedReferenceGroupMatches.map(({ group, nearestDistanceM }) => (
+              <div
+                className={`analyzer-reference-group${
+                  selectedCompetitionReferenceGroup?.id === group.id
+                    ? " is-selected"
+                    : ""
+                }`}
+                key={group.id}
+              >
+                <div className="analyzer-reference-group-title">
+                  <strong>{group.name}</strong>
+                  <span>
+                    Nearest point {formatNumber(nearestDistanceM / 1852, 1)} NM
+                    from Point A
+                  </span>
+                </div>
+
+                <div className="analyzer-reference-options">
+                  {group.points.map((point, index) => {
+                    const pointIsSelected =
+                      pointB !== null &&
+                      Math.abs(point.lat - pointB.lat) < 0.000001 &&
+                      Math.abs(point.lon - pointB.lon) < 0.000001;
+
+                    return (
+                      <button
+                        type="button"
+                        className={pointIsSelected ? "is-selected" : ""}
+                        key={point.id}
+                        onClick={() =>
+                          selectAnalyzerSavedReferencePoint(group, point)
+                        }
+                      >
+                        <span>
+                          {index + 1}. {point.name}
+                        </span>
+                        <small>
+                          {formatNumber(
+                            distanceBetweenLatLonM(pointA, point) / 1852,
+                            1,
+                          )} NM from Point A
+                        </small>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="competition-reference-grid">
           <label>
             Reference Point latitude
@@ -8098,7 +8347,10 @@ if (activePage === "lane") {
               step="0.000001"
               value={competitionReferenceLat}
               placeholder="Example -33.123456"
-              onChange={(event) => setCompetitionReferenceLat(event.target.value)}
+              onChange={(event) => {
+                setCompetitionReferenceLat(event.target.value);
+                setCompetitionReferenceGroupId(null);
+              }}
             />
           </label>
 
@@ -8109,7 +8361,10 @@ if (activePage === "lane") {
               step="0.000001"
               value={competitionReferenceLon}
               placeholder="Example 151.123456"
-              onChange={(event) => setCompetitionReferenceLon(event.target.value)}
+              onChange={(event) => {
+                setCompetitionReferenceLon(event.target.value);
+                setCompetitionReferenceGroupId(null);
+              }}
             />
           </label>
         </div>
@@ -8134,6 +8389,7 @@ if (activePage === "lane") {
             onClick={() => {
               setCompetitionReferenceLat("");
               setCompetitionReferenceLon("");
+              setCompetitionReferenceGroupId(null);
             }}
           >
             Clear Reference Point
@@ -8148,6 +8404,17 @@ if (activePage === "lane") {
             dropPoint={pointA}
             runHeadingDeg={laneHeadingDeg}
             trackPoints={fullJumpPoints}
+            savedReferencePoints={
+              selectedCompetitionReferenceGroup?.points ?? []
+            }
+            onSavedReferencePointPick={(point) => {
+              if (selectedCompetitionReferenceGroup) {
+                selectAnalyzerSavedReferencePoint(
+                  selectedCompetitionReferenceGroup,
+                  point,
+                );
+              }
+            }}
             onPick={(lat, lon) => {
               setCompetitionReferenceLat(lat.toFixed(6));
               setCompetitionReferenceLon(lon.toFixed(6));
@@ -8163,6 +8430,28 @@ if (activePage === "lane") {
                 {pointB.lat.toFixed(6) + ", " + pointB.lon.toFixed(6)}
               </strong>
             </div>
+
+            {lanePenaltyEstimate && (
+              <div
+                className={`lane-penalty-estimate lane-penalty-${lanePenaltyEstimate.severity}`}
+                role="status"
+              >
+                <span>Estimated lane result</span>
+                <strong>{lanePenaltyEstimate.label}</strong>
+                <p>
+                  Maximum lateral distance: {formatNumber(
+                    lanePenaltyEstimate.maxCenterlineDistanceM,
+                    0,
+                  )} m from the centreline. Maximum distance outside the 600 m
+                  lane: {formatNumber(lanePenaltyEstimate.maxOutsideLaneM, 0)} m.
+                </p>
+                <small>
+                  Calculated from the detected validation start through the
+                  competition-window exit. This is an aid for review; official
+                  penalties remain subject to judge verification.
+                </small>
+              </div>
+            )}
 
           </>
         ) : (
