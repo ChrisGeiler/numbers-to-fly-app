@@ -309,6 +309,55 @@ tr:last-child td {
     0 0 18px rgba(34, 211, 238, 0.9);
 }
 
+.saved-reference-map-marker {
+  background: transparent;
+  border: 0;
+}
+
+.saved-reference-map-marker div {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 3px solid #cffafe;
+  border-radius: 50%;
+  background: #0891b2;
+  color: #ecfeff;
+  font-size: 0.86rem;
+  font-weight: 950;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 4px rgba(2, 6, 23, 0.82),
+    0 0 16px rgba(34, 211, 238, 0.9);
+}
+
+.saved-reference-map-marker.is-selected div {
+  border-color: #fef08a;
+  background: #ca8a04;
+  color: #fff;
+  box-shadow:
+    0 0 0 5px rgba(2, 6, 23, 0.88),
+    0 0 22px rgba(250, 204, 21, 0.98);
+}
+
+.leaflet-tooltip.saved-reference-map-tooltip {
+  padding: 4px 7px;
+  border: 1px solid rgba(103, 232, 249, 0.85);
+  border-radius: 7px;
+  background: rgba(2, 6, 23, 0.9);
+  color: #ecfeff;
+  font-size: 0.72rem;
+  font-weight: 850;
+  line-height: 1.1;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.leaflet-tooltip-top.saved-reference-map-tooltip::before {
+  border-top-color: rgba(103, 232, 249, 0.85);
+}
+
 .drop-point-marker div {
   width: 22px;
   height: 22px;
@@ -1636,6 +1685,10 @@ button:disabled {
 .saved-reference-status {
   margin: 14px 0 0;
   font-weight: 800;
+}
+
+.saved-reference-map-instruction {
+  margin-bottom: 8px;
 }
 
 .reference-coordinate-form {

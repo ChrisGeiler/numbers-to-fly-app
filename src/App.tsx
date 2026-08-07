@@ -12,6 +12,7 @@ import {
   Polygon,
   Polyline,
   TileLayer,
+  Tooltip as LeafletTooltip,
   useMap,
   useMapEvents,
 } from "react-leaflet";
@@ -686,6 +687,15 @@ const referencePointIcon = L.divIcon({
   iconSize: [24, 24],
   iconAnchor: [12, 12],
 });
+
+function savedReferencePointMapIcon(index: number, selected: boolean) {
+  return L.divIcon({
+    className: `saved-reference-map-marker${selected ? " is-selected" : ""}`,
+    html: `<div>${index + 1}</div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+  });
+}
 
 const dropPointIcon = L.divIcon({
   className: "drop-point-marker",
@@ -2008,16 +2018,37 @@ function MapViewportUpdater({
   referenceLat,
   referenceLon,
   userMapLocation,
+  savedReferencePoints,
 }: {
   referenceLat: string;
   referenceLon: string;
   userMapLocation: LatLon | null;
+  savedReferencePoints: SavedReferencePoint[];
 }) {
   const map = useMap();
 
   useEffect(() => {
     const lat = optionalNumberFromInput(referenceLat);
     const lon = optionalNumberFromInput(referenceLon);
+
+    if (savedReferencePoints.length === 1) {
+      const [point] = savedReferencePoints;
+      map.setView([point.lat, point.lon], 14);
+      return;
+    }
+
+    if (savedReferencePoints.length > 1) {
+      map.fitBounds(
+        savedReferencePoints.map(
+          (point) => [point.lat, point.lon] as [number, number],
+        ),
+        {
+          padding: [36, 36],
+          maxZoom: 14,
+        },
+      );
+      return;
+    }
 
     if (lat !== null && lon !== null) {
       map.setView([lat, lon], 12);
@@ -2027,7 +2058,13 @@ function MapViewportUpdater({
     if (userMapLocation !== null) {
       map.setView([userMapLocation.lat, userMapLocation.lon], 13);
     }
-  }, [map, referenceLat, referenceLon, userMapLocation]);
+  }, [
+    map,
+    referenceLat,
+    referenceLon,
+    savedReferencePoints,
+    userMapLocation,
+  ]);
 
   return null;
 }
@@ -2040,6 +2077,8 @@ function MapClickPicker({
   runHeadingDeg,
   laneColor = "#22c55e",
   trackPoints = [],
+  savedReferencePoints = [],
+  onSavedReferencePointPick,
   onPick,
 }: {
   referenceLat: string;
@@ -2049,6 +2088,8 @@ function MapClickPicker({
   runHeadingDeg: string;
   laneColor?: string;
   trackPoints?: GpsTrackPoint[];
+  savedReferencePoints?: SavedReferencePoint[];
+  onSavedReferencePointPick?: (point: SavedReferencePoint) => void;
   onPick: (lat: number, lon: number) => void;
 }) {
   const lat = optionalNumberFromInput(referenceLat);
@@ -2059,11 +2100,27 @@ function MapClickPicker({
 
   const center: [number, number] = hasReferencePoint
     ? [lat, lon]
+    : savedReferencePoints.length > 0
+      ? [savedReferencePoints[0].lat, savedReferencePoints[0].lon]
     : hasUserMapLocation
       ? [userMapLocation.lat, userMapLocation.lon]
       : [20, 0];
 
-  const initialZoom = hasReferencePoint ? 12 : hasUserMapLocation ? 13 : 2;
+  const initialZoom =
+    hasReferencePoint || savedReferencePoints.length > 0
+      ? 12
+      : hasUserMapLocation
+        ? 13
+        : 2;
+
+  const selectedSavedReferencePointId =
+    lat !== null && lon !== null
+      ? (savedReferencePoints.find(
+          (point) =>
+            Math.abs(point.lat - lat) < 0.000001 &&
+            Math.abs(point.lon - lon) < 0.000001,
+        )?.id ?? null)
+      : null;
 
   function ClickHandler() {
     useMapEvents({
@@ -2144,6 +2201,7 @@ function MapClickPicker({
           referenceLat={referenceLat}
           referenceLon={referenceLon}
           userMapLocation={userMapLocation}
+          savedReferencePoints={savedReferencePoints}
         />
 
         <TileLayer
@@ -2245,9 +2303,32 @@ function MapClickPicker({
           />
         )}
 
-        {lat !== null && lon !== null && (
+        {lat !== null && lon !== null && !selectedSavedReferencePointId && (
           <Marker position={[lat, lon]} icon={referencePointIcon} />
         )}
+
+        {savedReferencePoints.map((point, index) => (
+          <Marker
+            key={point.id}
+            position={[point.lat, point.lon]}
+            icon={savedReferencePointMapIcon(
+              index,
+              point.id === selectedSavedReferencePointId,
+            )}
+            eventHandlers={{
+              click: () => onSavedReferencePointPick?.(point),
+            }}
+          >
+            <LeafletTooltip
+              className="saved-reference-map-tooltip"
+              direction="top"
+              offset={[0, -14]}
+              permanent
+            >
+              {index + 1}. {point.name}
+            </LeafletTooltip>
+          </Marker>
+        ))}
 
         {trackPositions.length > 1 && (
           <Polyline
@@ -5757,6 +5838,18 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     }
   }
 
+  function openReferenceMapAndScroll() {
+    setShowLatLonEntry(false);
+    setShowMapPicker(true);
+
+    window.setTimeout(() => {
+      mapPickerSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 200);
+  }
+
   function toggleLatLonEntry() {
     const openingEntry = !showLatLonEntry;
 
@@ -6349,6 +6442,10 @@ function downloadGeneratedConfig() {
     setNewReferenceGroupName("");
     setSavedReferencePointName("");
     setSavedReferencePointStatus("");
+
+    if (nextGroupId) {
+      openReferenceMapAndScroll();
+    }
   }
 
   function saveCurrentReferencePoint(event: FormEvent<HTMLFormElement>) {
@@ -6436,17 +6533,9 @@ function downloadGeneratedConfig() {
     point: SavedReferencePoint,
   ) {
     setSavedReferencePointStatus(`Loading ${point.name}...`);
-    setShowLatLonEntry(false);
-    setShowMapPicker(true);
+    openReferenceMapAndScroll();
     await setReferencePoint(point.lat, point.lon, `${group.name} / ${point.name}`);
     setSavedReferencePointStatus(`Loaded ${point.name} from ${group.name}.`);
-
-    window.setTimeout(() => {
-      mapPickerSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 200);
   }
 
   function deleteSavedReferencePoint(
@@ -9295,8 +9384,14 @@ if (activePage === "rules") {
             className="primary-action-button saved-reference-points-toggle"
             aria-expanded={showSavedReferencePoints}
             onClick={() => {
-              setShowSavedReferencePoints((current) => !current);
+              const openingSavedPoints = !showSavedReferencePoints;
+
+              setShowSavedReferencePoints(openingSavedPoints);
               setSavedReferencePointStatus("");
+
+              if (openingSavedPoints && selectedReferencePointGroup) {
+                openReferenceMapAndScroll();
+              }
             }}
           >
             {showSavedReferencePoints
@@ -9361,7 +9456,7 @@ if (activePage === "rules") {
 
                 {selectedReferencePointGroup.points.length > 0 ? (
                   <div className="saved-reference-list">
-                    {selectedReferencePointGroup.points.map((point) => (
+                    {selectedReferencePointGroup.points.map((point, index) => (
                       <div className="saved-reference-row" key={point.id}>
                         <button
                           type="button"
@@ -9373,7 +9468,9 @@ if (activePage === "rules") {
                             )
                           }
                         >
-                          <span>{point.name}</span>
+                          <span>
+                            {index + 1}. {point.name}
+                          </span>
                           <small>
                             {point.lat.toFixed(6)}, {point.lon.toFixed(6)}
                           </small>
@@ -9526,6 +9623,14 @@ if (activePage === "rules") {
               </form>
             )}
 
+            {selectedReferencePointGroup &&
+              selectedReferencePointGroup.points.length > 0 && (
+                <p className="subtitle saved-reference-map-instruction">
+                  Tap a numbered saved point on the map or use its matching
+                  button above.
+                </p>
+              )}
+
             <p className="subtitle">
               Green is within 7.5° of
               the best tailwind heading, orange is within 15°, and red is
@@ -9539,6 +9644,17 @@ if (activePage === "rules") {
               userMapLocation={userMapLocation}
               dropPoint={calculatedDropPoint}
               onPick={pickReferenceFromMap}
+              savedReferencePoints={
+                selectedReferencePointGroup?.points ?? []
+              }
+              onSavedReferencePointPick={(point) => {
+                if (selectedReferencePointGroup) {
+                  void loadSavedReferencePoint(
+                    selectedReferencePointGroup,
+                    point,
+                  );
+                }
+              }}
               runHeadingDeg={runHeadingDeg}
               laneColor={windAdvantage.color}
             />
