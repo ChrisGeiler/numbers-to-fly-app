@@ -6436,8 +6436,17 @@ function downloadGeneratedConfig() {
     point: SavedReferencePoint,
   ) {
     setSavedReferencePointStatus(`Loading ${point.name}...`);
+    setShowLatLonEntry(false);
+    setShowMapPicker(true);
     await setReferencePoint(point.lat, point.lon, `${group.name} / ${point.name}`);
     setSavedReferencePointStatus(`Loaded ${point.name} from ${group.name}.`);
+
+    window.setTimeout(() => {
+      mapPickerSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 200);
   }
 
   function deleteSavedReferencePoint(
