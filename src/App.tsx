@@ -170,6 +170,9 @@ type AppPage =
   | "rules"
   | "gps";
 const APP_PAGE_STORAGE_KEY = "numbers-to-fly:active-page";
+const REFERENCE_POINT_GROUPS_STORAGE_KEY =
+  "numbers-to-fly:reference-point-groups";
+const MAX_REFERENCE_POINTS_PER_GROUP = 12;
 const APP_PAGES: readonly AppPage[] = [
   "landing",
   "find",
@@ -188,6 +191,142 @@ function getSavedAppPage(): AppPage {
       : "landing";
   } catch {
     return "landing";
+  }
+}
+
+type SavedReferencePoint = {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+};
+
+type SavedReferencePointGroup = {
+  id: string;
+  name: string;
+  points: SavedReferencePoint[];
+};
+
+type SavedReferencePointStore = {
+  version: 1;
+  activeGroupId: string | null;
+  groups: SavedReferencePointGroup[];
+};
+
+function createReferencePointId() {
+  if (typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function parseSavedReferencePoint(value: unknown): SavedReferencePoint | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const point = value as Record<string, unknown>;
+
+  if (
+    typeof point.id !== "string" ||
+    typeof point.name !== "string" ||
+    !point.name.trim() ||
+    typeof point.lat !== "number" ||
+    !Number.isFinite(point.lat) ||
+    point.lat < -90 ||
+    point.lat > 90 ||
+    typeof point.lon !== "number" ||
+    !Number.isFinite(point.lon) ||
+    point.lon < -180 ||
+    point.lon > 180
+  ) {
+    return null;
+  }
+
+  return {
+    id: point.id,
+    name: point.name.trim(),
+    lat: point.lat,
+    lon: point.lon,
+  };
+}
+
+function getSavedReferencePointStore(): SavedReferencePointStore {
+  const emptyStore: SavedReferencePointStore = {
+    version: 1,
+    activeGroupId: null,
+    groups: [],
+  };
+
+  try {
+    const rawStore = window.localStorage.getItem(
+      REFERENCE_POINT_GROUPS_STORAGE_KEY,
+    );
+
+    if (!rawStore) {
+      return emptyStore;
+    }
+
+    const parsedStore = JSON.parse(rawStore) as unknown;
+
+    if (!parsedStore || typeof parsedStore !== "object") {
+      return emptyStore;
+    }
+
+    const candidate = parsedStore as Record<string, unknown>;
+
+    if (candidate.version !== 1 || !Array.isArray(candidate.groups)) {
+      return emptyStore;
+    }
+
+    const groups = candidate.groups.flatMap((value) => {
+      if (!value || typeof value !== "object") {
+        return [];
+      }
+
+      const group = value as Record<string, unknown>;
+
+      if (
+        typeof group.id !== "string" ||
+        typeof group.name !== "string" ||
+        !group.name.trim() ||
+        !Array.isArray(group.points)
+      ) {
+        return [];
+      }
+
+      const points = group.points
+        .map(parseSavedReferencePoint)
+        .filter((point): point is SavedReferencePoint => point !== null)
+        .slice(0, MAX_REFERENCE_POINTS_PER_GROUP);
+
+      return [
+        {
+          id: group.id,
+          name: group.name.trim(),
+          points,
+        },
+      ];
+    });
+
+    const requestedActiveGroupId =
+      typeof candidate.activeGroupId === "string"
+        ? candidate.activeGroupId
+        : null;
+    const activeGroupId = groups.some(
+      (group) => group.id === requestedActiveGroupId,
+    )
+      ? requestedActiveGroupId
+      : groups[0]?.id ?? null;
+
+    return {
+      version: 1,
+      activeGroupId,
+      groups,
+    };
+  } catch {
+    return emptyStore;
   }
 }
 
@@ -5381,6 +5520,37 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [referenceLatInput, setReferenceLatInput] = useState("");
   const [referenceLonInput, setReferenceLonInput] = useState("");
   const [latLonEntryError, setLatLonEntryError] = useState("");
+  const [showSavedReferencePoints, setShowSavedReferencePoints] =
+    useState(false);
+  const [savedReferencePointStore, setSavedReferencePointStore] =
+    useState<SavedReferencePointStore>(getSavedReferencePointStore);
+  const [newReferenceGroupName, setNewReferenceGroupName] = useState("");
+  const [savedReferencePointName, setSavedReferencePointName] = useState("");
+  const [savedReferencePointStatus, setSavedReferencePointStatus] =
+    useState("");
+
+  const selectedReferencePointGroup =
+    savedReferencePointStore.groups.find(
+      (group) => group.id === savedReferencePointStore.activeGroupId,
+    ) ?? null;
+  const totalSavedReferencePoints = savedReferencePointStore.groups.reduce(
+    (total, group) => total + group.points.length,
+    0,
+  );
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        REFERENCE_POINT_GROUPS_STORAGE_KEY,
+        JSON.stringify(savedReferencePointStore),
+      );
+    } catch {
+      setSavedReferencePointStatus(
+        "Reference points could not be saved by this browser.",
+      );
+    }
+  }, [savedReferencePointStore]);
+
   useEffect(() => {
   if (!showMapPicker) {
     return;
@@ -6167,6 +6337,156 @@ function downloadGeneratedConfig() {
 
     setLatLonEntryError("");
     await setReferencePoint(lat, lon, "Lat/Lon entry");
+  }
+
+  function selectReferencePointGroup(groupId: string) {
+    const nextGroupId = groupId || null;
+
+    setSavedReferencePointStore((currentStore) => ({
+      ...currentStore,
+      activeGroupId: nextGroupId,
+    }));
+    setNewReferenceGroupName("");
+    setSavedReferencePointName("");
+    setSavedReferencePointStatus("");
+  }
+
+  function saveCurrentReferencePoint(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const lat = optionalNumberFromInput(referenceLat);
+    const lon = optionalNumberFromInput(referenceLon);
+
+    if (lat === null || lon === null) {
+      setSavedReferencePointStatus(
+        "Choose or enter a reference point before saving it.",
+      );
+      return;
+    }
+
+    const requestedGroupName = newReferenceGroupName.trim();
+    let targetGroup = selectedReferencePointGroup;
+
+    if (!targetGroup && requestedGroupName) {
+      targetGroup =
+        savedReferencePointStore.groups.find(
+          (group) =>
+            group.name.toLocaleLowerCase() ===
+            requestedGroupName.toLocaleLowerCase(),
+        ) ?? null;
+    }
+
+    if (!targetGroup && !requestedGroupName) {
+      setSavedReferencePointStatus("Enter a competition location name.");
+      return;
+    }
+
+    const groupWasCreated = targetGroup === null;
+    const points = targetGroup?.points ?? [];
+    const pointName =
+      savedReferencePointName.trim() || `Reference ${points.length + 1}`;
+    const existingPoint = points.find(
+      (point) =>
+        point.name.toLocaleLowerCase() === pointName.toLocaleLowerCase(),
+    );
+
+    if (!existingPoint && points.length >= MAX_REFERENCE_POINTS_PER_GROUP) {
+      setSavedReferencePointStatus(
+        `This location already has ${MAX_REFERENCE_POINTS_PER_GROUP} reference points. Delete or update one before adding another.`,
+      );
+      return;
+    }
+
+    const savedPoint: SavedReferencePoint = {
+      id: existingPoint?.id ?? createReferencePointId(),
+      name: pointName,
+      lat,
+      lon,
+    };
+    const nextPoints = existingPoint
+      ? points.map((point) =>
+          point.id === existingPoint.id ? savedPoint : point,
+        )
+      : [...points, savedPoint];
+    const nextGroup: SavedReferencePointGroup = {
+      id: targetGroup?.id ?? createReferencePointId(),
+      name: targetGroup?.name ?? requestedGroupName,
+      points: nextPoints,
+    };
+    const nextGroups = groupWasCreated
+      ? [...savedReferencePointStore.groups, nextGroup]
+      : savedReferencePointStore.groups.map((group) =>
+          group.id === nextGroup.id ? nextGroup : group,
+        );
+
+    setSavedReferencePointStore({
+      version: 1,
+      activeGroupId: nextGroup.id,
+      groups: nextGroups,
+    });
+    setNewReferenceGroupName("");
+    setSavedReferencePointName("");
+    setSavedReferencePointStatus(
+      `${existingPoint ? "Updated" : "Saved"} ${savedPoint.name} in ${nextGroup.name}.`,
+    );
+  }
+
+  async function loadSavedReferencePoint(
+    group: SavedReferencePointGroup,
+    point: SavedReferencePoint,
+  ) {
+    setSavedReferencePointStatus(`Loading ${point.name}...`);
+    await setReferencePoint(point.lat, point.lon, `${group.name} / ${point.name}`);
+    setSavedReferencePointStatus(`Loaded ${point.name} from ${group.name}.`);
+  }
+
+  function deleteSavedReferencePoint(
+    group: SavedReferencePointGroup,
+    point: SavedReferencePoint,
+  ) {
+    const confirmed = window.confirm(
+      `Delete ${point.name} from ${group.name}?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setSavedReferencePointStore((currentStore) => ({
+      ...currentStore,
+      groups: currentStore.groups.map((currentGroup) =>
+        currentGroup.id === group.id
+          ? {
+              ...currentGroup,
+              points: currentGroup.points.filter(
+                (currentPoint) => currentPoint.id !== point.id,
+              ),
+            }
+          : currentGroup,
+      ),
+    }));
+    setSavedReferencePointStatus(`Deleted ${point.name} from ${group.name}.`);
+  }
+
+  function deleteSavedReferencePointGroup(group: SavedReferencePointGroup) {
+    const confirmed = window.confirm(
+      `Delete ${group.name} and all ${group.points.length} saved reference points?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const remainingGroups = savedReferencePointStore.groups.filter(
+      (currentGroup) => currentGroup.id !== group.id,
+    );
+
+    setSavedReferencePointStore({
+      version: 1,
+      activeGroupId: remainingGroups[0]?.id ?? null,
+      groups: remainingGroups,
+    });
+    setSavedReferencePointStatus(`Deleted the ${group.name} location group.`);
   }
 
 async function handleWindSourceChange(source: WindSource) {
@@ -8960,9 +9280,185 @@ if (activePage === "rules") {
               ? "Hide Lat/Lon entry"
               : "Enter your Lat/Lon reference"}
           </button>
+
+          <button
+            type="button"
+            className="primary-action-button saved-reference-points-toggle"
+            aria-expanded={showSavedReferencePoints}
+            onClick={() => {
+              setShowSavedReferencePoints((current) => !current);
+              setSavedReferencePointStatus("");
+            }}
+          >
+            {showSavedReferencePoints
+              ? "Hide saved reference points"
+              : `Saved reference points (${totalSavedReferencePoints})`}
+          </button>
         </div>
 
         {locationStatus && <p className="subtitle">{locationStatus}</p>}
+
+        {showSavedReferencePoints && (
+          <div className="saved-reference-panel">
+            <h3>Competition reference points</h3>
+
+            <p className="saved-reference-help">
+              Store up to {MAX_REFERENCE_POINTS_PER_GROUP} points for each
+              location. They will remain available on this device for future
+              competitions.
+            </p>
+
+            <label>
+              Competition location
+              <select
+                value={savedReferencePointStore.activeGroupId ?? ""}
+                onChange={(event) =>
+                  selectReferencePointGroup(event.target.value)
+                }
+              >
+                <option value="">Create a new location...</option>
+                {savedReferencePointStore.groups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name} ({group.points.length}/
+                    {MAX_REFERENCE_POINTS_PER_GROUP})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {selectedReferencePointGroup && (
+              <>
+                <div className="saved-reference-group-heading">
+                  <div>
+                    <strong>{selectedReferencePointGroup.name}</strong>
+                    <span>
+                      {selectedReferencePointGroup.points.length} of{" "}
+                      {MAX_REFERENCE_POINTS_PER_GROUP} points saved
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="saved-reference-danger-button"
+                    onClick={() =>
+                      deleteSavedReferencePointGroup(
+                        selectedReferencePointGroup,
+                      )
+                    }
+                  >
+                    Delete location
+                  </button>
+                </div>
+
+                {selectedReferencePointGroup.points.length > 0 ? (
+                  <div className="saved-reference-list">
+                    {selectedReferencePointGroup.points.map((point) => (
+                      <div className="saved-reference-row" key={point.id}>
+                        <button
+                          type="button"
+                          className="saved-reference-use-button"
+                          onClick={() =>
+                            void loadSavedReferencePoint(
+                              selectedReferencePointGroup,
+                              point,
+                            )
+                          }
+                        >
+                          <span>{point.name}</span>
+                          <small>
+                            {point.lat.toFixed(6)}, {point.lon.toFixed(6)}
+                          </small>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="saved-reference-delete-button"
+                          aria-label={`Delete ${point.name}`}
+                          onClick={() =>
+                            deleteSavedReferencePoint(
+                              selectedReferencePointGroup,
+                              point,
+                            )
+                          }
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="saved-reference-empty">
+                    No points saved for this location yet.
+                  </p>
+                )}
+              </>
+            )}
+
+            <form
+              className="save-reference-form"
+              onSubmit={saveCurrentReferencePoint}
+            >
+              <h4>Save the current reference point</h4>
+
+              {!selectedReferencePointGroup && (
+                <label>
+                  New competition location name
+                  <input
+                    type="text"
+                    maxLength={60}
+                    value={newReferenceGroupName}
+                    placeholder="Example: Skydive Ramblers"
+                    onChange={(event) => {
+                      setNewReferenceGroupName(event.target.value);
+                      setSavedReferencePointStatus("");
+                    }}
+                  />
+                </label>
+              )}
+
+              <label>
+                Reference point label
+                <input
+                  type="text"
+                  maxLength={40}
+                  value={savedReferencePointName}
+                  placeholder={`Example: Reference ${
+                    (selectedReferencePointGroup?.points.length ?? 0) + 1
+                  }`}
+                  onChange={(event) => {
+                    setSavedReferencePointName(event.target.value);
+                    setSavedReferencePointStatus("");
+                  }}
+                />
+              </label>
+
+              <p className="saved-reference-current-point">
+                Current point:{" "}
+                <strong>
+                  {referenceLat && referenceLon
+                    ? `${referenceLat}, ${referenceLon}`
+                    : "Choose or enter a point first"}
+                </strong>
+              </p>
+
+              <p className="saved-reference-help">
+                Reusing an existing label updates that saved point.
+              </p>
+
+              <button type="submit" className="primary-action-button">
+                {selectedReferencePointGroup
+                  ? "Save current point"
+                  : "Create location and save point"}
+              </button>
+            </form>
+
+            {savedReferencePointStatus && (
+              <p className="saved-reference-status" role="status">
+                {savedReferencePointStatus}
+              </p>
+            )}
+          </div>
+        )}
 
         {showMapPicker && (
           <div ref={mapPickerSectionRef}>

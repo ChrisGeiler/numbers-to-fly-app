@@ -1485,6 +1485,159 @@ button:disabled {
   white-space: normal;
 }
 
+.reference-method-actions .saved-reference-points-toggle {
+  grid-column: 1 / -1;
+}
+
+.saved-reference-panel {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid rgba(34, 211, 238, 0.42);
+  border-radius: 18px;
+  background: rgba(8, 47, 73, 0.3);
+}
+
+.saved-reference-panel h3,
+.saved-reference-panel h4 {
+  margin: 0 0 10px;
+  color: #67e8f9;
+  text-align: center;
+}
+
+.saved-reference-panel h3 {
+  font-size: 1.2rem;
+}
+
+.saved-reference-panel h4 {
+  font-size: 1.05rem;
+}
+
+.saved-reference-help,
+.saved-reference-empty,
+.saved-reference-current-point,
+.saved-reference-status {
+  color: #a5f3fc;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.saved-reference-help {
+  margin: 6px auto 14px;
+  max-width: 600px;
+  font-size: 0.92rem;
+}
+
+.saved-reference-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(34, 211, 238, 0.26);
+}
+
+.saved-reference-group-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: #ecfeff;
+}
+
+.saved-reference-group-heading span {
+  color: #a5f3fc;
+  font-size: 0.86rem;
+}
+
+.saved-reference-group-heading button,
+.saved-reference-row button {
+  min-width: 0;
+  margin: 0;
+}
+
+.saved-reference-danger-button,
+.saved-reference-delete-button {
+  border-color: rgba(248, 113, 113, 0.8);
+  background: rgba(127, 29, 29, 0.85);
+  color: #fee2e2;
+  box-shadow: none;
+}
+
+.saved-reference-danger-button:hover,
+.saved-reference-delete-button:hover {
+  background: #b91c1c;
+  color: #fff;
+}
+
+.saved-reference-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 18px;
+}
+
+.saved-reference-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.saved-reference-use-button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  overflow: hidden;
+  text-align: left;
+}
+
+.saved-reference-use-button span,
+.saved-reference-use-button small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-reference-use-button small {
+  margin-top: 3px;
+  font-weight: 700;
+  opacity: 0.78;
+}
+
+.saved-reference-delete-button {
+  padding-inline: 10px;
+}
+
+.saved-reference-empty {
+  margin: 12px 0 18px;
+}
+
+.save-reference-form {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(34, 211, 238, 0.26);
+}
+
+.save-reference-form label {
+  margin: 10px 0;
+}
+
+.save-reference-current-point {
+  margin: 12px 0 6px;
+}
+
+.save-reference-form > .primary-action-button {
+  display: flex;
+  width: min(100%, 360px);
+  margin: 12px auto 0;
+}
+
+.saved-reference-status {
+  margin: 14px 0 0;
+  font-weight: 800;
+}
+
 .reference-coordinate-form {
   margin: 16px 0 14px;
   padding: 14px;
@@ -1743,6 +1896,19 @@ button {
 
   .reference-method-actions .primary-action-button {
     margin: 0;
+  }
+
+  .saved-reference-list {
+    grid-template-columns: 1fr;
+  }
+
+  .saved-reference-group-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .saved-reference-group-heading > div {
+    text-align: center;
   }
 }
 
