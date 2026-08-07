@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  FormEvent,
   PointerEvent as ReactPointerEvent,
   WheelEvent as ReactWheelEvent,
 } from "react";
@@ -5376,6 +5377,10 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [fetchStatus, setFetchStatus] = useState("");
   const [referenceStatus, setReferenceStatus] = useState("");
   const [showMapPicker, setShowMapPicker] = useState(false);
+  const [showLatLonEntry, setShowLatLonEntry] = useState(false);
+  const [referenceLatInput, setReferenceLatInput] = useState("");
+  const [referenceLonInput, setReferenceLonInput] = useState("");
+  const [latLonEntryError, setLatLonEntryError] = useState("");
   useEffect(() => {
   if (!showMapPicker) {
     return;
@@ -5573,9 +5578,28 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
 
     setShowMapPicker(openingMap);
 
+    if (!openingMap) {
+      setShowLatLonEntry(false);
+    }
+
     if (openingMap && userMapLocation === null) {
       requestUserMapLocation();
     }
+  }
+
+  function toggleLatLonEntry() {
+    const openingEntry = !showLatLonEntry;
+
+    setShowLatLonEntry(openingEntry);
+    setLatLonEntryError("");
+
+    if (!openingEntry) {
+      return;
+    }
+
+    setReferenceLatInput(referenceLat);
+    setReferenceLonInput(referenceLon);
+    setShowMapPicker(true);
   }
 
   function toggleFindUnitSystem() {
@@ -6118,6 +6142,31 @@ function downloadGeneratedConfig() {
 
   async function pickReferenceFromMap(lat: number, lon: number) {
     await setReferencePoint(lat, lon, "map");
+  }
+
+  async function handleLatLonReferenceSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const lat = optionalNumberFromInput(referenceLatInput);
+    const lon = optionalNumberFromInput(referenceLonInput);
+
+    if (lat === null || lon === null) {
+      setLatLonEntryError("Enter a valid latitude and longitude.");
+      return;
+    }
+
+    if (lat < -90 || lat > 90) {
+      setLatLonEntryError("Latitude must be between -90 and 90.");
+      return;
+    }
+
+    if (lon < -180 || lon > 180) {
+      setLatLonEntryError("Longitude must be between -180 and 180.");
+      return;
+    }
+
+    setLatLonEntryError("");
+    await setReferencePoint(lat, lon, "Lat/Lon entry");
   }
 
 async function handleWindSourceChange(source: WindSource) {
@@ -8887,22 +8936,91 @@ if (activePage === "rules") {
         <h2>Reference Point</h2>
 
         <p className="subtitle">
-          Choose the competition reference point on the map.
+          Choose the competition reference point on the map or enter its
+          latitude and longitude.
         </p>
 
-        <button
-          ref={referenceButtonRef}
-          type="button"
-          className="primary-action-button"
-          onClick={toggleMapPicker}
-        >
-          {showMapPicker ? "Hide map" : "Choose reference point"}
-        </button>
+        <div className="reference-method-actions">
+          <button
+            ref={referenceButtonRef}
+            type="button"
+            className="primary-action-button"
+            onClick={toggleMapPicker}
+          >
+            {showMapPicker ? "Hide map" : "Choose your reference point"}
+          </button>
+
+          <button
+            type="button"
+            className="primary-action-button"
+            aria-expanded={showLatLonEntry}
+            onClick={toggleLatLonEntry}
+          >
+            {showLatLonEntry
+              ? "Hide Lat/Lon entry"
+              : "Enter your Lat/Lon reference"}
+          </button>
+        </div>
 
         {locationStatus && <p className="subtitle">{locationStatus}</p>}
 
         {showMapPicker && (
           <div ref={mapPickerSectionRef}>
+            {showLatLonEntry && (
+              <form
+                className="reference-coordinate-form"
+                onSubmit={handleLatLonReferenceSubmit}
+              >
+                <div className="reference-coordinate-grid">
+                  <label>
+                    Latitude
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="-90"
+                      max="90"
+                      step="0.000001"
+                      value={referenceLatInput}
+                      placeholder="Example -33.123456"
+                      onChange={(event) => {
+                        setReferenceLatInput(event.target.value);
+                        setLatLonEntryError("");
+                      }}
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Longitude
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="-180"
+                      max="180"
+                      step="0.000001"
+                      value={referenceLonInput}
+                      placeholder="Example 151.123456"
+                      onChange={(event) => {
+                        setReferenceLonInput(event.target.value);
+                        setLatLonEntryError("");
+                      }}
+                      required
+                    />
+                  </label>
+                </div>
+
+                {latLonEntryError && (
+                  <p className="reference-coordinate-error" role="alert">
+                    {latLonEntryError}
+                  </p>
+                )}
+
+                <button type="submit" className="primary-action-button">
+                  Use this reference point
+                </button>
+              </form>
+            )}
+
             <p className="subtitle">
               Green is within 7.5° of
               the best tailwind heading, orange is within 15°, and red is

@@ -1468,6 +1468,54 @@ button:disabled {
   margin-bottom: 4px;
 }
 
+.reference-method-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.reference-method-actions .primary-action-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 54px;
+  margin: 0;
+  line-height: 1.2;
+  white-space: normal;
+}
+
+.reference-coordinate-form {
+  margin: 16px 0 14px;
+  padding: 14px;
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  border-radius: 16px;
+  background: rgba(2, 6, 23, 0.7);
+}
+
+.reference-coordinate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.reference-coordinate-grid label {
+  margin: 0;
+}
+
+.reference-coordinate-form > .primary-action-button {
+  display: flex;
+  width: min(100%, 360px);
+  margin: 14px auto 0;
+}
+
+.reference-coordinate-error {
+  margin: 12px 0 0;
+  color: #fca5a5;
+  font-weight: 800;
+  text-align: center;
+}
+
 .fly-lane-next-button {
   display: block;
   width: min(100%, 360px);
@@ -1685,6 +1733,17 @@ button {
 
 .auth-modal h2 {
   margin: 0 0 18px;
+}
+
+@media (max-width: 600px) {
+  .reference-method-actions,
+  .reference-coordinate-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .reference-method-actions .primary-action-button {
+    margin: 0;
+  }
 }
 
 .auth-modal-intro {
