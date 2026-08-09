@@ -216,6 +216,9 @@ type SavedReferencePointStore = {
   groups: SavedReferencePointGroup[];
 };
 
+const NO_SAVED_REFERENCE_POINTS: SavedReferencePoint[] = [];
+const NO_TRACK_POINTS: GpsTrackPoint[] = [];
+
 function createReferencePointId() {
   if (typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -2134,10 +2137,50 @@ function MapViewportUpdater({
   trackPoints: GpsTrackPoint[];
 }) {
   const map = useMap();
+  const lastViewportTargetKey = useRef("");
+  const viewportTargetKey = [
+    referenceLat,
+    referenceLon,
+    userMapLocation === null
+      ? ""
+      : `${userMapLocation.lat},${userMapLocation.lon}`,
+    savedReferencePoints
+      .map((point) => `${point.id}:${point.lat},${point.lon}`)
+      .join("|"),
+    trackPoints.map((point) => `${point.lat},${point.lon}`).join("|"),
+  ].join(";");
 
   useEffect(() => {
+    if (lastViewportTargetKey.current === viewportTargetKey) {
+      return;
+    }
+
+    lastViewportTargetKey.current = viewportTargetKey;
+
     const lat = optionalNumberFromInput(referenceLat);
     const lon = optionalNumberFromInput(referenceLon);
+
+    if (lat !== null && lon !== null) {
+      if (trackPoints.length > 0) {
+        map.fitBounds(
+          [
+            [lat, lon] as [number, number],
+            ...trackPoints.map(
+              (point) => [point.lat, point.lon] as [number, number],
+            ),
+          ],
+          {
+            padding: [36, 36],
+            maxZoom: 14,
+          },
+        );
+        return;
+      }
+
+      map.setView([lat, lon], 12);
+      return;
+    }
+
     const savedLocationViewportPoints =
       savedReferencePoints.length > 0
         ? [...savedReferencePoints, ...trackPoints]
@@ -2162,22 +2205,10 @@ function MapViewportUpdater({
       return;
     }
 
-    if (lat !== null && lon !== null) {
-      map.setView([lat, lon], 12);
-      return;
-    }
-
     if (userMapLocation !== null) {
       map.setView([userMapLocation.lat, userMapLocation.lon], 13);
     }
-  }, [
-    map,
-    referenceLat,
-    referenceLon,
-    savedReferencePoints,
-    trackPoints,
-    userMapLocation,
-  ]);
+  });
 
   return null;
 }
@@ -2189,8 +2220,8 @@ function MapClickPicker({
   dropPoint,
   runHeadingDeg,
   laneColor = "#22c55e",
-  trackPoints = [],
-  savedReferencePoints = [],
+  trackPoints = NO_TRACK_POINTS,
+  savedReferencePoints = NO_SAVED_REFERENCE_POINTS,
   onSavedReferencePointPick,
   onPick,
 }: {
@@ -5742,6 +5773,22 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     (total, group) => total + group.points.length,
     0,
   );
+  const selectedSavedReferencePointsForMap = useMemo(() => {
+    const lat = optionalNumberFromInput(referenceLat);
+    const lon = optionalNumberFromInput(referenceLon);
+
+    if (selectedReferencePointGroup === null || lat === null || lon === null) {
+      return NO_SAVED_REFERENCE_POINTS;
+    }
+
+    const selectedPoint = selectedReferencePointGroup.points.find(
+      (point) =>
+        Math.abs(point.lat - lat) < 0.000001 &&
+        Math.abs(point.lon - lon) < 0.000001,
+    );
+
+    return selectedPoint ? [selectedPoint] : NO_SAVED_REFERENCE_POINTS;
+  }, [referenceLat, referenceLon, selectedReferencePointGroup]);
 
   useEffect(() => {
     try {
@@ -7883,6 +7930,19 @@ if (activePage === "lane") {
       pointBLat !== null && pointBLon !== null
         ? { lat: pointBLat, lon: pointBLon }
         : null;
+    const selectedCompetitionReferencePointsForMap = (() => {
+      if (selectedCompetitionReferenceGroup === null || pointB === null) {
+        return NO_SAVED_REFERENCE_POINTS;
+      }
+
+      const selectedPoint = selectedCompetitionReferenceGroup.points.find(
+        (point) =>
+          Math.abs(point.lat - pointB.lat) < 0.000001 &&
+          Math.abs(point.lon - pointB.lon) < 0.000001,
+      );
+
+      return selectedPoint ? [selectedPoint] : NO_SAVED_REFERENCE_POINTS;
+    })();
     const laneHeadingDeg =
       pointA !== null && pointB !== null
         ? String(
@@ -8404,9 +8464,7 @@ if (activePage === "lane") {
             dropPoint={pointA}
             runHeadingDeg={laneHeadingDeg}
             trackPoints={fullJumpPoints}
-            savedReferencePoints={
-              selectedCompetitionReferenceGroup?.points ?? []
-            }
+            savedReferencePoints={selectedCompetitionReferencePointsForMap}
             onSavedReferencePointPick={(point) => {
               if (selectedCompetitionReferenceGroup) {
                 selectAnalyzerSavedReferencePoint(
@@ -8418,6 +8476,7 @@ if (activePage === "lane") {
             onPick={(lat, lon) => {
               setCompetitionReferenceLat(lat.toFixed(6));
               setCompetitionReferenceLon(lon.toFixed(6));
+              setCompetitionReferenceGroupId(null);
             }}
           />
         )}
@@ -9912,14 +9971,6 @@ if (activePage === "rules") {
               </form>
             )}
 
-            {selectedReferencePointGroup &&
-              selectedReferencePointGroup.points.length > 0 && (
-                <p className="subtitle saved-reference-map-instruction">
-                  Tap a numbered saved point on the map or use its matching
-                  button above.
-                </p>
-              )}
-
             <p className="subtitle">
               Green is within 7.5° of
               the best tailwind heading, orange is within 15°, and red is
@@ -9933,17 +9984,7 @@ if (activePage === "rules") {
               userMapLocation={userMapLocation}
               dropPoint={calculatedDropPoint}
               onPick={pickReferenceFromMap}
-              savedReferencePoints={
-                selectedReferencePointGroup?.points ?? []
-              }
-              onSavedReferencePointPick={(point) => {
-                if (selectedReferencePointGroup) {
-                  void loadSavedReferencePoint(
-                    selectedReferencePointGroup,
-                    point,
-                  );
-                }
-              }}
+              savedReferencePoints={selectedSavedReferencePointsForMap}
               runHeadingDeg={runHeadingDeg}
               laneColor={windAdvantage.color}
             />
