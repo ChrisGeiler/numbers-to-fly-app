@@ -33,6 +33,7 @@ import type { LatLon } from "./flight/geo";
 import {
   estimateDzElevationM,
   formatNumber,
+  getDetectedJumpTrack,
   getLast800mWindowPoints,
   getPointDiveAngleDeg,
   getScoringWindowResult,
@@ -3885,10 +3886,12 @@ function NonCompetitionTrackReview({
   points,
   dzElevationM,
   reason,
+  startsAtDetectedExit = false,
 }: {
   points: GpsTrackPoint[];
   dzElevationM: number;
   reason: string;
+  startsAtDetectedExit?: boolean;
 }) {
   const displayedPoints = points.map((point) => ({
     ...point,
@@ -3917,8 +3920,10 @@ function NonCompetitionTrackReview({
       <section className="card track-summary-card">
         <h2>Track Summary</h2>
         <p className="subtitle">
-          {reason} The full track is available below and can be saved as
-          Non-comp.
+          {reason}{" "}
+          {startsAtDetectedExit
+            ? "The graph starts at the detected exit and this jump can be saved as Non-comp."
+            : "The available track is shown below and can be saved as Non-comp."}
         </p>
 
         <div className="main-score-columns">
@@ -7808,13 +7813,23 @@ if (activePage === "lane") {
       gpsTrackPoints,
       dzElevationNumber
     );
+    const detectedJumpTrack = getDetectedJumpTrack(gpsTrackPoints);
 
     if (!validatedJump.isValidJump) {
       return (
         <NonCompetitionTrackReview
-          points={gpsTrackPoints}
+          points={
+            detectedJumpTrack.isExitDetected
+              ? detectedJumpTrack.jumpPoints
+              : gpsTrackPoints
+          }
           dzElevationM={dzElevationNumber}
-          reason="A competition exit could not be detected."
+          reason={
+            detectedJumpTrack.isExitDetected
+              ? "A competition-valid exit could not be confirmed."
+              : "A jump exit could not be detected."
+          }
+          startsAtDetectedExit={detectedJumpTrack.isExitDetected}
         />
       );
     }
@@ -7837,9 +7852,14 @@ if (activePage === "lane") {
     if (!scoringWindowResult) {
       return (
         <NonCompetitionTrackReview
-          points={gpsTrackPoints}
+          points={
+            detectedJumpTrack.isExitDetected
+              ? detectedJumpTrack.jumpPoints
+              : validatedJump.jumpPoints
+          }
           dzElevationM={dzElevationNumber}
           reason="A complete competition scoring window could not be detected."
+          startsAtDetectedExit
         />
       );
     }

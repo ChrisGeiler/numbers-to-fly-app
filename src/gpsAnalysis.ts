@@ -604,6 +604,56 @@ function findDetectedExitIndex(points: GpsTrackPoint[]) {
   return -1;
 }
 
+function findFallbackExitIndex(points: GpsTrackPoint[]) {
+  const baselineSamples = Math.round(2 / GPS_SAMPLE_PERIOD_SECONDS);
+  const confirmationSamples = Math.round(5 / GPS_SAMPLE_PERIOD_SECONDS);
+
+  for (
+    let index = baselineSamples;
+    index <= points.length - confirmationSamples;
+    index += 1
+  ) {
+    const baselinePoints = points.slice(index - baselineSamples, index);
+    const confirmationPoints = points.slice(
+      index,
+      index + confirmationSamples
+    );
+    const baselineMedianVerticalSpeedMps = medianNumber(
+      baselinePoints.map((point) => point.verticalSpeedMps)
+    );
+    const descendingPointRatio =
+      confirmationPoints.filter((point) => point.verticalSpeedMps > 3).length /
+      confirmationPoints.length;
+    const peakVerticalSpeedMps = Math.max(
+      ...confirmationPoints.map((point) => point.verticalSpeedMps)
+    );
+    const altitudeLossM =
+      confirmationPoints[0].altitudeM -
+      confirmationPoints[confirmationPoints.length - 1].altitudeM;
+    const medianTotalSpeedMps = medianNumber(
+      confirmationPoints.map((point) => point.totalSpeedMps)
+    );
+
+    if (
+      baselineMedianVerticalSpeedMps !== null &&
+      baselineMedianVerticalSpeedMps <= 3 &&
+      descendingPointRatio >= 0.7 &&
+      peakVerticalSpeedMps >= 8 &&
+      altitudeLossM >= 20 &&
+      medianTotalSpeedMps !== null &&
+      medianTotalSpeedMps >= 12
+    ) {
+      const descentStartOffset = confirmationPoints.findIndex(
+        (point) => point.verticalSpeedMps > 3
+      );
+
+      return index + Math.max(0, descentStartOffset);
+    }
+  }
+
+  return -1;
+}
+
 function refineExitByGlideRatio(
   points: GpsTrackPoint[],
   roughExitIndex: number
@@ -690,6 +740,28 @@ function refineExitByGlideRatio(
   }
 
   return roughExitIndex;
+}
+
+export function getDetectedJumpTrack(points: GpsTrackPoint[]) {
+  const strictExitIndex = findDetectedExitIndex(points);
+  const roughExitIndex =
+    strictExitIndex === -1 ? findFallbackExitIndex(points) : strictExitIndex;
+
+  if (roughExitIndex === -1) {
+    return {
+      isExitDetected: false,
+      exitPoint: null,
+      jumpPoints: [],
+    };
+  }
+
+  const exitIndex = refineExitByGlideRatio(points, roughExitIndex);
+
+  return {
+    isExitDetected: true,
+    exitPoint: points[exitIndex],
+    jumpPoints: points.slice(exitIndex),
+  };
 }
 
 export function getPointDiveAngleDeg(point: GpsTrackPoint) {
