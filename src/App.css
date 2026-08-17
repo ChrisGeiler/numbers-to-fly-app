@@ -2098,7 +2098,7 @@ button {
 
 .logbook-filter-controls {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
   margin: 8px 0 14px;
 }
@@ -2115,6 +2115,12 @@ button {
 .logbook-filter-controls button.active {
   background: #22d3ee;
   color: #001016;
+}
+
+@media (max-width: 640px) {
+  .logbook-filter-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .logbook-table {

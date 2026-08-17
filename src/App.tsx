@@ -441,6 +441,7 @@ function estimateLanePenalty(
 }
 
 type TaskMode = "time" | "distance" | "speed";
+type LogbookTrackType = TaskMode | "non-comp";
 type WindSource =
   | "manual"
   | "mark-schulze"
@@ -764,8 +765,14 @@ type CompareTrackOption = {
   label: string;
   rawCsv: string;
   dzElevationM: number;
-  taskType: TaskMode | null;
+  taskType: LogbookTrackType | null;
 };
+
+function formatLogbookTrackType(taskType: LogbookTrackType | null): string {
+  if (taskType === "non-comp") return "Non-comp";
+  if (taskType === null) return "Not set";
+  return taskType[0].toUpperCase() + taskType.slice(1);
+}
 
 function formatLogbookDateTime(value: string | null): string {
   if (!value) return "Not available";
@@ -785,6 +792,7 @@ const defaultWinds: WindLayer[] = altitudes.map((altitudeM) => ({
   directionFromDeg: "",
   speedKt: "",
 }));
+const NO_WINDS: WindLayer[] = [];
 
 const tailHeadDeadbandKt = 2;
 const windProxyUrl =
@@ -3150,6 +3158,7 @@ function InteractiveTrackChart({
   onGraphViewChange,
   scoreMode,
   onScoreModeChange,
+  showCompetitionContext = true,
 }: {
   points: GpsTrackPoint[];
   windowOffsetM: number;
@@ -3158,6 +3167,7 @@ function InteractiveTrackChart({
   onGraphViewChange: (view: "comp" | "full") => void;
   scoreMode: "raw" | "corrected";
   onScoreModeChange: (mode: "raw" | "corrected") => void;
+  showCompetitionContext?: boolean;
 }) {
 const windAltitudes = winds.map((wind) => wind.altitudeM);
 
@@ -3589,7 +3599,8 @@ const displayGlideRatio = getDisplayGlideRatio(
           </p>
         </div>
 
-        <div className="chart-control-row">
+        {showCompetitionContext && (
+          <div className="chart-control-row">
           <button
             type="button"
             className={
@@ -3634,7 +3645,8 @@ const displayGlideRatio = getDisplayGlideRatio(
           >
             Full Jump
           </button>
-        </div>
+          </div>
+        )}
 
         {isZoomed && (
           <button
@@ -3756,29 +3768,33 @@ const displayGlideRatio = getDisplayGlideRatio(
               />
             )}
 
-            <ReferenceLine
-              yAxisId="altitude"
-              y={windowTopM}
-              stroke="#22c55e"
-              strokeDasharray="6 4"
-              label={{
-                value: String(windowTopM) + " m",
-                fill: "#22c55e",
-                position: "insideTopRight",
-              }}
-            />
+            {showCompetitionContext && (
+              <>
+                <ReferenceLine
+                  yAxisId="altitude"
+                  y={windowTopM}
+                  stroke="#22c55e"
+                  strokeDasharray="6 4"
+                  label={{
+                    value: String(windowTopM) + " m",
+                    fill: "#22c55e",
+                    position: "insideTopRight",
+                  }}
+                />
 
-            <ReferenceLine
-              yAxisId="altitude"
-              y={windowBottomM}
-              stroke="#ef4444"
-              strokeDasharray="6 4"
-              label={{
-                value: String(windowBottomM) + " m",
-                fill: "#ef4444",
-                position: "insideBottomRight",
-              }}
-            />
+                <ReferenceLine
+                  yAxisId="altitude"
+                  y={windowBottomM}
+                  stroke="#ef4444"
+                  strokeDasharray="6 4"
+                  label={{
+                    value: String(windowBottomM) + " m",
+                    fill: "#ef4444",
+                    position: "insideBottomRight",
+                  }}
+                />
+              </>
+            )}
 
 <Line
   yAxisId="altitude"
@@ -3863,6 +3879,84 @@ const displayGlideRatio = getDisplayGlideRatio(
                 </section>
               );
             }
+
+function NonCompetitionTrackReview({
+  points,
+  dzElevationM,
+  reason,
+}: {
+  points: GpsTrackPoint[];
+  dzElevationM: number;
+  reason: string;
+}) {
+  const displayedPoints = points.map((point) => ({
+    ...point,
+    altitudeM: point.altitudeM - dzElevationM,
+  }));
+  const timestampedPoints = points.filter(
+    (point) => point.timestampMs !== null,
+  );
+  const firstTimestampMs = timestampedPoints[0]?.timestampMs ?? null;
+  const lastTimestampMs = timestampedPoints.at(-1)?.timestampMs ?? null;
+  const timestampDurationSeconds =
+    firstTimestampMs !== null && lastTimestampMs !== null
+      ? Math.max(0, (lastTimestampMs - firstTimestampMs) / 1000)
+      : null;
+  const durationSeconds =
+    timestampDurationSeconds !== null && timestampDurationSeconds > 0
+      ? timestampDurationSeconds
+      : Math.max(0, points.length - 1) * GPS_SAMPLE_PERIOD_SECONDS;
+  const maximumAltitudeAglM =
+    displayedPoints.length > 0
+      ? Math.max(...displayedPoints.map((point) => point.altitudeM))
+      : null;
+
+  return (
+    <>
+      <section className="card track-summary-card">
+        <h2>Track Summary</h2>
+        <p className="subtitle">
+          {reason} The full track is available below and can be saved as
+          Non-comp.
+        </p>
+
+        <div className="main-score-columns">
+          <div className="main-score-column">
+            <div>
+              <span>Track duration: </span>
+              <strong>{formatNumber(durationSeconds, 1)} sec</strong>
+            </div>
+            <div>
+              <span>Track distance: </span>
+              <strong>{formatNumber(getTrackDistanceM(points), 0)} m</strong>
+            </div>
+          </div>
+          <div className="main-score-column">
+            <div>
+              <span>Maximum altitude: </span>
+              <strong>{formatNumber(maximumAltitudeAglM, 0)} m</strong>
+            </div>
+            <div>
+              <span>GPS samples: </span>
+              <strong>{points.length}</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <InteractiveTrackChart
+        points={displayedPoints}
+        windowOffsetM={0}
+        winds={NO_WINDS}
+        graphView="full"
+        onGraphViewChange={() => undefined}
+        scoreMode="raw"
+        onScoreModeChange={() => undefined}
+        showCompetitionContext={false}
+      />
+    </>
+  );
+}
 
 function TrackComparisonChart({
   tracks,
@@ -3993,7 +4087,12 @@ function TrackComparisonChart({
     new Set(
       preparedTracks
         .map((track) => track.taskType)
-        .filter((taskType): taskType is TaskMode => taskType !== null)
+        .filter(
+          (taskType): taskType is TaskMode =>
+            taskType === "speed" ||
+            taskType === "time" ||
+            taskType === "distance",
+        )
     )
   );
   const comparisonTask: TaskMode | "mixed" =
@@ -4753,7 +4852,7 @@ function App() {
   landing_longitude: number | null;
   dz_elevation_m: number | null;  id: string;
   jump_date: string | null;
-  task_type: TaskMode | null;
+  task_type: LogbookTrackType | null;
   location_name: string | null;
   suit_name: string | null;
   notes: string | null;
@@ -4764,7 +4863,7 @@ function App() {
 
 const [savedJumps, setSavedJumps] = useState<SavedJump[]>([]);
 const [logbookTaskFilter, setLogbookTaskFilter] =
-  useState<"recent" | "all" | TaskMode>("recent");
+  useState<"recent" | "all" | LogbookTrackType>("recent");
 const [logbookSearchQuery, setLogbookSearchQuery] = useState("");
 const [logbookStatus, setLogbookStatus] = useState("");
 const [editingJumpId, setEditingJumpId] = useState<string | null>(null);
@@ -5041,7 +5140,7 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     setAuthBusy(false);
   }
 
-    async function handleSaveJump(taskType: TaskMode) {
+    async function handleSaveJump(taskType: LogbookTrackType) {
     const editingSavedJumpId = trackInfoEditJumpId;
 
     if (!supabaseSession) {
@@ -5062,28 +5161,32 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     );
 
     const exitPoint = validatedJump.exitPoint;
+    const isNonCompetitionTrack = taskType === "non-comp";
 
-    if (!validatedJump.isValidJump || !exitPoint) {
+    if (!isNonCompetitionTrack && (!validatedJump.isValidJump || !exitPoint)) {
       setSaveJumpStatus("A valid jump exit could not be detected.");
       return;
     }
-    const jumpTrackPointsAgl = validatedJump.jumpPoints.map((point) => ({
-      ...point,
-      altitudeM: point.altitudeM - dzElevationNumber,
-    }));
 
-    const scoringWindowResult = getScoringWindowResult(
-      jumpTrackPointsAgl,
-      windowOffsetM
-    );
+    const jumpTrackPointsAgl = validatedJump.isValidJump
+      ? validatedJump.jumpPoints.map((point) => ({
+          ...point,
+          altitudeM: point.altitudeM - dzElevationNumber,
+        }))
+      : [];
 
-    if (!scoringWindowResult) {
+    const scoringWindowResult =
+      jumpTrackPointsAgl.length > 0
+        ? getScoringWindowResult(jumpTrackPointsAgl, windowOffsetM)
+        : null;
+
+    if (!isNonCompetitionTrack && !scoringWindowResult) {
       setSaveJumpStatus("A complete scoring window could not be detected.");
       return;
     }
 
     const windowSpeedKmh =
-      scoringWindowResult.timeSeconds > 0
+      scoringWindowResult !== null && scoringWindowResult.timeSeconds > 0
         ? metresPerSecondToKmh(
             scoringWindowResult.distanceM /
               scoringWindowResult.timeSeconds
@@ -5094,6 +5197,10 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     const landingPoint =
       trimmedTrackPoints[trimmedTrackPoints.length - 1] ??
       gpsTrackPoints[gpsTrackPoints.length - 1];
+    const timestampedTrackPoint =
+      exitPoint ??
+      gpsTrackPoints.find((point) => point.timestampMs !== null) ??
+      null;
 
     setSaveJumpBusy(true);
     setSaveJumpStatus("");
@@ -5102,20 +5209,22 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
       user_id: supabaseSession.user.id,
       task_type: taskType,
       jump_date:
-        exitPoint.timestampMs !== null
-          ? new Date(exitPoint.timestampMs).toISOString()
+        timestampedTrackPoint?.timestampMs !== null &&
+        timestampedTrackPoint?.timestampMs !== undefined
+          ? new Date(timestampedTrackPoint.timestampMs).toISOString()
           : null,
       location_name: jumpLocationName.trim() || null,
       suit_name: jumpSuitName.trim() || null,
       notes: jumpNotes.trim() || null,
-      exit_latitude: exitPoint.lat,
-      exit_longitude: exitPoint.lon,
+      exit_latitude: exitPoint?.lat ?? null,
+      exit_longitude: exitPoint?.lon ?? null,
       landing_latitude: landingPoint?.lat ?? null,
       landing_longitude: landingPoint?.lon ?? null,
-      dz_elevation_m: dzElevationNumber,      
-      exit_altitude_m: exitPoint.altitudeM - dzElevationNumber,
-      window_time_s: scoringWindowResult.timeSeconds,
-      window_distance_m: scoringWindowResult.distanceM,
+      dz_elevation_m: dzElevationNumber,
+      exit_altitude_m:
+        exitPoint === null ? null : exitPoint.altitudeM - dzElevationNumber,
+      window_time_s: scoringWindowResult?.timeSeconds ?? null,
+      window_distance_m: scoringWindowResult?.distanceM ?? null,
       window_speed_kmh: windowSpeedKmh,
       raw_csv: rawGpsCsv,
     };
@@ -5135,6 +5244,7 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
 
     if (
       error &&
+      taskType !== "non-comp" &&
       String(error.message).toLowerCase().includes("task_type")
     ) {
       const { task_type: _taskType, ...legacyJumpPayload } = jumpPayload;
@@ -5165,8 +5275,8 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     } else {
       setSaveJumpStatus(
         editingSavedJumpId
-          ? `Jump updated as ${taskType}.`
-          : `Jump saved as ${taskType}.`
+          ? `Jump updated as ${formatLogbookTrackType(taskType)}.`
+          : `Jump saved as ${formatLogbookTrackType(taskType)}.`
       );
       setTrackInfoEditJumpId(null);
       void loadSavedJumps();
@@ -5205,7 +5315,8 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     if (
       logbookTaskFilter === "speed" ||
       logbookTaskFilter === "time" ||
-      logbookTaskFilter === "distance"
+      logbookTaskFilter === "distance" ||
+      logbookTaskFilter === "non-comp"
     ) {
       query = query.eq("task_type", logbookTaskFilter);
     }
@@ -5314,7 +5425,7 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     setTrackInfoEditJumpId(jump.id);
     setEditingJumpId(null);
     setSaveJumpStatus(
-      "Editing saved jump. Change Track Info, then choose Save as speed, time, or distance."
+      "Editing saved jump. Change Track Info, then choose the appropriate save type below."
     );
     window.setTimeout(() => {
       document.querySelector(".save-jump-card")?.scrollIntoView({
@@ -5641,7 +5752,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     const labelParts = [
       formatLogbookDateTime(jump.jump_date),
       jump.task_type
-        ? jump.task_type[0].toUpperCase() + jump.task_type.slice(1)
+        ? formatLogbookTrackType(jump.task_type)
         : null,
       jump.location_name,
       jump.suit_name,
@@ -7169,6 +7280,14 @@ if (activePage === "lane") {
       >
         Distance
       </button>
+
+      <button
+        type="button"
+        className={logbookTaskFilter === "non-comp" ? "active" : ""}
+        onClick={() => setLogbookTaskFilter("non-comp")}
+      >
+        Non-comp
+      </button>
     </div>
 
     <div className="logbook-table-wrap">
@@ -7249,9 +7368,7 @@ if (activePage === "lane") {
               </td>
 
               <td>
-                {jump.task_type
-                  ? jump.task_type[0].toUpperCase() + jump.task_type.slice(1)
-                  : "Not set"}
+                {formatLogbookTrackType(jump.task_type)}
               </td>
 
               <td>
@@ -7442,7 +7559,7 @@ if (activePage === "lane") {
 
   {trackInfoEditJumpId && (
     <p className="subtitle">
-      Editing saved jump. Choose a save button below to update this logbook entry.
+      Editing saved jump. Choose a save type below to update this logbook entry.
     </p>
   )}
 
@@ -7475,6 +7592,12 @@ if (activePage === "lane") {
       onChange={(event) => setJumpNotes(event.target.value)}
     />
   </label>
+
+  <p className="subtitle">
+    Use Non-comp for any FlySight track that is not a competition run. It saves
+    the full original CSV without requiring a detected exit or complete scoring
+    window.
+  </p>
 
   <div className="landing-actions track-info-actions">
     <button
@@ -7511,6 +7634,20 @@ if (activePage === "lane") {
       }
     >
       {saveJumpBusy ? "Saving..." : "Save as distance"}
+    </button>
+
+    <button
+      type="button"
+      onClick={() => handleSaveJump("non-comp")}
+      disabled={
+        saveJumpBusy ||
+        !supabaseSession ||
+        !rawGpsCsv ||
+        gpsTrackPoints.length === 0
+      }
+      title="Save the full FlySight track without requiring a competition scoring window"
+    >
+      {saveJumpBusy ? "Saving..." : "Save as non-comp"}
     </button>
 
     <button
@@ -7651,24 +7788,11 @@ if (activePage === "lane") {
 
     if (!validatedJump.isValidJump) {
       return (
-        <>
-          <section className="card track-summary-card">
-            <h2>Jump Metrics</h2>
-            <p className="subtitle">
-              A valid jump exit could not be detected in this track.
-            </p>
-          </section>
-
-          <section className="card graph-placeholder-card">
-            <h2>Interactive Jump Graph</h2>
-            <p className="subtitle">
-              Import a track with a detected jump exit to display the graph.
-            </p>
-            <div className="graph-placeholder">
-              No jump detected
-            </div>
-          </section>
-        </>
+        <NonCompetitionTrackReview
+          points={gpsTrackPoints}
+          dzElevationM={dzElevationNumber}
+          reason="A competition exit could not be detected."
+        />
       );
     }
 
@@ -7689,24 +7813,11 @@ if (activePage === "lane") {
 
     if (!scoringWindowResult) {
       return (
-        <>
-          <section className="card track-summary-card">
-            <h2>Jump Metrics</h2>
-            <p className="subtitle">
-              A complete scoring window could not be detected for this track.
-            </p>
-          </section>
-
-          <section className="card graph-placeholder-card">
-            <h2>Interactive Jump Graph</h2>
-            <p className="subtitle">
-              Import a track that passes through the scoring window to display the graph.
-            </p>
-            <div className="graph-placeholder">
-              No complete scoring window
-            </div>
-          </section>
-        </>
+        <NonCompetitionTrackReview
+          points={gpsTrackPoints}
+          dzElevationM={dzElevationNumber}
+          reason="A complete competition scoring window could not be detected."
+        />
       );
     }
 
