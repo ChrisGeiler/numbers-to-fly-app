@@ -45,6 +45,7 @@ import {
   metresPerSecondToKmh,
   parseFlySightCsv,
   trimTrackAfterLanding,
+  trimTrackForAnalysis,
 } from "./gpsAnalysis";
 import type { GpsTrackPoint } from "./gpsAnalysis";
 import L from "leaflet";
@@ -3980,7 +3981,9 @@ function TrackComparisonChart({
         .slice(0, 6)
         .map((track, trackIndex) => {
           try {
-            const parsedPoints = parseFlySightCsv(track.rawCsv);
+            const parsedPoints = trimTrackForAnalysis(
+              parseFlySightCsv(track.rawCsv)
+            );
             const validatedJump = getValidatedJumpTrack(
               parsedPoints,
               track.dzElevationM
@@ -5447,13 +5450,17 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
       }
 
       const parsedPoints = parseFlySightCsv(jump.raw_csv);
+      const workingTrackPoints = trimTrackForAnalysis(parsedPoints);
       const dzElevationNumber = jump.dz_elevation_m ?? 0;
 
       if (!options.preserveTrackInfoEdit) {
         setTrackInfoEditJumpId(null);
       }
       setRawGpsCsv(jump.raw_csv);
-      setGpsTrackPoints(parsedPoints);
+      setGpsTrackPoints(workingTrackPoints);
+      setIgnoredGroundSampleCount(
+        Math.max(0, parsedPoints.length - workingTrackPoints.length)
+      );
       setCompetitionReferenceLat("");
       setCompetitionReferenceLon("");
       setCompetitionReferenceGroupId(null);
@@ -5482,7 +5489,7 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
       }, 100);
 
       const validatedJump = getValidatedJumpTrack(
-        parsedPoints,
+        workingTrackPoints,
         dzElevationNumber
       );
       const exitPoint = validatedJump.exitPoint;
@@ -5627,6 +5634,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [dzElevationM, setDzElevationM] = useState("");
   const [windowOffsetM, setWindowOffsetM] = useState(0);
   const [gpsTrackPoints, setGpsTrackPoints] = useState<GpsTrackPoint[]>([]);
+  const [ignoredGroundSampleCount, setIgnoredGroundSampleCount] = useState(0);
   const [rawGpsCsv, setRawGpsCsv] = useState("");
   const [showCompareSelector, setShowCompareSelector] = useState(false);
   const [compareOptions, setCompareOptions] = useState<CompareTrackOption[]>([]);
@@ -7100,6 +7108,7 @@ if (activePage === "lane") {
                     if (!file) {
                       setGpsFileName("");
                       setGpsTrackPoints([]);
+                      setIgnoredGroundSampleCount(0);
                       setCompetitionReferenceLat("");
                       setCompetitionReferenceLon("");
                       setCompetitionReferenceGroupId(null);
@@ -7128,8 +7137,12 @@ if (activePage === "lane") {
                     setRawGpsCsv(csvText);
 
                     const parsedPoints = parseFlySightCsv(csvText);
+                    const workingTrackPoints = trimTrackForAnalysis(parsedPoints);
 
-                    setGpsTrackPoints(parsedPoints);
+                    setGpsTrackPoints(workingTrackPoints);
+                    setIgnoredGroundSampleCount(
+                      Math.max(0, parsedPoints.length - workingTrackPoints.length)
+                    );
                     setHistoricalWinds([]);
                     setHistoricalWindStatus("");
 
@@ -7146,7 +7159,7 @@ if (activePage === "lane") {
                     }
 
                     const validatedJump = getValidatedJumpTrack(
-                      parsedPoints,
+                      workingTrackPoints,
                       dzElevationNumber
                     );
                     const exitPoint = validatedJump.exitPoint;
@@ -7162,8 +7175,7 @@ if (activePage === "lane") {
                       return;
                     }
 
-                    const trimmedTrackPoints =
-                      trimTrackAfterLanding(parsedPoints);
+                    const trimmedTrackPoints = workingTrackPoints;
                     const landingPoint =
                       trimmedTrackPoints[trimmedTrackPoints.length - 1] ??
                       parsedPoints[parsedPoints.length - 1];
@@ -7211,6 +7223,17 @@ if (activePage === "lane") {
               {gpsFileName && (
                 <p className="subtitle">
                   Selected file: <strong>{gpsFileName}</strong>
+                </p>
+              )}
+
+              {ignoredGroundSampleCount > 0 && (
+                <p className="subtitle" role="status">
+                  Ignored {ignoredGroundSampleCount.toLocaleString()} stationary
+                  ground samples before takeoff or after landing (
+                  {formatNumber(
+                    ignoredGroundSampleCount * GPS_SAMPLE_PERIOD_SECONDS / 60,
+                    1
+                  )} minutes).
                 </p>
               )}
             </section>

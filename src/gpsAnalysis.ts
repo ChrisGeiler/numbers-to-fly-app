@@ -827,39 +827,187 @@ export function getValidatedJumpTrack(
   };
 }
 
-export function trimTrackAfterLanding(points: GpsTrackPoint[]) {
-  const minimumFlightSeconds = 60;
-  const minimumFlightSamples = Math.round(
-    minimumFlightSeconds / GPS_SAMPLE_PERIOD_SECONDS
+export function trimTrackBeforeTakeoff(points: GpsTrackPoint[]) {
+  const groundConfirmationSeconds = 8;
+  const groundConfirmationSamples = Math.round(
+    groundConfirmationSeconds / GPS_SAMPLE_PERIOD_SECONDS
+  );
+  const departureConfirmationSeconds = 8;
+  const departureConfirmationSamples = Math.round(
+    departureConfirmationSeconds / GPS_SAMPLE_PERIOD_SECONDS
+  );
+  const retainedGroundSeconds = 5;
+  const retainedGroundSamples = Math.round(
+    retainedGroundSeconds / GPS_SAMPLE_PERIOD_SECONDS
+  );
+  const scanStepSamples = Math.max(
+    1,
+    Math.round(1 / GPS_SAMPLE_PERIOD_SECONDS)
   );
 
-  const landingConfirmationSeconds = 10;
+  if (
+    points.length <
+    groundConfirmationSamples + departureConfirmationSamples
+  ) {
+    return points;
+  }
+
+  const initialGroundPoints = points.slice(0, groundConfirmationSamples);
+  const initialStablePointRatio =
+    initialGroundPoints.filter(
+      (point) =>
+        point.horizontalSpeedMps <= 8 &&
+        Math.abs(point.verticalSpeedMps) <= 3
+    ).length / initialGroundPoints.length;
+  const initialMedianHorizontalSpeedMps = medianNumber(
+    initialGroundPoints.map((point) => point.horizontalSpeedMps)
+  );
+  const initialMedianAbsoluteVerticalSpeedMps = medianNumber(
+    initialGroundPoints.map((point) => Math.abs(point.verticalSpeedMps))
+  );
+  const initialAltitudes = initialGroundPoints.map(
+    (point) => point.altitudeM
+  );
+  const initialAltitudeRangeM =
+    Math.max(...initialAltitudes) - Math.min(...initialAltitudes);
+
+  const startsStationary =
+    initialStablePointRatio >= 0.85 &&
+    initialMedianHorizontalSpeedMps !== null &&
+    initialMedianHorizontalSpeedMps <= 4.5 &&
+    initialMedianAbsoluteVerticalSpeedMps !== null &&
+    initialMedianAbsoluteVerticalSpeedMps <= 1.5 &&
+    initialAltitudeRangeM <= 15;
+
+  if (!startsStationary) {
+    return points;
+  }
+
+  for (
+    let index = groundConfirmationSamples;
+    index <= points.length - departureConfirmationSamples;
+    index += scanStepSamples
+  ) {
+    const departurePoints = points.slice(
+      index,
+      index + departureConfirmationSamples
+    );
+    const activePointRatio =
+      departurePoints.filter(
+        (point) =>
+          point.horizontalSpeedMps >= 8 || point.verticalSpeedMps <= -1.5
+      ).length / departurePoints.length;
+    const medianHorizontalSpeedMps = medianNumber(
+      departurePoints.map((point) => point.horizontalSpeedMps)
+    );
+    const altitudeGainM =
+      departurePoints[departurePoints.length - 1].altitudeM -
+      departurePoints[0].altitudeM;
+    const sustainedDeparture =
+      activePointRatio >= 0.75 &&
+      ((medianHorizontalSpeedMps !== null &&
+        medianHorizontalSpeedMps >= 8) ||
+        altitudeGainM >= 8);
+
+    if (sustainedDeparture) {
+      return points.slice(Math.max(0, index - retainedGroundSamples));
+    }
+  }
+
+  return points;
+}
+
+export function trimTrackAfterLanding(points: GpsTrackPoint[]) {
+  const detectedExitIndex = findDetectedExitIndex(points);
+  const fallbackAirborneIndex = points.findIndex(
+    (point) =>
+      point.verticalSpeedMps > 3 &&
+      point.totalSpeedMps > 8
+  );
+  const airborneStartIndex =
+    detectedExitIndex === -1 ? fallbackAirborneIndex : detectedExitIndex;
+
+  if (airborneStartIndex === -1) {
+    return points;
+  }
+
+  const minimumAirborneSeconds = 10;
+  const minimumAirborneSamples = Math.round(
+    minimumAirborneSeconds / GPS_SAMPLE_PERIOD_SECONDS
+  );
+  const landingConfirmationSeconds = 8;
   const landingConfirmationSamples = Math.round(
     landingConfirmationSeconds / GPS_SAMPLE_PERIOD_SECONDS
   );
+  const recentFlightSeconds = 60;
+  const recentFlightSamples = Math.round(
+    recentFlightSeconds / GPS_SAMPLE_PERIOD_SECONDS
+  );
+  const retainedGroundSeconds = 2;
+  const retainedGroundSamples = Math.round(
+    retainedGroundSeconds / GPS_SAMPLE_PERIOD_SECONDS
+  );
+  const scanStepSamples = Math.max(
+    1,
+    Math.round(1 / GPS_SAMPLE_PERIOD_SECONDS)
+  );
 
   for (
-    let index = minimumFlightSamples;
-    index < points.length - landingConfirmationSamples;
-    index += 1
+    let index = airborneStartIndex + minimumAirborneSamples;
+    index <= points.length - landingConfirmationSamples;
+    index += scanStepSamples
   ) {
     const confirmationPoints = points.slice(
       index,
       index + landingConfirmationSamples
     );
-
-    const slowPointRatio =
+    const stablePointRatio =
       confirmationPoints.filter(
         (point) =>
-          point.horizontalSpeedMps < 3 && Math.abs(point.verticalSpeedMps) < 2
+          point.horizontalSpeedMps <= 8 &&
+          Math.abs(point.verticalSpeedMps) <= 3
       ).length / confirmationPoints.length;
+    const medianHorizontalSpeedMps = medianNumber(
+      confirmationPoints.map((point) => point.horizontalSpeedMps)
+    );
+    const medianAbsoluteVerticalSpeedMps = medianNumber(
+      confirmationPoints.map((point) => Math.abs(point.verticalSpeedMps))
+    );
+    const confirmationAltitudes = confirmationPoints.map(
+      (point) => point.altitudeM
+    );
+    const altitudeRangeM =
+      Math.max(...confirmationAltitudes) - Math.min(...confirmationAltitudes);
+    const recentFlightStartIndex = Math.max(
+      airborneStartIndex,
+      index - recentFlightSamples
+    );
+    const recentFlightPoints = points.slice(recentFlightStartIndex, index);
+    const hadRecentDescent = recentFlightPoints.some(
+      (point) => point.verticalSpeedMps > 3
+    );
 
-    if (slowPointRatio >= 0.9) {
-      return points.slice(0, index);
+    if (
+      hadRecentDescent &&
+      stablePointRatio >= 0.85 &&
+      medianHorizontalSpeedMps !== null &&
+      medianHorizontalSpeedMps <= 4.5 &&
+      medianAbsoluteVerticalSpeedMps !== null &&
+      medianAbsoluteVerticalSpeedMps <= 1.5 &&
+      altitudeRangeM <= 15
+    ) {
+      return points.slice(
+        0,
+        Math.min(points.length, index + retainedGroundSamples)
+      );
     }
   }
 
   return points;
+}
+
+export function trimTrackForAnalysis(points: GpsTrackPoint[]) {
+  return trimTrackAfterLanding(trimTrackBeforeTakeoff(points));
 }
 
 export function getTop100mFlareResult(
