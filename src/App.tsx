@@ -794,7 +794,6 @@ const defaultWinds: WindLayer[] = altitudes.map((altitudeM) => ({
   directionFromDeg: "",
   speedKt: "",
 }));
-const NO_WINDS: WindLayer[] = [];
 
 const tailHeadDeadbandKt = 2;
 const windProxyUrl =
@@ -3161,6 +3160,7 @@ function InteractiveTrackChart({
   scoreMode,
   onScoreModeChange,
   showCompetitionContext = true,
+  showScoreModeControl = showCompetitionContext,
 }: {
   points: GpsTrackPoint[];
   windowOffsetM: number;
@@ -3170,6 +3170,7 @@ function InteractiveTrackChart({
   scoreMode: "raw" | "corrected";
   onScoreModeChange: (mode: "raw" | "corrected") => void;
   showCompetitionContext?: boolean;
+  showScoreModeControl?: boolean;
 }) {
 const windAltitudes = winds.map((wind) => wind.altitudeM);
 
@@ -3601,52 +3602,63 @@ const displayGlideRatio = getDisplayGlideRatio(
           </p>
         </div>
 
-        {showCompetitionContext && (
-          <div className="chart-control-row">
-          <button
-            type="button"
+        {(showCompetitionContext || showScoreModeControl) && (
+          <div
             className={
-              "graph-view-button graph-view-button-left " +
-              (graphView === "comp" ? "active" : "")
+              "chart-control-row" +
+              (showCompetitionContext ? "" : " chart-control-row-score-only")
             }
-            onClick={() => onGraphViewChange("comp")}
-            aria-pressed={graphView === "comp"}
           >
-            Comp run
-          </button>
+            {showCompetitionContext && (
+              <button
+                type="button"
+                className={
+                  "graph-view-button graph-view-button-left " +
+                  (graphView === "comp" ? "active" : "")
+                }
+                onClick={() => onGraphViewChange("comp")}
+                aria-pressed={graphView === "comp"}
+              >
+                Comp run
+              </button>
+            )}
 
-          <label className="score-mode-switch graph-score-mode-switch">
-            <span className={scoreMode === "raw" ? "active" : ""}>Raw</span>
+            {showScoreModeControl && (
+              <label className="score-mode-switch graph-score-mode-switch">
+                <span className={scoreMode === "raw" ? "active" : ""}>Raw</span>
 
-            <input
-              type="checkbox"
-              checked={scoreMode === "corrected"}
-              onChange={(event) =>
-                onScoreModeChange(event.target.checked ? "corrected" : "raw")
-              }
-              disabled={winds.length === 0}
-            />
+                <input
+                  type="checkbox"
+                  checked={scoreMode === "corrected"}
+                  onChange={(event) =>
+                    onScoreModeChange(event.target.checked ? "corrected" : "raw")
+                  }
+                  disabled={winds.length === 0}
+                />
 
-            <span className="score-mode-track">
-              <span className="score-mode-knob" />
-            </span>
+                <span className="score-mode-track">
+                  <span className="score-mode-knob" />
+                </span>
 
-            <span className={scoreMode === "corrected" ? "active" : ""}>
-              Corrected
-            </span>
-          </label>
+                <span className={scoreMode === "corrected" ? "active" : ""}>
+                  Corrected
+                </span>
+              </label>
+            )}
 
-          <button
-            type="button"
-            className={
-              "graph-view-button graph-view-button-right " +
-              (graphView === "full" ? "active" : "")
-            }
-            onClick={() => onGraphViewChange("full")}
-            aria-pressed={graphView === "full"}
-          >
-            Full Jump
-          </button>
+            {showCompetitionContext && (
+              <button
+                type="button"
+                className={
+                  "graph-view-button graph-view-button-right " +
+                  (graphView === "full" ? "active" : "")
+                }
+                onClick={() => onGraphViewChange("full")}
+                aria-pressed={graphView === "full"}
+              >
+                Full Jump
+              </button>
+            )}
           </div>
         )}
 
@@ -3887,11 +3899,17 @@ function NonCompetitionTrackReview({
   dzElevationM,
   reason,
   startsAtDetectedExit = false,
+  winds,
+  scoreMode,
+  onScoreModeChange,
 }: {
   points: GpsTrackPoint[];
   dzElevationM: number;
   reason: string;
   startsAtDetectedExit?: boolean;
+  winds: WindLayer[];
+  scoreMode: "raw" | "corrected";
+  onScoreModeChange: (mode: "raw" | "corrected") => void;
 }) {
   const displayedPoints = points.map((point) => ({
     ...point,
@@ -3950,16 +3968,19 @@ function NonCompetitionTrackReview({
         </div>
       </section>
 
-      <InteractiveTrackChart
-        points={displayedPoints}
-        windowOffsetM={0}
-        winds={NO_WINDS}
-        graphView="full"
-        onGraphViewChange={() => undefined}
-        scoreMode="raw"
-        onScoreModeChange={() => undefined}
-        showCompetitionContext={false}
-      />
+      <div className="graph-view-container">
+        <InteractiveTrackChart
+          points={displayedPoints}
+          windowOffsetM={0}
+          winds={winds}
+          graphView="full"
+          onGraphViewChange={() => undefined}
+          scoreMode={scoreMode}
+          onScoreModeChange={onScoreModeChange}
+          showCompetitionContext={false}
+          showScoreModeControl
+        />
+      </div>
     </>
   );
 }
@@ -5168,8 +5189,12 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
       dzElevationNumber
     );
 
-    const exitPoint = validatedJump.exitPoint;
     const isNonCompetitionTrack = taskType === "non-comp";
+    const detectedJumpTrack = isNonCompetitionTrack
+      ? getDetectedJumpTrack(gpsTrackPoints)
+      : null;
+    const exitPoint =
+      validatedJump.exitPoint ?? detectedJumpTrack?.exitPoint ?? null;
 
     if (!isNonCompetitionTrack && (!validatedJump.isValidJump || !exitPoint)) {
       setSaveJumpStatus("A valid jump exit could not be detected.");
@@ -5497,15 +5522,16 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
         workingTrackPoints,
         dzElevationNumber
       );
-      const exitPoint = validatedJump.exitPoint;
+      const detectedJumpTrack = getDetectedJumpTrack(workingTrackPoints);
+      const exitPoint =
+        validatedJump.exitPoint ?? detectedJumpTrack.exitPoint;
 
       if (
-        !validatedJump.isValidJump ||
         !exitPoint ||
         exitPoint.timestampMs === null
       ) {
         setHistoricalWindStatus(
-          "Historical winds could not be loaded because no valid timestamped exit was detected."
+          "Historical winds could not be loaded because no timestamped jump exit was detected."
         );
         return;
       }
@@ -7167,15 +7193,18 @@ if (activePage === "lane") {
                       workingTrackPoints,
                       dzElevationNumber
                     );
-                    const exitPoint = validatedJump.exitPoint;
+                    const detectedJumpTrack = getDetectedJumpTrack(
+                      workingTrackPoints
+                    );
+                    const exitPoint =
+                      validatedJump.exitPoint ?? detectedJumpTrack.exitPoint;
 
                     if (
-                      !validatedJump.isValidJump ||
                       !exitPoint ||
                       exitPoint.timestampMs === null
                     ) {
                       setHistoricalWindStatus(
-                        "Historical winds could not be loaded because no valid timestamped exit was detected."
+                        "Historical winds could not be loaded because no timestamped jump exit was detected."
                       );
                       return;
                     }
@@ -7830,6 +7859,9 @@ if (activePage === "lane") {
               : "A jump exit could not be detected."
           }
           startsAtDetectedExit={detectedJumpTrack.isExitDetected}
+          winds={historicalWinds}
+          scoreMode={jumpScoreMode}
+          onScoreModeChange={setJumpScoreMode}
         />
       );
     }
@@ -7860,6 +7892,9 @@ if (activePage === "lane") {
           dzElevationM={dzElevationNumber}
           reason="A complete competition scoring window could not be detected."
           startsAtDetectedExit
+          winds={historicalWinds}
+          scoreMode={jumpScoreMode}
+          onScoreModeChange={setJumpScoreMode}
         />
       );
     }

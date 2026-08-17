@@ -1177,6 +1177,11 @@ button:disabled {
   margin-top: 4px;
 }
 
+.chart-control-row-score-only {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+
 .graph-score-mode-switch {
   margin: 0;
   gap: 8px;
