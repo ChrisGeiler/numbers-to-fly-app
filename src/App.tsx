@@ -1279,10 +1279,14 @@ function generateFlySightConfig({
   const toneMinQuickReference =
     task === "speed"
       ? " (6666=240kph, 6944=250kph, 7222=260kph, 7500=270kph)"
+      : task === "time"
+        ? " (1055=38, 1250=45kph)"
       : "";
   const toneMaxQuickReference =
     task === "speed"
       ? " (7777=280kph, 8055=290kph, 8333=300kph, 8888=320kph, 9027=325kph)"
+      : task === "time"
+        ? " (1194=43, 1528=55kph)"
       : "";
   
 return `; GPS settings
