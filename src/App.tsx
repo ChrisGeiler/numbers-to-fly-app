@@ -1276,6 +1276,14 @@ function generateFlySightConfig({
 
   const finalAlarmType = task === "time" ? 1 : 4;
   const flareAlarmType = task === "speed" ? 1 : 4;
+  const toneMinQuickReference =
+    task === "speed"
+      ? " (6666=240kph, 6944=250kph, 7222=260kph, 7500=270kph)"
+      : "";
+  const toneMaxQuickReference =
+    task === "speed"
+      ? " (7777=280kph, 8055=290kph, 8333=300kph, 8888=320kph, 9027=325kph)"
+      : "";
   
 return `; GPS settings
 Model:     7     ; Dynamic model
@@ -1298,11 +1306,11 @@ Mode:      ${toneMode}     ; Measurement mode
                  ;   3 = Inverse glide ratio
                  ;   4 = Total speed
                  ;   11 = Dive angle
-Min:       ${minValue}     ; Lowest pitch value
+Min:       ${minValue}     ; Lowest pitch value${toneMinQuickReference}
                  ;   cm/s        in Mode 0, 1, or 4
                  ;   ratio * 100 in Mode 2 or 3
                  ;   degrees     in Mode 11
-Max:       ${maxValue}     ; Highest pitch value
+Max:       ${maxValue}     ; Highest pitch value${toneMaxQuickReference}
                  ;   cm/s        in Mode 0, 1, or 4
                  ;   ratio * 100 in Mode 2 or 3
                  ;   degrees     in Mode 11
