@@ -457,6 +457,31 @@ type SuitSetup =
   | "freak-atc"
   | "swift";
 type UnitSystem = "metric" | "imperial";
+type SavedFindNumbers = {
+  distanceSpeedKph: string;
+  timeSpeedKph: string;
+  speedStartGR: string;
+  speedEndGR: string;
+};
+
+function areFindNumbersValid(numbers: SavedFindNumbers): boolean {
+  const distanceSpeedKph = Number(numbers.distanceSpeedKph);
+  const timeSpeedKph = Number(numbers.timeSpeedKph);
+  const speedStartGR = Number(numbers.speedStartGR);
+  const speedEndGR = Number(numbers.speedEndGR);
+
+  return (
+    Number.isFinite(distanceSpeedKph) &&
+    distanceSpeedKph > 0 &&
+    Number.isFinite(timeSpeedKph) &&
+    timeSpeedKph > 0 &&
+    Number.isFinite(speedStartGR) &&
+    speedStartGR > 0 &&
+    Number.isFinite(speedEndGR) &&
+    speedEndGR > speedStartGR
+  );
+}
+
 type SavedFindDetails = {
   version: 1;
   unitSystem: UnitSystem;
@@ -465,6 +490,7 @@ type SavedFindDetails = {
   heightFeet: string;
   heightInches: string;
   suitSetup: Exclude<SuitSetup, "">;
+  numbers?: SavedFindNumbers;
 };
 
 const FIND_DETAILS_METADATA_KEY = "numbers_to_fly_details";
@@ -474,6 +500,32 @@ const SAVABLE_SUIT_SETUPS: readonly Exclude<SuitSetup, "">[] = [
   "freak-atc",
   "swift",
 ];
+
+function getSavedFindNumbers(value: unknown): SavedFindNumbers | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const numbers = value as Record<string, unknown>;
+
+  if (
+    typeof numbers.distanceSpeedKph !== "string" ||
+    typeof numbers.timeSpeedKph !== "string" ||
+    typeof numbers.speedStartGR !== "string" ||
+    typeof numbers.speedEndGR !== "string"
+  ) {
+    return null;
+  }
+
+  const savedNumbers = {
+    distanceSpeedKph: numbers.distanceSpeedKph,
+    timeSpeedKph: numbers.timeSpeedKph,
+    speedStartGR: numbers.speedStartGR,
+    speedEndGR: numbers.speedEndGR,
+  };
+
+  return areFindNumbersValid(savedNumbers) ? savedNumbers : null;
+}
 
 function getSavedFindDetails(session: Session | null): SavedFindDetails | null {
   const value = session?.user.user_metadata?.[FIND_DETAILS_METADATA_KEY];
@@ -485,6 +537,7 @@ function getSavedFindDetails(session: Session | null): SavedFindDetails | null {
   const details = value as Record<string, unknown>;
   const unitSystem = details.unitSystem;
   const suitSetup = details.suitSetup;
+  const numbers = getSavedFindNumbers(details.numbers);
 
   if (
     details.version !== 1 ||
@@ -508,6 +561,7 @@ function getSavedFindDetails(session: Session | null): SavedFindDetails | null {
     heightFeet: details.heightFeet,
     heightInches: details.heightInches,
     suitSetup: suitSetup as Exclude<SuitSetup, "">,
+    ...(numbers ? { numbers } : {}),
   };
 }
 
@@ -4871,6 +4925,8 @@ function App() {
   const [findHeightFeet, setFindHeightFeet] = useState("");
   const [findHeightInches, setFindHeightInches] = useState("");
   const [findSuitSetup, setFindSuitSetup] = useState<SuitSetup>("");
+  const [findNumbersOverride, setFindNumbersOverride] =
+    useState<SavedFindNumbers | null>(null);
   const [findDetailsStatus, setFindDetailsStatus] = useState("");
   const [findDetailsBusy, setFindDetailsBusy] = useState(false);
   const [authEmail, setAuthEmail] = useState("");
@@ -4942,16 +4998,23 @@ const loadFindDetailsFromSession = useCallback((session: Session | null) => {
   setFindHeightFeet(savedDetails.heightFeet);
   setFindHeightInches(savedDetails.heightInches);
   setFindSuitSetup(savedDetails.suitSetup);
+  setFindNumbersOverride(savedDetails.numbers ?? null);
   setFindDetailsStatus("Your saved details have been loaded.");
 
-  const savedNumbers = calculateFindYourNumbers(savedDetails);
-  const distanceSpeed = String(savedNumbers.distanceSpeedKph);
+  const calculatedNumbers = calculateFindYourNumbers(savedDetails);
+  const savedNumbers = savedDetails.numbers ?? {
+    distanceSpeedKph: String(calculatedNumbers.distanceSpeedKph),
+    timeSpeedKph: String(calculatedNumbers.timeSpeedKph),
+    speedStartGR: calculatedNumbers.speedStartGR.toFixed(2),
+    speedEndGR: calculatedNumbers.speedEndGR.toFixed(2),
+  };
+  const distanceSpeed = savedNumbers.distanceSpeedKph;
 
   setSavedDistanceSpeedKph(distanceSpeed);
-  setSavedTimeSpeedKph(String(savedNumbers.timeSpeedKph));
+  setSavedTimeSpeedKph(savedNumbers.timeSpeedKph);
   setZeroWindSpeedKph(distanceSpeed);
-  setStartGR(savedNumbers.speedStartGR.toFixed(2));
-  setEndGR(savedNumbers.speedEndGR.toFixed(2));
+  setStartGR(savedNumbers.speedStartGR);
+  setEndGR(savedNumbers.speedEndGR);
 }, []);
 
 function getLogbookScoreForTask(jump: SavedJump, task: TaskMode): number | null {
@@ -6048,6 +6111,15 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     ]
   );
 
+  const calculatedFindNumbers: SavedFindNumbers = {
+    distanceSpeedKph: String(foundNumbers.distanceSpeedKph),
+    timeSpeedKph: String(foundNumbers.timeSpeedKph),
+    speedStartGR: foundNumbers.speedStartGR.toFixed(2),
+    speedEndGR: foundNumbers.speedEndGR.toFixed(2),
+  };
+  const editableFindNumbers = findNumbersOverride ?? calculatedFindNumbers;
+  const findNumbersAreValid = areFindNumbersValid(editableFindNumbers);
+
   const hasFindInputs =
   findWeight.trim() !== "" &&
   (findUnitSystem === "metric"
@@ -6235,6 +6307,22 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     setFindUnitSystem("metric");
   }
 
+  function updateFindNumber(
+    field: keyof SavedFindNumbers,
+    value: string,
+  ) {
+    setFindNumbersOverride((currentNumbers) => ({
+      ...(currentNumbers ?? calculatedFindNumbers),
+      [field]: value,
+    }));
+    setFindDetailsStatus("");
+  }
+
+  function resetFindNumbersToEstimates() {
+    setFindNumbersOverride(null);
+    setFindDetailsStatus("Your calculated estimates have been restored.");
+  }
+
   async function saveFindDetails() {
     if (!supabaseSession) {
       setFindDetailsStatus("Your signed-in session is still loading. Please try again.");
@@ -6246,6 +6334,13 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
       return;
     }
 
+    if (!findNumbersAreValid) {
+      setFindDetailsStatus(
+        "Enter positive target numbers, with the Speed end GR above the start GR.",
+      );
+      return;
+    }
+
     const savedDetails: SavedFindDetails = {
       version: 1,
       unitSystem: findUnitSystem,
@@ -6254,6 +6349,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
       heightFeet: findHeightFeet,
       heightInches: findHeightInches,
       suitSetup: findSuitSetup,
+      numbers: { ...editableFindNumbers },
     };
 
     setFindDetailsBusy(true);
@@ -6268,17 +6364,20 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     if (error) {
       setFindDetailsStatus(`Could not save your details: ${error.message}`);
     } else {
-      setFindDetailsStatus("Your details have been saved to your account.");
+      setFindNumbersOverride({ ...editableFindNumbers });
+      setFindDetailsStatus(
+        "Your details and target numbers have been saved to your account.",
+      );
     }
 
     setFindDetailsBusy(false);
   }
 
 function syncFoundNumbersToFlyPage(nextTaskMode: TaskMode = taskMode) {
-  const distanceSpeed = String(foundNumbers.distanceSpeedKph);
-  const timeSpeed = String(foundNumbers.timeSpeedKph);
-  const speedStart = foundNumbers.speedStartGR.toFixed(2);
-  const speedEnd = foundNumbers.speedEndGR.toFixed(2);
+  const distanceSpeed = editableFindNumbers.distanceSpeedKph;
+  const timeSpeed = editableFindNumbers.timeSpeedKph;
+  const speedStart = editableFindNumbers.speedStartGR;
+  const speedEnd = editableFindNumbers.speedEndGR;
 
   setSavedDistanceSpeedKph(distanceSpeed);
   setSavedTimeSpeedKph(timeSpeed);
@@ -6293,7 +6392,7 @@ function syncFoundNumbersToFlyPage(nextTaskMode: TaskMode = taskMode) {
 }
 
 function openFlyNumbersPage() {
-  if (hasFindInputs) {
+  if (hasFindInputs && findNumbersAreValid) {
     syncFoundNumbersToFlyPage();
   }
 
@@ -8940,22 +9039,7 @@ if (activePage === "rules") {
                 ? "Switch to Imperial"
                 : "Switch to Metric"}
             </button>
-
-            <button
-              type="button"
-              className="primary-action-button"
-              onClick={() => void saveFindDetails()}
-              disabled={findDetailsBusy || !hasFindInputs || !supabaseSession}
-            >
-              {findDetailsBusy ? "Saving..." : "Save my details"}
-            </button>
           </div>
-
-          {findDetailsStatus && (
-            <p className="find-details-status" aria-live="polite">
-              {findDetailsStatus}
-            </p>
-          )}
 
           <div className="manual-wind-controls">
             <label>
@@ -8968,6 +9052,7 @@ if (activePage === "rules") {
                 }
                 onChange={(e) => {
                   setFindWeight(e.target.value);
+                  setFindNumbersOverride(null);
                   setFindDetailsStatus("");
                 }}
               />
@@ -8982,6 +9067,7 @@ if (activePage === "rules") {
                   placeholder="Example 180"
                   onChange={(e) => {
                     setFindHeightCm(e.target.value);
+                    setFindNumbersOverride(null);
                     setFindDetailsStatus("");
                   }}
                 />
@@ -8996,6 +9082,7 @@ if (activePage === "rules") {
                     placeholder="Example 5"
                     onChange={(e) => {
                       setFindHeightFeet(e.target.value);
+                      setFindNumbersOverride(null);
                       setFindDetailsStatus("");
                     }}
                   />
@@ -9009,6 +9096,7 @@ if (activePage === "rules") {
                     placeholder="Example 11"
                     onChange={(e) => {
                       setFindHeightInches(e.target.value);
+                      setFindNumbersOverride(null);
                       setFindDetailsStatus("");
                     }}
                   />
@@ -9023,6 +9111,7 @@ if (activePage === "rules") {
               value={findSuitSetup}
               onChange={(e) => {
                 setFindSuitSetup(e.target.value as SuitSetup);
+                setFindNumbersOverride(null);
                 setFindDetailsStatus("");
               }}
             >
@@ -9038,42 +9127,109 @@ if (activePage === "rules") {
         </section>
 
         <section className="card">
-          <h2>Estimated Zero Wind Numbers</h2>
+          <h2>Your Zero Wind Numbers</h2>
 
           {!hasFindInputs ? (
             <p className="subtitle">Please enter your height, weight and suit</p>
           ) : (
             <>
-              <div className="numbers-grid">
-                <div className="number-tile">
-                  <span>Distance speed</span>
-                  <strong>{foundNumbers.distanceSpeedKph} km/h</strong>
-                </div>
+              <p className="subtitle">
+                These start with the calculated estimates. Adjust them to match
+                your training, then save them to your profile.
+              </p>
 
-                <div className="number-tile">
-                  <span>Time speed</span>
-                  <strong>{foundNumbers.timeSpeedKph} km/h</strong>
-                </div>
+              <div className="numbers-grid editable-find-numbers-grid">
+                <label className="number-tile">
+                  <span>Distance speed, km/h</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={editableFindNumbers.distanceSpeedKph}
+                    onChange={(event) =>
+                      updateFindNumber("distanceSpeedKph", event.target.value)
+                    }
+                  />
+                </label>
 
-                <div className="number-tile">
+                <label className="number-tile">
+                  <span>Time speed, km/h</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={editableFindNumbers.timeSpeedKph}
+                    onChange={(event) =>
+                      updateFindNumber("timeSpeedKph", event.target.value)
+                    }
+                  />
+                </label>
+
+                <label className="number-tile">
                   <span>Speed start GR</span>
-                  <strong>{foundNumbers.speedStartGR.toFixed(2)}</strong>
-                </div>
+                  <input
+                    type="number"
+                    min="0.05"
+                    step="0.05"
+                    value={editableFindNumbers.speedStartGR}
+                    onChange={(event) =>
+                      updateFindNumber("speedStartGR", event.target.value)
+                    }
+                  />
+                </label>
 
-                <div className="number-tile">
+                <label className="number-tile">
                   <span>Speed end GR</span>
-                  <strong>{foundNumbers.speedEndGR.toFixed(2)}</strong>
-                </div>
+                  <input
+                    type="number"
+                    min="0.05"
+                    step="0.05"
+                    value={editableFindNumbers.speedEndGR}
+                    onChange={(event) =>
+                      updateFindNumber("speedEndGR", event.target.value)
+                    }
+                  />
+                </label>
               </div>
 
-              <button
-                type="button"
-                className="primary-action-button"
-                onClick={pushAllFoundNumbersToFlyPage}
-              >
-                Push all numbers to Fly your Numbers
-              </button>
+              <div className="find-number-actions">
+                <button
+                  type="button"
+                  onClick={resetFindNumbersToEstimates}
+                  disabled={findNumbersOverride === null}
+                >
+                  Reset to estimates
+                </button>
+
+                <button
+                  type="button"
+                  className="primary-action-button"
+                  onClick={() => void saveFindDetails()}
+                  disabled={
+                    findDetailsBusy ||
+                    !findNumbersAreValid ||
+                    !supabaseSession
+                  }
+                >
+                  {findDetailsBusy ? "Saving..." : "Save my profile"}
+                </button>
+
+                <button
+                  type="button"
+                  className="primary-action-button"
+                  onClick={pushAllFoundNumbersToFlyPage}
+                  disabled={!findNumbersAreValid}
+                >
+                  Push all numbers to Fly your Numbers
+                </button>
+              </div>
             </>
+          )}
+
+          {findDetailsStatus && (
+            <p className="find-details-status" aria-live="polite">
+              {findDetailsStatus}
+            </p>
           )}
 
           <p className="calculator-disclaimer">
