@@ -444,6 +444,827 @@ function estimateLanePenalty(
 
 type TaskMode = "time" | "distance" | "speed";
 type LogbookTrackType = TaskMode | "non-comp";
+type TrackAssessorAccessState = "checking" | "allowed" | "denied";
+const ASSESSOR_ZERO_WIND_TARGETS = {
+  speedKmh: 300,
+  timeSeconds: 100,
+  distanceM: 4500,
+  entryGlideRatio: 1,
+  diveAngleMinDeg: 70,
+  diveAngleMaxDeg: 82,
+  verticalSpeedKmh: 300,
+} as const;
+type EnergyManagementRating = "good" | "mixed" | "poor" | "insufficient";
+type EnergyManagementSample = {
+  totalSpeedKmh: number;
+  diveAngleDeg: number;
+  glideRatio: number | null;
+};
+type EnergyManagementResult = {
+  rating: EnergyManagementRating;
+  label: string;
+  summary: string;
+  durationSeconds: number;
+  speedRetentionPercent: number | null;
+  speedBleedPercentPerSecond: number | null;
+  speedVariationPercent: number | null;
+  diveAngleVariationDeg: number | null;
+  glideRatioVariationPercent: number | null;
+  meaningfulPitchReversals: number;
+};
+type FlightTransitionResult = {
+  rating: EnergyManagementRating;
+  label: string;
+  summary: string;
+  durationSeconds: number;
+  speedVariationPercent: number | null;
+  diveAngleVariationDeg: number | null;
+  glideRatioVariationPercent: number | null;
+  meaningfulPitchReversals: number;
+  diveAngleChangeDeg: number | null;
+};
+type TargetAdherenceSample = {
+  actualValue: number;
+  targetValue: number;
+};
+type TargetAdherenceResult = {
+  rating: EnergyManagementRating;
+  label: string;
+  summary: string;
+  targetLabel: string;
+  toleranceLabel: string;
+  averageTarget: number;
+  averageActual: number;
+  meanAbsoluteError: number;
+  averageDifference: number;
+  withinTargetPercent: number;
+};
+type TrackAssessment = {
+  headline: string;
+  summary: string;
+  strengths: string[];
+  improvement: string;
+  evidence: string[];
+  targetAdherence: TargetAdherenceResult | null;
+  flightTransition: FlightTransitionResult | null;
+  energyManagement: EnergyManagementResult | null;
+};
+type TrackAssessmentMetrics = {
+  task: TaskMode;
+  timeSeconds: number;
+  distanceM: number;
+  speedKmh: number | null;
+  peakDiveAngleDeg: number | null;
+  peakVerticalSpeedKmh: number | null;
+  peakTotalSpeedKmh: number | null;
+  entryGlideRatio: number | null;
+  exitGlideRatio: number | null;
+  flareStartAltitudeM: number | null;
+  flareAltitudeGainM: number | null;
+  last800mHorizontalSpeedKmh: number | null;
+  last800mGlideRatio: number | null;
+  lineEfficiencyPercent: number | null;
+  tailwindKts: number | null;
+  usesCalculatedAirspeed: boolean;
+  targetAdherence: TargetAdherenceResult | null;
+  flightTransition: FlightTransitionResult | null;
+  energyManagement: EnergyManagementResult | null;
+};
+
+function averageFiniteNumbers(values: Array<number | null>) {
+  const finiteValues = values.filter(
+    (value): value is number => value !== null && Number.isFinite(value),
+  );
+
+  return finiteValues.length > 0
+    ? finiteValues.reduce((total, value) => total + value, 0) /
+        finiteValues.length
+    : null;
+}
+
+function getLinearResidualStandardDeviation(values: number[]) {
+  if (values.length < 3) {
+    return null;
+  }
+
+  const averageIndex = (values.length - 1) / 2;
+  const averageValue = averageFiniteNumbers(values);
+
+  if (averageValue === null) {
+    return null;
+  }
+
+  let covariance = 0;
+  let indexVariance = 0;
+
+  values.forEach((value, index) => {
+    covariance += (index - averageIndex) * (value - averageValue);
+    indexVariance += (index - averageIndex) ** 2;
+  });
+
+  const slope = indexVariance > 0 ? covariance / indexVariance : 0;
+  const intercept = averageValue - slope * averageIndex;
+  const meanSquaredResidual = averageFiniteNumbers(
+    values.map((value, index) => {
+      const residual = value - (intercept + slope * index);
+      return residual ** 2;
+    }),
+  );
+
+  return meanSquaredResidual === null ? null : Math.sqrt(meanSquaredResidual);
+}
+
+function countMeaningfulPitchReversals(
+  diveAnglesDeg: number[],
+  thresholdDeg = 2.5,
+) {
+  if (diveAnglesDeg.length < 3) {
+    return 0;
+  }
+
+  let direction: -1 | 0 | 1 = 0;
+  let extremeAngleDeg = diveAnglesDeg[0];
+  let directionChanges = 0;
+
+  diveAnglesDeg.slice(1).forEach((diveAngleDeg) => {
+    if (direction >= 0) {
+      if (diveAngleDeg > extremeAngleDeg) {
+        extremeAngleDeg = diveAngleDeg;
+      } else if (extremeAngleDeg - diveAngleDeg >= thresholdDeg) {
+        directionChanges += 1;
+        direction = -1;
+        extremeAngleDeg = diveAngleDeg;
+      }
+    } else if (diveAngleDeg < extremeAngleDeg) {
+      extremeAngleDeg = diveAngleDeg;
+    } else if (diveAngleDeg - extremeAngleDeg >= thresholdDeg) {
+      directionChanges += 1;
+      direction = 1;
+      extremeAngleDeg = diveAngleDeg;
+    }
+  });
+
+  return Math.max(0, directionChanges - 1);
+}
+
+function analyzeEnergyManagement(
+  samples: EnergyManagementSample[],
+  durationSeconds: number,
+): EnergyManagementResult {
+  const insufficientResult: EnergyManagementResult = {
+    rating: "insufficient",
+    label: "Not enough post-flare data",
+    summary:
+      "The assessor needs at least 12 seconds of stable post-flare flight before judging energy management.",
+    durationSeconds,
+    speedRetentionPercent: null,
+    speedBleedPercentPerSecond: null,
+    speedVariationPercent: null,
+    diveAngleVariationDeg: null,
+    glideRatioVariationPercent: null,
+    meaningfulPitchReversals: 0,
+  };
+
+  if (samples.length < 10 || durationSeconds < 12) {
+    return insufficientResult;
+  }
+
+  const segmentSampleCount = Math.max(3, Math.floor(samples.length * 0.1));
+  const startSpeedKmh = averageFiniteNumbers(
+    samples
+      .slice(0, segmentSampleCount)
+      .map((sample) => sample.totalSpeedKmh),
+  );
+  const endSpeedKmh = averageFiniteNumbers(
+    samples
+      .slice(-segmentSampleCount)
+      .map((sample) => sample.totalSpeedKmh),
+  );
+  const averageSpeedKmh = averageFiniteNumbers(
+    samples.map((sample) => sample.totalSpeedKmh),
+  );
+  const speedResidualStandardDeviation =
+    getLinearResidualStandardDeviation(
+      samples.map((sample) => sample.totalSpeedKmh),
+    );
+  const diveAngleResidualStandardDeviation =
+    getLinearResidualStandardDeviation(
+      samples.map((sample) => sample.diveAngleDeg),
+    );
+  const finiteGlideRatios = samples
+    .map((sample) => sample.glideRatio)
+    .filter(
+      (glideRatio): glideRatio is number =>
+        glideRatio !== null && Number.isFinite(glideRatio),
+    );
+  const averageGlideRatio = averageFiniteNumbers(finiteGlideRatios);
+  const glideRatioResidualStandardDeviation =
+    getLinearResidualStandardDeviation(finiteGlideRatios);
+
+  if (
+    startSpeedKmh === null ||
+    endSpeedKmh === null ||
+    startSpeedKmh <= 0 ||
+    averageSpeedKmh === null ||
+    averageSpeedKmh <= 0
+  ) {
+    return insufficientResult;
+  }
+
+  const speedRetentionPercent = (endSpeedKmh / startSpeedKmh) * 100;
+  const speedBleedPercentPerSecond =
+    (Math.max(0, startSpeedKmh - endSpeedKmh) / startSpeedKmh / durationSeconds) *
+    100;
+  const speedVariationPercent =
+    speedResidualStandardDeviation === null
+      ? null
+      : (speedResidualStandardDeviation / averageSpeedKmh) * 100;
+  const glideRatioVariationPercent =
+    glideRatioResidualStandardDeviation === null ||
+    averageGlideRatio === null ||
+    averageGlideRatio === 0
+      ? null
+      : (glideRatioResidualStandardDeviation / Math.abs(averageGlideRatio)) *
+        100;
+  const meaningfulPitchReversals = countMeaningfulPitchReversals(
+    samples.map((sample) => sample.diveAngleDeg),
+  );
+  const diveAngleVariationDeg = diveAngleResidualStandardDeviation;
+  const speedTrendIsSlow = speedBleedPercentPerSecond <= 0.6;
+  const speedTraceIsSmooth =
+    speedVariationPercent !== null && speedVariationPercent <= 4.5;
+  const pitchTraceIsSmooth =
+    diveAngleVariationDeg !== null &&
+    diveAngleVariationDeg <= 2.5 &&
+    meaningfulPitchReversals <= 3;
+  const glideRatioTraceIsSmooth =
+    glideRatioVariationPercent !== null && glideRatioVariationPercent <= 15;
+  const tracesAreSmooth =
+    speedTraceIsSmooth && pitchTraceIsSmooth && glideRatioTraceIsSmooth;
+  const tracesAreGenerallyControlled =
+    speedVariationPercent !== null &&
+    speedVariationPercent <= 6.5 &&
+    diveAngleVariationDeg !== null &&
+    diveAngleVariationDeg <= 4.5 &&
+    meaningfulPitchReversals <= 5 &&
+    glideRatioVariationPercent !== null &&
+    glideRatioVariationPercent <= 22;
+  const energyManagementIsGood =
+    tracesAreSmooth && speedTrendIsSlow;
+  const energyManagementIsMixed =
+    tracesAreSmooth || tracesAreGenerallyControlled;
+
+  const issues: string[] = [];
+
+  if (!speedTrendIsSlow) {
+    issues.push("total speed bled away quickly despite the overall trend");
+  }
+
+  if (!speedTraceIsSmooth) {
+    issues.push("speed moved up and down around its overall trend");
+  }
+
+  if (!pitchTraceIsSmooth) {
+    issues.push(
+      meaningfulPitchReversals > 3
+        ? `${meaningfulPitchReversals} meaningful dive-angle reversals were detected`
+        : "dive angle varied excessively",
+    );
+  }
+
+  if (!glideRatioTraceIsSmooth) {
+    issues.push("GR varied rather than changing progressively");
+  }
+
+  if (energyManagementIsGood) {
+    return {
+      rating: "good",
+      label: "Good energy management",
+      summary: `After the flare, the speed, dive-angle and GR traces stayed smooth and changed progressively. Total speed bled at ${formatNumber(speedBleedPercentPerSecond, 2)}% per second with ${formatNumber(speedRetentionPercent, 0)}% retained, and no repeated pitch oscillation was detected.`,
+      durationSeconds,
+      speedRetentionPercent,
+      speedBleedPercentPerSecond,
+      speedVariationPercent,
+      diveAngleVariationDeg,
+      glideRatioVariationPercent,
+      meaningfulPitchReversals,
+    };
+  }
+
+  const issueSummary =
+    issues.length > 0 ? issues.join("; ") : "the post-flare trend was uneven";
+
+  return {
+    rating: energyManagementIsMixed ? "mixed" : "poor",
+    label: energyManagementIsMixed
+      ? "Generally controlled energy"
+      : "Inconsistent energy management",
+    summary: energyManagementIsMixed
+      ? `The post-flare traces were generally controlled, but ${issueSummary}. The overall trend remained usable without the consistency of the labelled good runs.`
+      : `Energy was not maintained cleanly after the flare: ${issueSummary}. The assessor only labels this inconsistent when the post-flare traces show genuine variation around their overall trend.`,
+    durationSeconds,
+    speedRetentionPercent,
+    speedBleedPercentPerSecond,
+    speedVariationPercent,
+    diveAngleVariationDeg,
+    glideRatioVariationPercent,
+    meaningfulPitchReversals,
+  };
+}
+
+function analyzeFlightTransition(
+  samples: EnergyManagementSample[],
+  durationSeconds: number,
+): FlightTransitionResult {
+  const insufficientResult: FlightTransitionResult = {
+    rating: "insufficient",
+    label: "Not enough transition data",
+    summary:
+      "The assessor could not isolate enough of the post-flare transition to judge it confidently.",
+    durationSeconds,
+    speedVariationPercent: null,
+    diveAngleVariationDeg: null,
+    glideRatioVariationPercent: null,
+    meaningfulPitchReversals: 0,
+    diveAngleChangeDeg: null,
+  };
+
+  if (samples.length < 4 || durationSeconds < 4) {
+    return insufficientResult;
+  }
+
+  const averageSpeedKmh = averageFiniteNumbers(
+    samples.map((sample) => sample.totalSpeedKmh),
+  );
+  const speedResidualStandardDeviation = getLinearResidualStandardDeviation(
+    samples.map((sample) => sample.totalSpeedKmh),
+  );
+  const diveAngleVariationDeg = getLinearResidualStandardDeviation(
+    samples.map((sample) => sample.diveAngleDeg),
+  );
+  const finiteGlideRatios = samples
+    .map((sample) => sample.glideRatio)
+    .filter(
+      (glideRatio): glideRatio is number =>
+        glideRatio !== null && Number.isFinite(glideRatio),
+    );
+  const averageGlideRatio = averageFiniteNumbers(finiteGlideRatios);
+  const glideRatioResidualStandardDeviation =
+    getLinearResidualStandardDeviation(finiteGlideRatios);
+  const speedVariationPercent =
+    speedResidualStandardDeviation === null ||
+    averageSpeedKmh === null ||
+    averageSpeedKmh <= 0
+      ? null
+      : (speedResidualStandardDeviation / averageSpeedKmh) * 100;
+  const glideRatioVariationPercent =
+    glideRatioResidualStandardDeviation === null ||
+    averageGlideRatio === null ||
+    Math.abs(averageGlideRatio) < 0.1
+      ? null
+      : (glideRatioResidualStandardDeviation / Math.abs(averageGlideRatio)) *
+        100;
+  const meaningfulPitchReversals = countMeaningfulPitchReversals(
+    samples.map((sample) => sample.diveAngleDeg),
+  );
+  const transitionBlockSize = Math.max(1, Math.floor(samples.length * 0.2));
+  const startDiveAngleDeg = averageFiniteNumbers(
+    samples
+      .slice(0, transitionBlockSize)
+      .map((sample) => sample.diveAngleDeg),
+  );
+  const endDiveAngleDeg = averageFiniteNumbers(
+    samples
+      .slice(-transitionBlockSize)
+      .map((sample) => sample.diveAngleDeg),
+  );
+  const diveAngleChangeDeg =
+    startDiveAngleDeg === null || endDiveAngleDeg === null
+      ? null
+      : endDiveAngleDeg - startDiveAngleDeg;
+
+  if (speedVariationPercent === null || diveAngleVariationDeg === null) {
+    return insufficientResult;
+  }
+
+  const glideRatioIsSmooth =
+    glideRatioVariationPercent === null || glideRatioVariationPercent <= 25;
+  const glideRatioIsControlled =
+    glideRatioVariationPercent === null || glideRatioVariationPercent <= 38;
+  const transitionIsSmooth =
+    speedVariationPercent <= 6 &&
+    diveAngleVariationDeg <= 4 &&
+    meaningfulPitchReversals <= 2 &&
+    glideRatioIsSmooth;
+  const transitionIsControlled =
+    speedVariationPercent <= 9 &&
+    diveAngleVariationDeg <= 7 &&
+    meaningfulPitchReversals <= 4 &&
+    glideRatioIsControlled;
+
+  if (transitionIsSmooth) {
+    return {
+      rating: "good",
+      label: "Clean transition",
+      summary: `From the flare apex into sustained flight, speed, pitch and GR settled progressively over ${formatNumber(durationSeconds, 1)} seconds without excessive back-and-forth correction.`,
+      durationSeconds,
+      speedVariationPercent,
+      diveAngleVariationDeg,
+      glideRatioVariationPercent,
+      meaningfulPitchReversals,
+      diveAngleChangeDeg,
+    };
+  }
+
+  const issues: string[] = [];
+
+  if (speedVariationPercent > 6) {
+    issues.push("speed did not settle progressively");
+  }
+
+  if (diveAngleVariationDeg > 4 || meaningfulPitchReversals > 2) {
+    issues.push(
+      meaningfulPitchReversals > 2
+        ? `${meaningfulPitchReversals} meaningful pitch reversals occurred`
+        : "pitch varied around its settling trend",
+    );
+  }
+
+  if (!glideRatioIsSmooth) {
+    issues.push("GR overshot or changed unevenly");
+  }
+
+  return {
+    rating: transitionIsControlled ? "mixed" : "poor",
+    label: transitionIsControlled
+      ? "Mostly controlled transition"
+      : "Unsettled transition",
+    summary: transitionIsControlled
+      ? `The transition into sustained flight was usable, but ${issues.join("; ")}.`
+      : `The transition into sustained flight needs attention: ${issues.join("; ")}.`,
+    durationSeconds,
+    speedVariationPercent,
+    diveAngleVariationDeg,
+    glideRatioVariationPercent,
+    meaningfulPitchReversals,
+    diveAngleChangeDeg,
+  };
+}
+
+function analyzeTargetAdherence(
+  task: TaskMode,
+  samples: TargetAdherenceSample[],
+): TargetAdherenceResult | null {
+  if (samples.length < 4) {
+    return null;
+  }
+
+  const isSpeedTask = task === "speed";
+  const tolerance = isSpeedTask ? 0.15 : 10;
+  const differences = samples.map(
+    (sample) => sample.actualValue - sample.targetValue,
+  );
+  const averageTarget =
+    samples.reduce((total, sample) => total + sample.targetValue, 0) /
+    samples.length;
+  const averageActual =
+    samples.reduce((total, sample) => total + sample.actualValue, 0) /
+    samples.length;
+  const meanAbsoluteError =
+    differences.reduce((total, difference) => total + Math.abs(difference), 0) /
+    differences.length;
+  const averageDifference =
+    differences.reduce((total, difference) => total + difference, 0) /
+    differences.length;
+  const withinTargetPercent =
+    (differences.filter((difference) => Math.abs(difference) <= tolerance)
+      .length /
+      differences.length) *
+    100;
+  const rating: EnergyManagementRating =
+    withinTargetPercent >= 70 && meanAbsoluteError <= tolerance
+      ? "good"
+      : withinTargetPercent >= 40 && meanAbsoluteError <= tolerance * 1.6
+        ? "mixed"
+        : "poor";
+  const targetLabel = isSpeedTask ? "GR" : "airspeed";
+  const toleranceLabel = isSpeedTask ? "±0.15 GR" : "±10 km/h";
+  const differenceMagnitude = Math.abs(averageDifference);
+  const differenceDirection =
+    differenceMagnitude <= tolerance * 0.25
+      ? "centred on the target"
+      : isSpeedTask
+        ? averageDifference < 0
+          ? "below the target, indicating a steeper-than-planned flight path"
+          : "above the target, indicating a flatter-than-planned flight path"
+        : averageDifference < 0
+          ? "below the target speed"
+          : "above the target speed";
+  const label =
+    rating === "good"
+      ? "Target followed well"
+      : rating === "mixed"
+        ? "Target followed inconsistently"
+        : "Target missed for much of the window";
+  const formattedAverageDifference = isSpeedTask
+    ? `${formatNumber(differenceMagnitude, 2)} GR`
+    : `${formatNumber(differenceMagnitude, 1)} km/h`;
+  const firstTargetValue = samples[0].targetValue;
+  const lastTargetValue = samples[samples.length - 1].targetValue;
+  const targetProfileDescription = isSpeedTask
+    ? `${formatNumber(firstTargetValue, 2)}→${formatNumber(lastTargetValue, 2)} GR`
+    : `${formatNumber(firstTargetValue, 0)}→${formatNumber(lastTargetValue, 0)} km/h`;
+
+  return {
+    rating,
+    label,
+    summary: `${formatNumber(withinTargetPercent, 0)}% of the evaluated flight was within ${toleranceLabel} of the personal zero-wind ${targetProfileDescription} profile. On average the flown trace was ${formattedAverageDifference} ${differenceDirection}.`,
+    targetLabel,
+    toleranceLabel,
+    averageTarget,
+    averageActual,
+    meanAbsoluteError,
+    averageDifference,
+    withinTargetPercent,
+  };
+}
+
+function buildTrackAssessment({
+  task,
+  timeSeconds,
+  distanceM,
+  speedKmh,
+  peakDiveAngleDeg,
+  peakVerticalSpeedKmh,
+  peakTotalSpeedKmh,
+  entryGlideRatio,
+  exitGlideRatio,
+  flareStartAltitudeM,
+  flareAltitudeGainM,
+  last800mHorizontalSpeedKmh,
+  last800mGlideRatio,
+  lineEfficiencyPercent,
+  tailwindKts,
+  usesCalculatedAirspeed,
+  targetAdherence,
+  flightTransition,
+  energyManagement,
+}: TrackAssessmentMetrics): TrackAssessment {
+  const strengths: string[] = [];
+  const evidence: string[] = [];
+  const diveAngleOnTarget =
+    peakDiveAngleDeg !== null &&
+    peakDiveAngleDeg >= ASSESSOR_ZERO_WIND_TARGETS.diveAngleMinDeg &&
+    peakDiveAngleDeg <= ASSESSOR_ZERO_WIND_TARGETS.diveAngleMaxDeg;
+  const verticalSpeedOnTarget =
+    peakVerticalSpeedKmh !== null &&
+    peakVerticalSpeedKmh >= ASSESSOR_ZERO_WIND_TARGETS.verticalSpeedKmh - 5;
+
+  evidence.push(
+    usesCalculatedAirspeed
+      ? "Assessment basis: calculated airspeed with the horizontal wind removed, compared with zero-wind targets."
+      : "Assessment basis: ground-relative speed as a provisional fallback. Load wind data for a calculated-airspeed comparison with the zero-wind targets.",
+  );
+
+  if (targetAdherence !== null) {
+    const targetUnit =
+      targetAdherence.targetLabel === "GR" ? "GR" : "km/h";
+    evidence.push(
+      `Target adherence: ${formatNumber(targetAdherence.withinTargetPercent, 0)}% within ${targetAdherence.toleranceLabel}; average flown ${formatNumber(targetAdherence.averageActual, targetUnit === "GR" ? 2 : 1)} ${targetUnit} against average target ${formatNumber(targetAdherence.averageTarget, targetUnit === "GR" ? 2 : 1)} ${targetUnit}.`,
+    );
+  }
+
+  if (diveAngleOnTarget && verticalSpeedOnTarget) {
+    strengths.push(
+      `The dive built the intended energy: ${formatNumber(peakDiveAngleDeg, 1)}° and ${formatNumber(peakVerticalSpeedKmh, 1)} km/h vertical.`,
+    );
+  } else if (peakTotalSpeedKmh !== null && peakTotalSpeedKmh >= 350) {
+    strengths.push(
+      `The run still produced strong total energy, peaking at ${formatNumber(peakTotalSpeedKmh, 1)} km/h.`,
+    );
+  }
+
+  if (task !== "speed" && flightTransition !== null) {
+    evidence.push(
+      `Post-flare transition: ${formatNumber(flightTransition.durationSeconds, 1)} seconds with ${flightTransition.meaningfulPitchReversals} meaningful pitch reversals.`,
+    );
+
+    if (
+      flightTransition.speedVariationPercent !== null &&
+      flightTransition.diveAngleVariationDeg !== null
+    ) {
+      evidence.push(
+        `Transition smoothness after removing the settling trend: ${formatNumber(flightTransition.speedVariationPercent, 1)}% in total speed and ${formatNumber(flightTransition.diveAngleVariationDeg, 2)}° in dive angle.`,
+      );
+    }
+  }
+
+  if (task !== "speed" && energyManagement !== null) {
+    if (energyManagement.rating === "good") {
+      strengths.push(energyManagement.summary);
+    }
+
+    if (energyManagement.speedRetentionPercent !== null) {
+      evidence.push(
+        `Post-flare total-speed retention: ${formatNumber(energyManagement.speedRetentionPercent, 0)}% over ${formatNumber(energyManagement.durationSeconds, 1)} seconds.`,
+      );
+    }
+
+    if (
+      energyManagement.speedBleedPercentPerSecond !== null &&
+      energyManagement.diveAngleVariationDeg !== null
+    ) {
+      evidence.push(
+        `Energy stability: ${formatNumber(energyManagement.speedBleedPercentPerSecond, 2)}% speed bleed per second, ${formatNumber(energyManagement.diveAngleVariationDeg, 2)}° detrended dive-angle variation and ${energyManagement.meaningfulPitchReversals} meaningful pitch reversals.`,
+      );
+    }
+
+    if (
+      energyManagement.speedVariationPercent !== null &&
+      energyManagement.glideRatioVariationPercent !== null
+    ) {
+      evidence.push(
+        `Up-and-down variation after removing the overall trend: ${formatNumber(energyManagement.speedVariationPercent, 1)}% in total speed and ${formatNumber(energyManagement.glideRatioVariationPercent, 1)}% in GR.`,
+      );
+    }
+  }
+
+  if (task === "speed") {
+    const entryDifference =
+      entryGlideRatio === null
+        ? null
+        : entryGlideRatio - ASSESSOR_ZERO_WIND_TARGETS.entryGlideRatio;
+    const entryOnTarget =
+      entryDifference !== null && Math.abs(entryDifference) <= 0.1;
+    const headline =
+      speedKmh !== null && speedKmh >= ASSESSOR_ZERO_WIND_TARGETS.speedKmh
+        ? entryOnTarget
+          ? "Strong Speed run"
+          : "Good Speed run with entry timing to improve"
+        : "Speed run review";
+
+    if (
+      entryGlideRatio !== null &&
+      exitGlideRatio !== null &&
+      exitGlideRatio > entryGlideRatio
+    ) {
+      strengths.push(
+        `GR increased progressively from ${formatNumber(entryGlideRatio, 2)} at entry to ${formatNumber(exitGlideRatio, 2)} at exit.`,
+      );
+    }
+
+    let improvement =
+      entryGlideRatio === null
+        ? "Confirm a clean window entry so the assessor can compare entry GR with the 1.0 target."
+        : entryGlideRatio < 0.9
+          ? `Begin the conversion earlier so GR is about 1.0 at window entry; this run entered at ${formatNumber(entryGlideRatio, 2)}.`
+          : entryGlideRatio > 1.1
+            ? `Avoid becoming too flat before the window; entry GR was ${formatNumber(entryGlideRatio, 2)} against the 1.0 target.`
+            : "Window-entry GR was close to the 1.0 target. Focus on repeating the same timing cleanly.";
+
+    if (targetAdherence?.rating === "poor") {
+      improvement =
+        targetAdherence.averageDifference < 0
+          ? "After entering the window, allow GR to increase toward the target line more progressively; the flight remained steeper than planned for much of the window."
+          : "Hold a slightly steeper flight path through the window; GR remained above the target line, indicating the suit became flatter than planned.";
+    }
+
+    evidence.push(
+      `${usesCalculatedAirspeed ? "Calculated-air" : "Ground-relative"} Speed result: ${formatNumber(speedKmh, 1)} km/h from ${formatNumber(distanceM, 0)} m in ${formatNumber(timeSeconds, 2)} seconds; zero-wind target ${ASSESSOR_ZERO_WIND_TARGETS.speedKmh} km/h.`,
+    );
+
+    if (usesCalculatedAirspeed) {
+      evidence.push(
+        "The loaded wind profile has already been removed from horizontal speed and GR; no additional tailwind allowance is applied.",
+      );
+    } else if (tailwindKts !== null) {
+      evidence.push(
+        `Tailwind allowance at exit: +${formatNumber((tailwindKts / 10) * 0.1, 2)} GR for ${formatNumber(tailwindKts, 0)} kt along-track tailwind.`,
+      );
+    } else {
+      evidence.push(
+        "Exit GR remains contextual until the along-track tailwind is entered.",
+      );
+    }
+
+    return {
+      headline,
+      summary:
+        `Speed feedback compares the flown ${usesCalculatedAirspeed ? "calculated airspeed" : "provisional ground speed"} with the ${ASSESSOR_ZERO_WIND_TARGETS.speedKmh} km/h zero-wind target, then reviews entry GR and conversion timing.`,
+      strengths,
+      improvement,
+      evidence,
+      targetAdherence,
+      flightTransition: null,
+      energyManagement: null,
+    };
+  }
+
+  if (task === "time") {
+    if (flareAltitudeGainM !== null && flareAltitudeGainM >= 40) {
+      strengths.push(
+        `The flare converted speed into ${formatNumber(flareAltitudeGainM, 0)} m of altitude gain.`,
+      );
+    }
+
+    if (last800mGlideRatio !== null) {
+      strengths.push(
+        `The last 800 m averaged GR ${formatNumber(last800mGlideRatio, 2)}, showing the sustained portion of the flight.`,
+      );
+    }
+
+    let improvement =
+      !diveAngleOnTarget || !verticalSpeedOnTarget
+        ? `Build slightly more dive energy before conversion; the personal target is roughly 70–80° and 300 km/h vertical.`
+        : flareStartAltitudeM !== null && flareStartAltitudeM < 2475
+          ? `Start the conversion closer to the 2500 m window top; this flare was detected at ${formatNumber(flareStartAltitudeM, 0)} m.`
+          : "The major phases are close to the personal Time baseline. Look for smaller gains in flare timing and sustained efficiency.";
+
+    if (energyManagement?.rating === "poor") {
+      improvement =
+        "Prioritise a steadier post-flare pitch. Repeated changes in dive angle are producing up-and-down changes in speed or GR instead of a smooth energy bleed.";
+    }
+
+    evidence.push(
+      `Time result: ${formatNumber(timeSeconds, 2)} seconds; zero-wind target ${ASSESSOR_ZERO_WIND_TARGETS.timeSeconds} seconds.`,
+    );
+    if (flareStartAltitudeM !== null) {
+      evidence.push(
+        `Flare detected at ${formatNumber(flareStartAltitudeM, 0)} m AGL.`,
+      );
+    }
+
+    return {
+      headline:
+        timeSeconds >= ASSESSOR_ZERO_WIND_TARGETS.timeSeconds
+          ? "Very good Time run"
+          : "Time run review",
+      summary:
+        `Time feedback compares the ${formatNumber(timeSeconds, 2)}-second result with the ${ASSESSOR_ZERO_WIND_TARGETS.timeSeconds}-second zero-wind target, using ${usesCalculatedAirspeed ? "calculated airspeed" : "provisional ground-relative speed"} for the flight phases.`,
+      strengths,
+      improvement,
+      evidence,
+      targetAdherence,
+      flightTransition,
+      energyManagement,
+    };
+  }
+
+  if (lineEfficiencyPercent !== null && lineEfficiencyPercent >= 99.5) {
+    strengths.push(
+      `The track was ${formatNumber(lineEfficiencyPercent, 2)}% line-efficient, with very little distance lost to course deviation.`,
+    );
+  }
+
+  if (
+    last800mHorizontalSpeedKmh !== null &&
+    last800mGlideRatio !== null
+  ) {
+    strengths.push(
+      `The last 800 m averaged ${formatNumber(last800mHorizontalSpeedKmh, 1)} km/h horizontal at GR ${formatNumber(last800mGlideRatio, 2)}.`,
+    );
+  }
+
+  let improvement =
+    (peakDiveAngleDeg !== null && peakDiveAngleDeg < 65) ||
+    (peakVerticalSpeedKmh !== null && peakVerticalSpeedKmh < 285)
+      ? "There may be a little more distance available from additional dive energy, provided the flare remains controlled."
+      : flareStartAltitudeM !== null && flareStartAltitudeM < 2475
+        ? `Consider shifting the conversion slightly upward; the flare was detected at ${formatNumber(flareStartAltitudeM, 0)} m AGL.`
+        : "The run is close to the personal Distance baseline. Look for small gains in conversion timing and late-window speed retention.";
+
+  if (energyManagement?.rating === "poor") {
+    improvement =
+      "Prioritise a steadier post-flare pitch. Repeated changes in dive angle are producing up-and-down changes in speed or GR instead of preserving forward energy.";
+  }
+
+  evidence.push(
+    `${usesCalculatedAirspeed ? "Calculated-air" : "Ground-relative"} Distance result: ${formatNumber(distanceM, 0)} m; zero-wind target ${ASSESSOR_ZERO_WIND_TARGETS.distanceM} m.`,
+  );
+  if (flareAltitudeGainM !== null) {
+    evidence.push(
+      `Flare altitude gain: ${formatNumber(flareAltitudeGainM, 0)} m.`,
+    );
+  }
+
+  return {
+    headline:
+      distanceM >= ASSESSOR_ZERO_WIND_TARGETS.distanceM &&
+      lineEfficiencyPercent !== null &&
+      lineEfficiencyPercent >= 99.5
+        ? "Very good Distance run"
+        : "Distance run review",
+    summary:
+      `Distance feedback compares the flown ${usesCalculatedAirspeed ? "air-relative distance" : "provisional ground distance"} with the ${ASSESSOR_ZERO_WIND_TARGETS.distanceM} m zero-wind target, then reviews conversion, line efficiency and late-window energy.`,
+    strengths,
+    improvement,
+    evidence,
+    targetAdherence,
+    flightTransition,
+    energyManagement,
+  };
+}
+
 type WindSource =
   | "manual"
   | "mark-schulze"
@@ -4918,6 +5739,11 @@ function AuthModal({
 
 function App() {
   const [supabaseSession, setSupabaseSession] = useState<Session | null>(null);
+  const [trackAssessorAccess, setTrackAssessorAccess] =
+    useState<TrackAssessorAccessState>("checking");
+  const [assessorTaskMode, setAssessorTaskMode] =
+    useState<TaskMode>("distance");
+  const [assessorTailwindKts, setAssessorTailwindKts] = useState("");
   const loadedFindDetailsUserIdRef = useRef<string | null>(null);
   const [findUnitSystem, setFindUnitSystem] = useState<UnitSystem>("metric");
   const [findWeight, setFindWeight] = useState("");
@@ -5159,6 +5985,57 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
       subscription.unsubscribe();
     };
   }, [loadFindDetailsFromSession]);
+
+  useEffect(() => {
+    let active = true;
+    const signedInEmail = supabaseSession?.user.email?.trim().toLowerCase();
+
+    if (!signedInEmail) {
+      setTrackAssessorAccess("checking");
+      return () => {
+        active = false;
+      };
+    }
+
+    const isDevelopmentPreviewAccount =
+      import.meta.env.DEV &&
+      (signedInEmail === "flywithcruza@gmail.com" ||
+        signedInEmail === "starcruza@hotmail.com");
+
+    if (isDevelopmentPreviewAccount) {
+      setTrackAssessorAccess("allowed");
+      return () => {
+        active = false;
+      };
+    }
+
+    setTrackAssessorAccess("checking");
+
+    void supabase
+      .from("app_access")
+      .select("can_use_track_assessor")
+      .eq("email", signedInEmail)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) {
+          return;
+        }
+
+        if (error) {
+          console.error("Track Assessor access check failed:", error.message);
+          setTrackAssessorAccess("denied");
+          return;
+        }
+
+        setTrackAssessorAccess(
+          data?.can_use_track_assessor === true ? "allowed" : "denied",
+        );
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [supabaseSession?.user.id, supabaseSession?.user.email]);
 
       useEffect(() => {
     void loadSavedJumps();
@@ -8030,14 +8907,24 @@ if (activePage === "lane") {
 
     const usingCorrectedScores =
       jumpScoreMode === "corrected" && historicalWinds.length > 0;
+    const assessorUsesCalculatedAirspeed = historicalWinds.length > 0;
 
     const windowDistanceM = usingCorrectedScores
+      ? correctedWindowDistanceM
+      : rawWindowDistanceM;
+    const assessorWindowDistanceM = assessorUsesCalculatedAirspeed
       ? correctedWindowDistanceM
       : rawWindowDistanceM;
 
     const averageHorizontalSpeedKmh =
       timeInWindowSeconds > 0
         ? metresPerSecondToKmh(windowDistanceM / timeInWindowSeconds)
+        : null;
+    const assessorAverageHorizontalSpeedKmh =
+      timeInWindowSeconds > 0
+        ? metresPerSecondToKmh(
+            assessorWindowDistanceM / timeInWindowSeconds,
+          )
         : null;
     const last800mPoints =
       getLast800mWindowPoints(jumpTrackPoints);
@@ -8053,6 +8940,9 @@ if (activePage === "lane") {
     const last800mDistanceM = usingCorrectedScores
       ? correctedLast800mDistanceM
       : rawLast800mDistanceM;
+    const assessorLast800mDistanceM = assessorUsesCalculatedAirspeed
+      ? correctedLast800mDistanceM
+      : rawLast800mDistanceM;
 
     const last800mTimeSeconds =
       last800mPoints.length > 1
@@ -8064,6 +8954,12 @@ if (activePage === "lane") {
       last800mTimeSeconds > 0
         ? metresPerSecondToKmh(
             last800mDistanceM / last800mTimeSeconds
+          )
+        : null;
+    const assessorLast800mAverageHorizontalSpeedKmh =
+      last800mTimeSeconds > 0
+        ? metresPerSecondToKmh(
+            assessorLast800mDistanceM / last800mTimeSeconds,
           )
         : null;
 
@@ -8083,6 +8979,10 @@ if (activePage === "lane") {
     const last800mAverageGlideRatio =
       last800mAltitudeLossM > 0
         ? last800mDistanceM / last800mAltitudeLossM
+        : null;
+    const assessorLast800mAverageGlideRatio =
+      last800mAltitudeLossM > 0
+        ? assessorLast800mDistanceM / last800mAltitudeLossM
         : null;
 
     const isSpeedRun =
@@ -8160,6 +9060,40 @@ if (activePage === "lane") {
       preWindowDivePoints.length > 0
         ? Math.max(
             ...preWindowDivePoints.map(getPointDiveAngleDeg)
+          )
+        : null;
+    const assessorPeakDiveTotalSpeedKmh =
+      peakSpeedPoints.length > 0
+        ? metresPerSecondToKmh(
+            Math.max(
+              ...peakSpeedPoints.map((point) =>
+                getDisplayTotalSpeedMps(
+                  point,
+                  historicalWinds,
+                  assessorUsesCalculatedAirspeed,
+                ),
+              ),
+            ),
+          )
+        : null;
+    const assessorPeakDiveAngleDeg =
+      preWindowDivePoints.length > 0
+        ? Math.max(
+            ...preWindowDivePoints.map((point) => {
+              const horizontalSpeedMps = getDisplayHorizontalSpeedMps(
+                point,
+                historicalWinds,
+                assessorUsesCalculatedAirspeed,
+              );
+
+              return (
+                Math.atan2(
+                  Math.max(point.verticalSpeedMps, 0),
+                  Math.max(horizontalSpeedMps, 0.001),
+                ) *
+                (180 / Math.PI)
+              );
+            }),
           )
         : null;
 
@@ -8278,6 +9212,362 @@ if (activePage === "lane") {
               (first, second) =>
                 first.nearestDistanceM - second.nearestDistanceM,
             );
+    const getSmoothedBoundaryGlideRatio = (pointIndex: number) => {
+      const radiusSamples = Math.round(1 / GPS_SAMPLE_PERIOD_SECONDS);
+      const glideRatios = jumpTrackPoints
+        .slice(
+          Math.max(0, pointIndex - radiusSamples),
+          Math.min(jumpTrackPoints.length, pointIndex + radiusSamples + 1),
+        )
+        .map((point) =>
+          getDisplayGlideRatio(
+            point,
+            historicalWinds,
+            assessorUsesCalculatedAirspeed,
+          ),
+        )
+        .filter(
+          (glideRatio): glideRatio is number =>
+            glideRatio !== null && Number.isFinite(glideRatio),
+        );
+
+      return glideRatios.length > 0
+        ? glideRatios.reduce((total, glideRatio) => total + glideRatio, 0) /
+            glideRatios.length
+        : null;
+    };
+    const assessorEntryGlideRatio = getSmoothedBoundaryGlideRatio(
+      scoringWindowResult.startIndex,
+    );
+    const assessorExitGlideRatio = getSmoothedBoundaryGlideRatio(
+      scoringWindowResult.endIndex,
+    );
+    const rawWindowPathDistanceM = getTrackDistanceM(windowTrackPoints);
+    const lineEfficiencyPercent =
+      rawWindowPathDistanceM > 0
+        ? (rawWindowDistanceM / rawWindowPathDistanceM) * 100
+        : null;
+    const parsedAssessorTailwindKts =
+      assessorTailwindKts.trim() === ""
+        ? null
+        : Number(assessorTailwindKts);
+    const assessorTailwindNumber =
+      parsedAssessorTailwindKts !== null &&
+      Number.isFinite(parsedAssessorTailwindKts)
+        ? parsedAssessorTailwindKts
+        : null;
+    const flarePeakIndex = (() => {
+      if (top100mFlare === null) {
+        return null;
+      }
+
+      let peakIndex = top100mFlare.startIndex;
+
+      for (
+        let pointIndex = top100mFlare.startIndex;
+        pointIndex <= top100mFlare.endIndex;
+        pointIndex += 1
+      ) {
+        if (
+          jumpTrackPoints[pointIndex].altitudeM >
+          jumpTrackPoints[peakIndex].altitudeM
+        ) {
+          peakIndex = pointIndex;
+        }
+      }
+
+      return peakIndex;
+    })();
+    const postFlareStartIndex = (() => {
+      if (top100mFlare !== null) {
+        // The first 100 m contains the deliberate flare conversion. Judge
+        // energy management only once that phase and a short settling period
+        // are complete, otherwise a good flare looks like an oscillation.
+        return Math.min(
+          top100mFlare.endIndex + Math.round(1 / GPS_SAMPLE_PERIOD_SECONDS),
+          scoringWindowResult.endIndex,
+        );
+      }
+
+      const settledWindowIndex = jumpTrackPoints.findIndex(
+        (point, pointIndex) =>
+          pointIndex >= scoringWindowResult.startIndex &&
+          point.altitudeM <= 2300,
+      );
+
+      return settledWindowIndex === -1
+        ? scoringWindowResult.startIndex
+        : settledWindowIndex;
+    })();
+    const flightTransitionStartIndex = (() => {
+      if (flarePeakIndex === null) {
+        return null;
+      }
+
+      const peakFlareAltitudeM = jumpTrackPoints[flarePeakIndex].altitudeM;
+      const verticalConfirmationSamples = Math.round(
+        1 / GPS_SAMPLE_PERIOD_SECONDS,
+      );
+
+      for (
+        let pointIndex = flarePeakIndex;
+        pointIndex < postFlareStartIndex;
+        pointIndex += 1
+      ) {
+        const confirmationPoints = jumpTrackPoints.slice(
+          pointIndex,
+          pointIndex + verticalConfirmationSamples,
+        );
+        const averageVerticalSpeedMps = averageFiniteNumbers(
+          confirmationPoints.map((point) => point.verticalSpeedMps),
+        );
+        const hasLeftFlareApex =
+          jumpTrackPoints[pointIndex].altitudeM <= peakFlareAltitudeM - 10 &&
+          averageVerticalSpeedMps !== null &&
+          averageVerticalSpeedMps >= 5;
+
+        if (hasLeftFlareApex) {
+          return pointIndex;
+        }
+      }
+
+      return Math.min(
+        flarePeakIndex + Math.round(2 / GPS_SAMPLE_PERIOD_SECONDS),
+        postFlareStartIndex,
+      );
+    })();
+    const flightTransitionPoints =
+      flightTransitionStartIndex === null
+        ? []
+        : jumpTrackPoints.slice(
+            flightTransitionStartIndex,
+            postFlareStartIndex + 1,
+          );
+    const postFlareEnergyPoints = jumpTrackPoints.slice(
+      postFlareStartIndex,
+      scoringWindowResult.endIndex + 1,
+    );
+    const energyBlockSampleCount = Math.max(
+      1,
+      Math.round(1 / GPS_SAMPLE_PERIOD_SECONDS),
+    );
+    const getFlightPhaseSamples = (phasePoints: GpsTrackPoint[]) => {
+      const samples: EnergyManagementSample[] = [];
+
+      for (
+        let blockStartIndex = 0;
+        blockStartIndex < phasePoints.length;
+        blockStartIndex += energyBlockSampleCount
+      ) {
+        const blockPoints = phasePoints.slice(
+          blockStartIndex,
+          blockStartIndex + energyBlockSampleCount,
+        );
+
+        if (blockPoints.length < Math.ceil(energyBlockSampleCount / 2)) {
+          continue;
+        }
+
+        const totalSpeedKmh = averageFiniteNumbers(
+          blockPoints.map((point) =>
+            metresPerSecondToKmh(
+              getDisplayTotalSpeedMps(
+                point,
+                historicalWinds,
+                assessorUsesCalculatedAirspeed,
+              ),
+            ),
+          ),
+        );
+        const diveAngleDeg = averageFiniteNumbers(
+          blockPoints.map((point) => {
+            const horizontalSpeedMps = getDisplayHorizontalSpeedMps(
+              point,
+              historicalWinds,
+              assessorUsesCalculatedAirspeed,
+            );
+
+            return (
+              Math.atan2(
+                Math.max(point.verticalSpeedMps, 0),
+                Math.max(horizontalSpeedMps, 0.001),
+              ) *
+              (180 / Math.PI)
+            );
+          }),
+        );
+        const glideRatio = averageFiniteNumbers(
+          blockPoints.map((point) =>
+            getDisplayGlideRatio(
+              point,
+              historicalWinds,
+              assessorUsesCalculatedAirspeed,
+            ),
+          ),
+        );
+
+        if (totalSpeedKmh !== null && diveAngleDeg !== null) {
+          samples.push({
+            totalSpeedKmh,
+            diveAngleDeg,
+            glideRatio,
+          });
+        }
+      }
+
+      return samples;
+    };
+
+    const getTargetAdherenceSamples = (phasePoints: GpsTrackPoint[]) => {
+      const samples: TargetAdherenceSample[] = [];
+      const zeroWindSpeedTargetKmh = numberFromInput(
+        assessorTaskMode === "time"
+          ? editableFindNumbers.timeSpeedKph
+          : editableFindNumbers.distanceSpeedKph,
+        0,
+      );
+      const speedStartGlideRatio = numberFromInput(
+        editableFindNumbers.speedStartGR,
+        0,
+      );
+      const speedEndGlideRatio = numberFromInput(
+        editableFindNumbers.speedEndGR,
+        0,
+      );
+
+      for (
+        let blockStartIndex = 0;
+        blockStartIndex < phasePoints.length;
+        blockStartIndex += energyBlockSampleCount
+      ) {
+        const blockPoints = phasePoints.slice(
+          blockStartIndex,
+          blockStartIndex + energyBlockSampleCount,
+        );
+
+        if (blockPoints.length < Math.ceil(energyBlockSampleCount / 2)) {
+          continue;
+        }
+
+        const averageAltitudeM = averageFiniteNumbers(
+          blockPoints.map((point) => point.altitudeM),
+        );
+
+        if (averageAltitudeM === null) {
+          continue;
+        }
+
+        if (assessorTaskMode === "speed") {
+          const actualGlideRatio = averageFiniteNumbers(
+            blockPoints.map((point) =>
+              getDisplayGlideRatio(
+                point,
+                historicalWinds,
+                assessorUsesCalculatedAirspeed,
+              ),
+            ),
+          );
+
+          if (
+            actualGlideRatio !== null &&
+            speedStartGlideRatio > 0 &&
+            speedEndGlideRatio > speedStartGlideRatio
+          ) {
+            samples.push({
+              actualValue: actualGlideRatio,
+              targetValue: baseGRAtAltitude(
+                averageAltitudeM,
+                speedStartGlideRatio,
+                speedEndGlideRatio,
+              ),
+            });
+          }
+
+          continue;
+        }
+
+        const actualTotalSpeedKmh = averageFiniteNumbers(
+          blockPoints.map((point) =>
+            metresPerSecondToKmh(
+              getDisplayTotalSpeedMps(
+                point,
+                historicalWinds,
+                assessorUsesCalculatedAirspeed,
+              ),
+            ),
+          ),
+        );
+
+        if (actualTotalSpeedKmh !== null && zeroWindSpeedTargetKmh > 0) {
+          samples.push({
+            actualValue: actualTotalSpeedKmh,
+            targetValue:
+              zeroWindSpeedTargetKmh -
+              delayedPerformanceDropKph(averageAltitudeM),
+          });
+        }
+      }
+
+      return samples;
+    };
+
+    const flightTransitionSamples = getFlightPhaseSamples(
+      flightTransitionPoints,
+    );
+    const energyManagementSamples = getFlightPhaseSamples(
+      postFlareEnergyPoints,
+    );
+    const targetAdherenceSamples = getTargetAdherenceSamples(
+      assessorTaskMode === "speed"
+        ? windowTrackPoints
+        : postFlareEnergyPoints,
+    );
+    const flightTransitionDurationSeconds =
+      Math.max(0, flightTransitionPoints.length - 1) *
+      GPS_SAMPLE_PERIOD_SECONDS;
+    const postFlareEnergyDurationSeconds =
+      Math.max(0, postFlareEnergyPoints.length - 1) *
+      GPS_SAMPLE_PERIOD_SECONDS;
+    const flightTransition =
+      assessorTaskMode === "speed" || flightTransitionStartIndex === null
+        ? null
+        : analyzeFlightTransition(
+            flightTransitionSamples,
+            flightTransitionDurationSeconds,
+          );
+    const energyManagement =
+      assessorTaskMode === "speed"
+        ? null
+        : analyzeEnergyManagement(
+            energyManagementSamples,
+            postFlareEnergyDurationSeconds,
+          );
+    const targetAdherence = analyzeTargetAdherence(
+      assessorTaskMode,
+      targetAdherenceSamples,
+    );
+    const trackAssessment = buildTrackAssessment({
+      task: assessorTaskMode,
+      timeSeconds: timeInWindowSeconds,
+      distanceM: assessorWindowDistanceM,
+      speedKmh: assessorAverageHorizontalSpeedKmh,
+      peakDiveAngleDeg: assessorPeakDiveAngleDeg,
+      peakVerticalSpeedKmh: peakDiveVerticalSpeedKmh,
+      peakTotalSpeedKmh: assessorPeakDiveTotalSpeedKmh,
+      entryGlideRatio: assessorEntryGlideRatio,
+      exitGlideRatio: assessorExitGlideRatio,
+      flareStartAltitudeM: top100mFlare?.startAltitudeM ?? null,
+      flareAltitudeGainM: top100mFlare?.altitudeGainM ?? null,
+      last800mHorizontalSpeedKmh:
+        assessorLast800mAverageHorizontalSpeedKmh,
+      last800mGlideRatio: assessorLast800mAverageGlideRatio,
+      lineEfficiencyPercent,
+      tailwindKts: assessorTailwindNumber,
+      usesCalculatedAirspeed: assessorUsesCalculatedAirspeed,
+      targetAdherence,
+      flightTransition,
+      energyManagement,
+    });
     const validationStartIndex = Math.min(
       Math.round(9 / GPS_SAMPLE_PERIOD_SECONDS),
       jumpTrackPoints.length - 1,
@@ -8610,6 +9900,170 @@ if (activePage === "lane") {
           </div>
         )}
       </section>
+
+      {trackAssessorAccess === "allowed" && (
+        <section className="card track-assessor-card">
+          <div className="track-assessor-heading">
+            <div>
+              <p className="track-assessor-eyebrow">Private preview</p>
+              <h2>Track Assessor</h2>
+            </div>
+            <span className="track-assessor-access-badge">Personal access</span>
+          </div>
+
+          <p className="subtitle">
+            Experimental post-flight feedback calibrated to your current pilot
+            and suit profile. Choose the task flown before reviewing the result.
+          </p>
+
+          <div className="track-assessor-controls">
+            <fieldset>
+              <legend>Task flown</legend>
+              <div className="track-assessor-task-buttons">
+                {(["speed", "time", "distance"] as TaskMode[]).map(
+                  (assessmentTask) => (
+                    <button
+                      type="button"
+                      className={
+                        assessorTaskMode === assessmentTask ? "active" : ""
+                      }
+                      key={assessmentTask}
+                      onClick={() => setAssessorTaskMode(assessmentTask)}
+                    >
+                      {assessmentTask[0].toUpperCase() + assessmentTask.slice(1)}
+                    </button>
+                  ),
+                )}
+              </div>
+            </fieldset>
+
+            {assessorTaskMode === "speed" &&
+              !assessorUsesCalculatedAirspeed && (
+              <label>
+                Along-track tailwind (kt)
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={assessorTailwindKts}
+                  placeholder="Optional"
+                  onChange={(event) =>
+                    setAssessorTailwindKts(event.target.value)
+                  }
+                />
+              </label>
+              )}
+          </div>
+
+          <div className="track-assessor-profile">
+            <span>Reference profile</span>
+            <strong>
+              179 cm · 79.4 kg body · 90.7 kg exit · CR+ wingtips
+            </strong>
+          </div>
+
+          <div className="track-assessor-profile">
+            <span>Assessment basis</span>
+            <strong>
+              {assessorUsesCalculatedAirspeed
+                ? "Zero-wind targets · calculated airspeed"
+                : "Zero-wind targets · provisional ground speed"}
+            </strong>
+          </div>
+
+          {!assessorUsesCalculatedAirspeed && (
+            <p className="subtitle track-assessor-wind-note">
+              Load the wind profile to replace the provisional ground-speed
+              evaluation with calculated airspeed.
+            </p>
+          )}
+
+          <div className="metric-section track-assessor-result">
+            <h3>{trackAssessment.headline}</h3>
+            <p>{trackAssessment.summary}</p>
+
+            <div className="track-assessor-feedback-grid">
+              <article>
+                <h4>What went well</h4>
+                {trackAssessment.strengths.length > 0 ? (
+                  <ul>
+                    {trackAssessment.strengths.map((strength) => (
+                      <li key={strength}>{strength}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>
+                    More labelled examples are needed before making a confident
+                    positive comparison for this phase.
+                  </p>
+                )}
+              </article>
+
+              <article>
+                <h4>Biggest opportunity</h4>
+                <p>{trackAssessment.improvement}</p>
+              </article>
+
+              {trackAssessment.targetAdherence !== null && (
+                <article className="track-assessor-energy-card">
+                  <div className="track-assessor-energy-heading">
+                    <h4>Target adherence</h4>
+                    <span
+                      className={`energy-rating energy-rating-${trackAssessment.targetAdherence.rating}`}
+                    >
+                      {trackAssessment.targetAdherence.label}
+                    </span>
+                  </div>
+                  <p>{trackAssessment.targetAdherence.summary}</p>
+                </article>
+              )}
+
+              {trackAssessment.flightTransition !== null && (
+                <article className="track-assessor-energy-card">
+                  <div className="track-assessor-energy-heading">
+                    <h4>Transition to sustained flight</h4>
+                    <span
+                      className={`energy-rating energy-rating-${trackAssessment.flightTransition.rating}`}
+                    >
+                      {trackAssessment.flightTransition.label}
+                    </span>
+                  </div>
+                  <p>{trackAssessment.flightTransition.summary}</p>
+                </article>
+              )}
+
+              {trackAssessment.energyManagement !== null && (
+                <article className="track-assessor-energy-card">
+                  <div className="track-assessor-energy-heading">
+                    <h4>Energy management</h4>
+                    <span
+                      className={`energy-rating energy-rating-${trackAssessment.energyManagement.rating}`}
+                    >
+                      {trackAssessment.energyManagement.label}
+                    </span>
+                  </div>
+                  <p>{trackAssessment.energyManagement.summary}</p>
+                </article>
+              )}
+            </div>
+
+            <details className="track-assessor-evidence">
+              <summary>Measurements behind this feedback</summary>
+              <ul>
+                {trackAssessment.evidence.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              <p>
+                Entry and exit GR use a two-second smoothed boundary sample.{" "}
+                {assessorUsesCalculatedAirspeed
+                  ? "The assessor uses calculated airspeed even when the graph is showing Raw values."
+                  : "Ground-relative results remain provisional until wind data is loaded."}
+              </p>
+            </details>
+          </div>
+        </section>
+      )}
 
       <div className="graph-view-container">
         <InteractiveTrackChart

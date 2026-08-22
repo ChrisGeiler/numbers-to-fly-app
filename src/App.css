@@ -1186,6 +1186,272 @@ button:disabled {
   align-items: start;
 }
 
+.track-assessor-card {
+  border-color: rgba(167, 139, 250, 0.52);
+  background:
+    linear-gradient(145deg, rgba(30, 27, 75, 0.88), rgba(15, 23, 42, 0.97));
+  box-shadow:
+    0 18px 45px rgba(0, 0, 0, 0.45),
+    0 0 34px rgba(124, 58, 237, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.track-assessor-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.track-assessor-heading h2 {
+  margin-bottom: 0;
+  text-align: left;
+  color: #c4b5fd;
+}
+
+.track-assessor-eyebrow {
+  margin: 0 0 4px;
+  color: #a78bfa;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.track-assessor-access-badge {
+  flex: 0 0 auto;
+  padding: 7px 11px;
+  border: 1px solid rgba(196, 181, 253, 0.48);
+  border-radius: 999px;
+  background: rgba(76, 29, 149, 0.34);
+  color: #ddd6fe;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.track-assessor-card > .subtitle {
+  max-width: none;
+  margin-left: 0;
+  text-align: left;
+  color: #c4b5fd;
+}
+
+.track-assessor-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 0.4fr);
+  gap: 18px;
+  align-items: end;
+}
+
+.track-assessor-controls fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.track-assessor-controls legend,
+.track-assessor-controls label {
+  margin: 0 0 8px;
+  color: #ede9fe;
+  font-weight: 900;
+  text-align: left;
+}
+
+.track-assessor-controls label input {
+  margin-bottom: 0;
+}
+
+.track-assessor-task-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.track-assessor-task-buttons button {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  border-color: rgba(167, 139, 250, 0.52);
+  background: rgba(15, 23, 42, 0.9);
+  color: #ddd6fe;
+  box-shadow: none;
+}
+
+.track-assessor-task-buttons button.active {
+  border-color: #c4b5fd;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(109, 40, 217, 0.3);
+}
+
+.track-assessor-profile {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.64);
+}
+
+.track-assessor-profile span {
+  color: #c4b5fd;
+}
+
+.track-assessor-profile strong {
+  color: #ffffff;
+  text-align: right;
+}
+
+.track-assessor-result {
+  padding-top: 18px;
+  border-top: 1px solid rgba(167, 139, 250, 0.28);
+}
+
+.track-assessor-result h3 {
+  color: #ddd6fe;
+  font-size: 1.25rem;
+}
+
+.track-assessor-result > p {
+  margin: 0 auto 16px;
+  max-width: 720px;
+  color: #cbd5e1;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.track-assessor-feedback-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.track-assessor-feedback-grid article {
+  padding: 16px;
+  border: 1px solid rgba(167, 139, 250, 0.24);
+  border-radius: 16px;
+  background: rgba(2, 6, 23, 0.48);
+}
+
+.track-assessor-feedback-grid .track-assessor-energy-card {
+  grid-column: 1 / -1;
+}
+
+.track-assessor-energy-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.track-assessor-energy-heading h4 {
+  margin-bottom: 0;
+}
+
+.energy-rating {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
+  color: #e2e8f0;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.energy-rating-good {
+  border-color: rgba(52, 211, 153, 0.52);
+  background: rgba(6, 78, 59, 0.42);
+  color: #a7f3d0;
+}
+
+.energy-rating-mixed {
+  border-color: rgba(251, 191, 36, 0.52);
+  background: rgba(120, 53, 15, 0.38);
+  color: #fde68a;
+}
+
+.energy-rating-poor {
+  border-color: rgba(248, 113, 113, 0.56);
+  background: rgba(127, 29, 29, 0.38);
+  color: #fecaca;
+}
+
+.energy-rating-insufficient {
+  background: rgba(51, 65, 85, 0.48);
+}
+
+.track-assessor-feedback-grid h4 {
+  margin: 0 0 8px;
+  color: #c4b5fd;
+}
+
+.track-assessor-feedback-grid p,
+.track-assessor-feedback-grid ul,
+.track-assessor-evidence {
+  color: #e2e8f0;
+  line-height: 1.55;
+}
+
+.track-assessor-feedback-grid ul,
+.track-assessor-evidence ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.track-assessor-feedback-grid li + li,
+.track-assessor-evidence li + li {
+  margin-top: 7px;
+}
+
+.track-assessor-evidence {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(167, 139, 250, 0.24);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.38);
+}
+
+.track-assessor-evidence summary {
+  color: #ddd6fe;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.track-assessor-evidence ul,
+.track-assessor-evidence p {
+  margin-bottom: 0;
+}
+
+@media (max-width: 700px) {
+  .track-assessor-heading,
+  .track-assessor-profile {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .track-assessor-profile strong {
+    text-align: left;
+  }
+
+  .track-assessor-controls,
+  .track-assessor-feedback-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .track-assessor-energy-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .track-assessor-task-buttons {
+    grid-template-columns: 1fr;
+  }
+}
+
 .comparison-metric-columns .metric-section {
   margin-top: 20px;
 }
@@ -2840,6 +3106,7 @@ button {
       "upload save"
       "logbook save"
       "logbook summary"
+      "assessor assessor"
       "graph graph"
       "compare compare"
       "lane lane"
@@ -2879,6 +3146,10 @@ button {
 
   .gps-analyzer-desktop > .track-summary-card {
     grid-area: summary;
+  }
+
+  .gps-analyzer-desktop > .track-assessor-card {
+    grid-area: assessor;
   }
 
   .gps-analyzer-desktop > .graph-placeholder-card,
