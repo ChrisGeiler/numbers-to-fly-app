@@ -40,7 +40,7 @@ import {
   getTop100mFlareResult,
   getTrackDistanceM,
   getValidatedJumpTrack,
-  getValidationStartPoint,
+  getValidationStartIndex,
   getWindowTrackPoints,
   GPS_SAMPLE_PERIOD_SECONDS,
   metresPerSecondToKmh,
@@ -9157,7 +9157,14 @@ if (activePage === "lane") {
         ? competitionRunPoints
         : fullJumpPoints;
 
-    const pointA = getValidationStartPoint(jumpTrackPoints);
+    const validationStartIndex = getValidationStartIndex(
+      jumpTrackPoints,
+      scoringWindowResult.startIndex,
+    );
+    const pointA =
+      validationStartIndex === null
+        ? null
+        : jumpTrackPoints[validationStartIndex] ?? null;
     const pointBLat = optionalNumberFromInput(competitionReferenceLat);
     const pointBLon = optionalNumberFromInput(competitionReferenceLon);
     const pointB =
@@ -9568,11 +9575,8 @@ if (activePage === "lane") {
       flightTransition,
       energyManagement,
     });
-    const validationStartIndex = Math.min(
-      Math.round(9 / GPS_SAMPLE_PERIOD_SECONDS),
-      jumpTrackPoints.length - 1,
-    );
     const laneEvaluationPoints =
+      validationStartIndex !== null &&
       scoringWindowResult.endIndex >= validationStartIndex
         ? jumpTrackPoints.slice(
             validationStartIndex,
@@ -10081,8 +10085,9 @@ if (activePage === "lane") {
         <h2>Competition Lane</h2>
 
         <p className="subtitle">
-          Point A is estimated from the imported track at 9 seconds after detected exit.
-          Enter or choose the competition reference point to draw the flown lane.
+          Point A is detected 9 seconds after the scoring run reaches 10 m/s
+          vertical speed. Enter or choose the competition reference point to
+          draw the flown lane.
         </p>
 
         <div className="competition-lane-point-readout">
@@ -10094,7 +10099,7 @@ if (activePage === "lane") {
           </strong>
         </div>
 
-        {savedReferenceGroupMatches.length > 0 && (
+        {pointA !== null && savedReferenceGroupMatches.length > 0 && (
           <div className="analyzer-reference-suggestions">
             <h3>Saved competition location detected</h3>
             <p>
@@ -10217,7 +10222,7 @@ if (activePage === "lane") {
             userMapLocation={pointA}
             dropPoint={pointA}
             runHeadingDeg={laneHeadingDeg}
-            trackPoints={fullJumpPoints}
+            trackPoints={laneEvaluationPoints}
             savedReferencePoints={selectedCompetitionReferencePointsForMap}
             onSavedReferencePointPick={(point) => {
               if (selectedCompetitionReferenceGroup) {
@@ -10259,9 +10264,10 @@ if (activePage === "lane") {
                   lane: {formatNumber(lanePenaltyEstimate.maxOutsideLaneM, 0)} m.
                 </p>
                 <small>
-                  Calculated from the detected validation start through the
-                  competition-window exit. This is an aid for review; official
-                  penalties remain subject to judge verification.
+                  Calculated from the detected 10 m/s dive validation start
+                  through the competition-window exit. Setup flight before the
+                  run is excluded. This is an aid for review; official penalties
+                  remain subject to judge verification.
                 </small>
               </div>
             )}

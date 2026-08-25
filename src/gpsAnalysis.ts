@@ -29,6 +29,8 @@ const COMPETITION_DIVE_ANGLE_TOLERANCE_DEG = 1.5;
 const COMPETITION_DIVE_MIN_RISE_DEG = 10;
 const COMPETITION_DIVE_MIN_SAMPLES = 4;
 const COMPETITION_DIVE_MAX_LOOKBACK_SECONDS = 5;
+const VALIDATION_VERTICAL_SPEED_TRIGGER_MPS = 10;
+const VALIDATION_DIVE_CONFIRMATION_SECONDS = 2;
 
 function parseNumber(value: string | undefined) {
   const number = Number(value);
@@ -341,10 +343,68 @@ export function getScoringWindowResult(
   };
 }
 
-export function getValidationStartPoint(points: GpsTrackPoint[]) {
+export function getValidationStartIndex(
+  points: GpsTrackPoint[],
+  scoringWindowStartIndex: number,
+) {
+  if (points.length === 0) {
+    return null;
+  }
+
+  const boundedScoringWindowStartIndex = Math.min(
+    Math.max(scoringWindowStartIndex, 0),
+    points.length - 1,
+  );
+  const confirmationSamples = Math.round(
+    VALIDATION_DIVE_CONFIRMATION_SECONDS / GPS_SAMPLE_PERIOD_SECONDS,
+  );
+  const diveStartCandidates: number[] = [];
+
+  // Anchor the search to the scoring-window entry, then use the final sustained
+  // 10 m/s crossing before it. This excludes an earlier aircraft exit and any
+  // high-altitude setup flight when the competitor starts a later scoring dive.
+
+  if (
+    points[0].verticalSpeedMps >= VALIDATION_VERTICAL_SPEED_TRIGGER_MPS
+  ) {
+    diveStartCandidates.push(0);
+  }
+
+  for (let index = 1; index <= boundedScoringWindowStartIndex; index += 1) {
+    const crossedVerticalSpeedTrigger =
+      points[index - 1].verticalSpeedMps <
+        VALIDATION_VERTICAL_SPEED_TRIGGER_MPS &&
+      points[index].verticalSpeedMps >= VALIDATION_VERTICAL_SPEED_TRIGGER_MPS;
+
+    if (!crossedVerticalSpeedTrigger) {
+      continue;
+    }
+
+    const confirmationEndIndex = Math.min(
+      points.length - 1,
+      index + confirmationSamples - 1,
+    );
+    const confirmationPoints = points.slice(index, confirmationEndIndex + 1);
+    const descendingPointRatio =
+      confirmationPoints.filter(
+        (point) =>
+          point.verticalSpeedMps >= VALIDATION_VERTICAL_SPEED_TRIGGER_MPS,
+      ).length / confirmationPoints.length;
+
+    if (descendingPointRatio >= 0.8) {
+      diveStartCandidates.push(index);
+    }
+  }
+
+  const diveStartIndex = diveStartCandidates.at(-1);
+
+  if (diveStartIndex === undefined) {
+    return null;
+  }
+
   const validationOffsetSamples = Math.round(9 / GPS_SAMPLE_PERIOD_SECONDS);
 
-  return points[Math.min(validationOffsetSamples, points.length - 1)] ?? null;
+  return Math.min(diveStartIndex + validationOffsetSamples, points.length - 1);
 }
 
 export function getWindowTrackPoints(
