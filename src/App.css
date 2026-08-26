@@ -1528,13 +1528,23 @@ button:disabled {
 }
 
 .interactive-chart-wrap {
+  position: relative;
   width: 100%;
   min-width: 0;
   height: 460px;
+  min-height: 460px;
   overflow: hidden;
   touch-action: none;
   cursor: crosshair;
   user-select: none;
+}
+
+.interactive-chart-wrap > .recharts-responsive-container {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 1px;
+  min-height: 1px;
 }
 
 .interactive-chart-wrap .recharts-wrapper {
@@ -1956,6 +1966,18 @@ button:disabled {
 
   .compare-track-panel-heading {
     padding: 0 4px;
+  }
+
+  .compare-track-flight-chart,
+  .compare-track-flight-chart > .card,
+  .compare-track-flight-chart .interactive-chart-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .compare-track-flight-chart .interactive-chart-wrap {
+    height: 420px;
+    min-height: 420px;
   }
 
   .compare-chart-instructions {
