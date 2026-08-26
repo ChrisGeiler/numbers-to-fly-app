@@ -1686,6 +1686,80 @@ button:disabled {
   margin-top: 16px;
 }
 
+.compare-track-panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.compare-track-panel {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(34, 211, 238, 0.5);
+  border-top-width: 4px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.84));
+  box-shadow: 0 12px 30px rgba(2, 6, 23, 0.28);
+  overflow: hidden;
+}
+
+.compare-track-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.compare-track-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.compare-track-title .compare-color-swatch {
+  margin-top: 5px;
+}
+
+.compare-track-title > div {
+  min-width: 0;
+}
+
+.compare-track-title h3 {
+  margin: 2px 0 0;
+  color: #ffffff;
+  font-size: 1rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.compare-track-task {
+  display: block;
+  color: #67e8f9;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.compare-track-panel-heading .compare-distance-readout {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.75);
+}
+
+.compare-chart-instructions {
+  margin: 10px 0 0;
+  color: #a5f3fc;
+  font-size: 0.75rem;
+  text-align: left;
+}
+
 .compare-chart-legend {
   display: flex;
   flex-wrap: wrap;
@@ -1715,7 +1789,7 @@ button:disabled {
 
 .compare-chart-wrap {
   width: 100%;
-  height: 460px;
+  height: 380px;
   min-width: 0;
   overflow: hidden;
   cursor: crosshair;
@@ -1724,6 +1798,58 @@ button:disabled {
 
 .compare-chart-wrap .recharts-wrapper {
   cursor: crosshair;
+}
+
+.compare-track-metrics {
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(34, 211, 238, 0.3);
+}
+
+.compare-track-metrics h4 {
+  margin: 0 0 10px;
+  color: #dffcff;
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+}
+
+.compare-track-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.compare-track-metric-grid > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.62);
+}
+
+.compare-track-metric-grid span,
+.compare-track-metric-grid strong {
+  display: block;
+}
+
+.compare-track-metric-grid span {
+  margin-bottom: 3px;
+  color: #a5f3fc;
+  font-size: 0.7rem;
+  line-height: 1.25;
+}
+
+.compare-track-metric-grid strong {
+  color: #ffffff;
+  font-size: 0.82rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .compare-track-panels {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1760,6 +1886,31 @@ button:disabled {
 
   .compare-track-options {
     grid-template-columns: 1fr;
+  }
+
+  .compare-track-panel {
+    padding: 12px 8px 14px;
+  }
+
+  .compare-track-panel-heading {
+    padding: 0 4px;
+  }
+
+  .compare-chart-instructions {
+    padding: 0 4px;
+  }
+
+  .compare-chart-wrap {
+    height: 350px;
+  }
+
+  .compare-track-metrics {
+    margin-right: 4px;
+    margin-left: 4px;
+  }
+
+  .compare-track-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

@@ -4920,6 +4920,23 @@ function TrackComparisonChart({
               return null;
             }
 
+            const windowTrackPoints = jumpTrackPoints.slice(
+              scoringWindowResult.startIndex,
+              scoringWindowResult.endIndex + 1
+            );
+            const preWindowDivePoints = jumpTrackPoints.slice(
+              0,
+              scoringWindowResult.startIndex + 1
+            );
+            const isSpeedRun =
+              scoringWindowResult.timeSeconds > 0 &&
+              scoringWindowResult.timeSeconds <= 40;
+            const peakSpeedPoints = isSpeedRun
+              ? windowTrackPoints
+              : preWindowDivePoints;
+            const windowEntryPoint = windowTrackPoints[0] ?? null;
+            const windowExitPoint = windowTrackPoints.at(-1) ?? null;
+
             const distanceFromEntryByIndex = jumpTrackPoints.map(() => 0);
 
             for (
@@ -4972,6 +4989,48 @@ function TrackComparisonChart({
                   ? metresPerSecondToKmh(
                       scoringWindowResult.distanceM /
                         scoringWindowResult.timeSeconds
+                      )
+                  : null,
+              windowEntryGlideRatio:
+                windowEntryPoint === null
+                  ? null
+                  : getDisplayGlideRatio(windowEntryPoint, [], false),
+              windowExitGlideRatio:
+                windowExitPoint === null
+                  ? null
+                  : getDisplayGlideRatio(windowExitPoint, [], false),
+              peakDiveAngleDeg:
+                preWindowDivePoints.length > 0
+                  ? Math.max(
+                      ...preWindowDivePoints.map(getPointDiveAngleDeg)
+                    )
+                  : null,
+              peakHorizontalSpeedKmh:
+                peakSpeedPoints.length > 0
+                  ? metresPerSecondToKmh(
+                      Math.max(
+                        ...peakSpeedPoints.map(
+                          (point) => point.horizontalSpeedMps
+                        )
+                      )
+                    )
+                  : null,
+              peakVerticalSpeedKmh:
+                preWindowDivePoints.length > 0
+                  ? metresPerSecondToKmh(
+                      Math.max(
+                        ...preWindowDivePoints.map(
+                          (point) => point.verticalSpeedMps
+                        )
+                      )
+                    )
+                  : null,
+              peakTotalSpeedKmh:
+                peakSpeedPoints.length > 0
+                  ? metresPerSecondToKmh(
+                      Math.max(
+                        ...peakSpeedPoints.map((point) => point.totalSpeedMps)
+                      )
                     )
                   : null,
               points: jumpTrackPoints
@@ -4990,7 +5049,7 @@ function TrackComparisonChart({
                   };
                 }),
             };
-          } catch (_error) {
+          } catch {
             return null;
           }
         })
@@ -5050,12 +5109,12 @@ function TrackComparisonChart({
   const xAxisUnit = useTimeAxis ? "s" : "m";
   const chartSubtitle =
     comparisonTask === "time"
-      ? "Time tracks are compared by seconds spent falling through the window."
+      ? "Each time track has its own interactive graph, aligned by seconds from window entry."
       : comparisonTask === "speed"
-        ? "Speed tracks are compared by distance covered as the dots move by elapsed time."
+        ? "Each speed track has its own interactive graph, aligned by distance from window entry."
         : comparisonTask === "distance"
-          ? "Distance tracks are compared by metres flown through the window."
-          : "Mixed tasks are shown by distance from window entry.";
+          ? "Each distance track has its own interactive graph, aligned by distance from window entry."
+          : "Each selected track has its own graph, aligned by distance from window entry.";
 
   type CompareChartMouseState = {
     activeLabel?: string | number;
@@ -5283,32 +5342,6 @@ function TrackComparisonChart({
     };
   }
 
-  function getTrackTraceAtTime(
-    track: (typeof preparedTracks)[number],
-    timeSeconds: number
-  ) {
-    const currentPoint = getTrackPositionAtTime(track, timeSeconds);
-
-    if (!currentPoint) {
-      return [];
-    }
-
-    if (timeSeconds <= track.points[0].relativeTimeSeconds) {
-      return [currentPoint];
-    }
-
-    const completedPoints = track.points.filter(
-      (point) => point.relativeTimeSeconds < timeSeconds
-    );
-
-    return [...completedPoints, currentPoint];
-  }
-
-  const animatedTrackTraces = preparedTracks.map((track) => ({
-    track,
-    points: getTrackTraceAtTime(track, playheadSeconds),
-  }));
-
   const animatedDots = preparedTracks
     .map((track) => {
       const point = getTrackPositionAtTime(track, playheadSeconds);
@@ -5387,150 +5420,229 @@ function TrackComparisonChart({
           Selected tracks need a detected scoring window before they can be compared.
         </p>
       ) : (
-        <>
-          <div className="compare-chart-legend">
-            {preparedTracks.map((track) => (
-              <span key={track.id}>
-                <span
-                  className="compare-color-swatch"
-                  style={{ background: track.color }}
-                />
-                {track.label}
-                <strong className="compare-distance-readout">
-                  {getCompareReadout(
-                    track,
-                    animatedDots.find((dot) => dot.track.id === track.id)
-                  )}
-                </strong>
-              </span>
-            ))}
-          </div>
+        <div className="compare-track-panels">
+          {preparedTracks.map((track) => {
+            const animatedDot = animatedDots.find(
+              (dot) => dot.track.id === track.id
+            );
 
-          <div className="compare-chart-wrap">
-            <ResponsiveContainer width="100%" height={460} minWidth={0}>
-              <LineChart
-                margin={{ top: 18, right: 26, bottom: 18, left: 10 }}
-                onMouseDown={handleCompareMouseDown}
-                onMouseMove={handleCompareMouseMove}
-                onMouseUp={finishCompareSelection}
-                onMouseLeave={finishCompareSelection}
+            return (
+              <article
+                key={track.id}
+                className="compare-track-panel"
+                style={{ borderColor: track.color }}
               >
-                <CartesianGrid
-                  stroke="rgba(148, 163, 184, 0.22)"
-                  strokeDasharray="4 4"
-                />
-                <XAxis
-                  dataKey={xAxisKey}
-                  type="number"
-                  domain={activeXAxisDomain}
-                  allowDataOverflow
-                  tickFormatter={(value) =>
-                    String(Number(value).toFixed(useTimeAxis ? 0 : 0)) +
-                    " " +
-                    xAxisUnit
-                  }
-                  stroke="#d1d5db"
-                />
-                <YAxis
-                  dataKey="altitudeM"
-                  type="number"
-                  domain={[windowBottomM, windowTopM]}
-                  ticks={altitudeTicks}
-                  tickFormatter={(value) => String(Number(value).toFixed(0)) + " m"}
-                  stroke="#d1d5db"
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "rgba(2, 6, 23, 0.9)",
-                    border: "1px solid #22d3ee",
-                    borderRadius: "8px",
-                    color: "#ffffff",
-                  }}
-                  labelFormatter={(value) =>
-                    (useTimeAxis ? "Time from entry: " : "Distance from entry: ") +
-                    Number(value).toFixed(useTimeAxis ? 1 : 0) +
-                    " " +
-                    xAxisUnit
-                  }
-                  formatter={(value, name) => [
-                    String(Number(value).toFixed(0)) + " m altitude",
-                    preparedTracks.find((track) => track.dataKey === name)?.label ??
-                      String(name),
-                  ]}
-                />
-                {selectionStartX !== null && selectionEndX !== null && (
-                  <ReferenceArea
-                    x1={Math.min(selectionStartX, selectionEndX)}
-                    x2={Math.max(selectionStartX, selectionEndX)}
-                    stroke="#22d3ee"
-                    strokeOpacity={0.85}
-                    fill="#22d3ee"
-                    fillOpacity={0.16}
-                  />
-                )}
-                <ReferenceLine
-                  y={windowTopM}
-                  stroke="#22c55e"
-                  strokeDasharray="6 4"
-                  label={{
-                    value: "Window start",
-                    fill: "#22c55e",
-                    position: "insideTopRight",
-                  }}
-                />
-                <ReferenceLine
-                  y={windowBottomM}
-                  stroke="#ef4444"
-                  strokeDasharray="6 4"
-                  label={{
-                    value: "Window end",
-                    fill: "#ef4444",
-                    position: "insideBottomRight",
-                  }}
-                />
-                {animatedTrackTraces.map(({ track, points }) => (
-                  <Line
-                    key={track.id}
-                    type="monotone"
-                    data={points}
-                    dataKey="altitudeM"
-                    name={track.label}
-                    stroke={track.color}
-                    strokeWidth={2.8}
-                    dot={false}
-                    connectNulls={false}
-                    isAnimationActive={false}
-                    activeDot={{ r: 5 }}
-                  />
-                ))}
-                {animatedDots.map((dot) => (
-                  <ReferenceDot
-                    key={dot.track.id}
-                    x={
-                      useTimeAxis
-                        ? dot.relativeTimeSeconds
-                        : dot.distanceFromEntryM
-                    }
-                    y={dot.altitudeM}
-                    r={7}
-                    fill={dot.track.color}
-                    stroke={dot.track.color === "#ffffff" ? "#020617" : "#ffffff"}
-                    strokeWidth={2}
-                    ifOverflow="extendDomain"
-                    onMouseDown={() => {
-                      setIsPlaying(false);
-                      setIsDraggingDot(true);
-                    }}
-                    onTouchStart={() => {
-                      setIsPlaying(false);
-                      setIsDraggingDot(true);
-                    }}
-                  />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </>
+                <div className="compare-track-panel-heading">
+                  <div className="compare-track-title">
+                    <span
+                      className="compare-color-swatch"
+                      style={{ background: track.color }}
+                    />
+                    <div>
+                      <span className="compare-track-task">
+                        {formatLogbookTrackType(track.taskType)} track
+                      </span>
+                      <h3>{track.label}</h3>
+                    </div>
+                  </div>
+                  <strong className="compare-distance-readout">
+                    {getCompareReadout(track, animatedDot)}
+                  </strong>
+                </div>
+
+                <p className="compare-chart-instructions">
+                  Hover or tap for values. Drag across the graph to zoom.
+                </p>
+
+                <div
+                  className="compare-chart-wrap"
+                  aria-label={`Interactive graph for ${track.label}`}
+                >
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <LineChart
+                      margin={{ top: 18, right: 28, bottom: 34, left: 12 }}
+                      onMouseDown={handleCompareMouseDown}
+                      onMouseMove={handleCompareMouseMove}
+                      onMouseUp={finishCompareSelection}
+                      onMouseLeave={finishCompareSelection}
+                    >
+                      <CartesianGrid
+                        stroke="rgba(148, 163, 184, 0.22)"
+                        strokeDasharray="4 4"
+                      />
+                      <XAxis
+                        dataKey={xAxisKey}
+                        type="number"
+                        domain={activeXAxisDomain}
+                        allowDataOverflow
+                        tickFormatter={(value) =>
+                          String(Number(value).toFixed(0)) + " " + xAxisUnit
+                        }
+                        label={{
+                          value: useTimeAxis
+                            ? "Time from window entry"
+                            : "Distance from window entry",
+                          fill: "#dffcff",
+                          position: "insideBottom",
+                          offset: -20,
+                        }}
+                        stroke="#d1d5db"
+                      />
+                      <YAxis
+                        dataKey="altitudeM"
+                        type="number"
+                        domain={[windowBottomM, windowTopM]}
+                        ticks={altitudeTicks}
+                        tickFormatter={(value) =>
+                          String(Number(value).toFixed(0)) + " m"
+                        }
+                        label={{
+                          value: "Altitude AGL",
+                          angle: -90,
+                          fill: "#dffcff",
+                          position: "insideLeft",
+                        }}
+                        stroke="#d1d5db"
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: "rgba(2, 6, 23, 0.94)",
+                          border: `1px solid ${track.color}`,
+                          borderRadius: "8px",
+                          color: "#ffffff",
+                        }}
+                        labelFormatter={(value) =>
+                          (useTimeAxis
+                            ? "Time from entry: "
+                            : "Distance from entry: ") +
+                          Number(value).toFixed(useTimeAxis ? 1 : 0) +
+                          " " +
+                          xAxisUnit
+                        }
+                        formatter={(value) => [
+                          String(Number(value).toFixed(0)) + " m",
+                          "Altitude AGL",
+                        ]}
+                      />
+                      {selectionStartX !== null && selectionEndX !== null && (
+                        <ReferenceArea
+                          x1={Math.min(selectionStartX, selectionEndX)}
+                          x2={Math.max(selectionStartX, selectionEndX)}
+                          stroke="#22d3ee"
+                          strokeOpacity={0.85}
+                          fill="#22d3ee"
+                          fillOpacity={0.16}
+                        />
+                      )}
+                      <ReferenceLine
+                        y={windowTopM}
+                        stroke="#22c55e"
+                        strokeDasharray="6 4"
+                        label={{
+                          value: "Window start",
+                          fill: "#22c55e",
+                          position: "insideTopRight",
+                        }}
+                      />
+                      <ReferenceLine
+                        y={windowBottomM}
+                        stroke="#ef4444"
+                        strokeDasharray="6 4"
+                        label={{
+                          value: "Window end",
+                          fill: "#ef4444",
+                          position: "insideBottomRight",
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        data={track.points}
+                        dataKey="altitudeM"
+                        name={track.label}
+                        stroke={track.color}
+                        strokeWidth={3}
+                        dot={false}
+                        connectNulls={false}
+                        isAnimationActive={false}
+                        activeDot={{ r: 5 }}
+                      />
+                      {animatedDot && (
+                        <ReferenceDot
+                          x={
+                            useTimeAxis
+                              ? animatedDot.relativeTimeSeconds
+                              : animatedDot.distanceFromEntryM
+                          }
+                          y={animatedDot.altitudeM}
+                          r={7}
+                          fill={track.color}
+                          stroke={
+                            track.color === "#ffffff" ? "#020617" : "#ffffff"
+                          }
+                          strokeWidth={2}
+                          ifOverflow="extendDomain"
+                          onMouseDown={() => {
+                            setIsPlaying(false);
+                            setIsDraggingDot(true);
+                          }}
+                          onTouchStart={() => {
+                            setIsPlaying(false);
+                            setIsDraggingDot(true);
+                          }}
+                        />
+                      )}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div
+                  className="compare-track-metrics"
+                  aria-label={`Auto-measured metrics for ${track.label}`}
+                >
+                  <h4>Auto-measured metrics</h4>
+                  <div className="compare-track-metric-grid">
+                    <div>
+                      <span>Time</span>
+                      <strong>{formatNumber(track.windowDurationSeconds, 3)} sec</strong>
+                    </div>
+                    <div>
+                      <span>Distance</span>
+                      <strong>{formatNumber(track.windowDistanceM, 2)} m</strong>
+                    </div>
+                    <div>
+                      <span>Average speed</span>
+                      <strong>{formatNumber(track.windowSpeedKmh, 3)} km/h</strong>
+                    </div>
+                    <div>
+                      <span>Entry glide ratio</span>
+                      <strong>{formatNumber(track.windowEntryGlideRatio, 2)}</strong>
+                    </div>
+                    <div>
+                      <span>Exit glide ratio</span>
+                      <strong>{formatNumber(track.windowExitGlideRatio, 2)}</strong>
+                    </div>
+                    <div>
+                      <span>Peak dive angle</span>
+                      <strong>{formatNumber(track.peakDiveAngleDeg, 1)} deg</strong>
+                    </div>
+                    <div>
+                      <span>Peak horizontal speed</span>
+                      <strong>{formatNumber(track.peakHorizontalSpeedKmh, 1)} km/h</strong>
+                    </div>
+                    <div>
+                      <span>Peak vertical speed</span>
+                      <strong>{formatNumber(track.peakVerticalSpeedKmh, 1)} km/h</strong>
+                    </div>
+                    <div>
+                      <span>Peak total speed</span>
+                      <strong>{formatNumber(track.peakTotalSpeedKmh, 1)} km/h</strong>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
       )}
     </section>
   );
