@@ -1686,6 +1686,39 @@ button:disabled {
   margin-top: 16px;
 }
 
+.compare-score-mode-switch {
+  justify-self: start;
+  margin: 0;
+}
+
+.compare-wind-status {
+  min-height: 1.2em;
+  margin: 2px 0 0;
+  color: #a5f3fc;
+  font-size: 0.76rem;
+}
+
+.compare-chart-wrap.compare-overview-chart-wrap {
+  height: 460px;
+  margin-bottom: 20px;
+}
+
+.compare-individual-heading {
+  margin: 8px 0 14px;
+  text-align: left;
+}
+
+.compare-individual-heading h3 {
+  margin: 0;
+  color: #ffffff;
+}
+
+.compare-individual-heading p {
+  margin: 4px 0 0;
+  color: #a5f3fc;
+  font-size: 0.82rem;
+}
+
 .compare-track-panels {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1758,6 +1791,30 @@ button:disabled {
   color: #a5f3fc;
   font-size: 0.75rem;
   text-align: left;
+}
+
+.compare-track-flight-chart {
+  min-width: 0;
+  margin-top: 12px;
+}
+
+.compare-track-flight-chart > .card {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.compare-track-flight-chart .interactive-chart-heading {
+  padding: 0 4px;
+}
+
+.compare-track-flight-chart .interactive-chart-heading h2 {
+  font-size: 1rem;
 }
 
 .compare-chart-legend {
@@ -1871,6 +1928,11 @@ button:disabled {
     grid-template-columns: 1fr 1fr;
   }
 
+  .compare-score-mode-switch {
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
+
   .compare-control-row > span {
     display: none;
   }
@@ -1902,6 +1964,10 @@ button:disabled {
 
   .compare-chart-wrap {
     height: 350px;
+  }
+
+  .compare-chart-wrap.compare-overview-chart-wrap {
+    height: 420px;
   }
 
   .compare-track-metrics {

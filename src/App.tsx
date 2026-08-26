@@ -4048,6 +4048,7 @@ function InteractiveTrackChart({
   onScoreModeChange,
   showCompetitionContext = true,
   showScoreModeControl = showCompetitionContext,
+  showViewControls = showCompetitionContext,
 }: {
   points: GpsTrackPoint[];
   windowOffsetM: number;
@@ -4058,6 +4059,7 @@ function InteractiveTrackChart({
   onScoreModeChange: (mode: "raw" | "corrected") => void;
   showCompetitionContext?: boolean;
   showScoreModeControl?: boolean;
+  showViewControls?: boolean;
 }) {
 const windAltitudes = winds.map((wind) => wind.altitudeM);
 
@@ -4076,15 +4078,6 @@ const windSpeedsByAltitude = Object.fromEntries(
 );
 
 const chartData = points.map((point, index) => {
-  const diveAngleDeg =
-    point.horizontalSpeedMps > 0
-      ? Math.atan2(
-          point.verticalSpeedMps,
-          point.horizontalSpeedMps
-        ) *
-        (180 / Math.PI)
-      : 0;
-
   const windDirectionFromDeg =
     winds.length > 0
       ? interpolateDirection(
@@ -4136,6 +4129,12 @@ const displayGlideRatio = getDisplayGlideRatio(
   winds,
   useCorrectedGraphValues
 );
+
+const diveAngleDeg =
+  displayHorizontalSpeedMps > 0
+    ? Math.atan2(point.verticalSpeedMps, displayHorizontalSpeedMps) *
+      (180 / Math.PI)
+    : 0;
 
   return {
     sample: index,
@@ -4489,14 +4488,14 @@ const displayGlideRatio = getDisplayGlideRatio(
           </p>
         </div>
 
-        {(showCompetitionContext || showScoreModeControl) && (
+        {(showViewControls || showScoreModeControl) && (
           <div
             className={
               "chart-control-row" +
               (showCompetitionContext ? "" : " chart-control-row-score-only")
             }
           >
-            {showCompetitionContext && (
+            {showViewControls && (
               <button
                 type="button"
                 className={
@@ -4533,7 +4532,7 @@ const displayGlideRatio = getDisplayGlideRatio(
               </label>
             )}
 
-            {showCompetitionContext && (
+            {showViewControls && (
               <button
                 type="button"
                 className={
@@ -4637,6 +4636,7 @@ const displayGlideRatio = getDisplayGlideRatio(
                   horizontalSpeedKmh: "Horizontal Speed",
                   verticalSpeedKmh: "Vertical Speed",
                   totalSpeedKmh: "Total Speed",
+                  calculatedAirspeedKmh: "Calculated Airspeed",
                   glideRatio: "Glide Ratio",
                   diveAngleDeg: "Dive Angle",
                 };
@@ -4646,6 +4646,7 @@ const displayGlideRatio = getDisplayGlideRatio(
                   horizontalSpeedKmh: " km/h",
                   verticalSpeedKmh: " km/h",
                   totalSpeedKmh: " km/h",
+                  calculatedAirspeedKmh: " km/h",
                   glideRatio: "",
                   diveAngleDeg: " deg",
                 };
@@ -4887,8 +4888,17 @@ function TrackComparisonChart({
   const [selectionStartX, setSelectionStartX] = useState<number | null>(null);
   const [selectionEndX, setSelectionEndX] = useState<number | null>(null);
   const [isDraggingDot, setIsDraggingDot] = useState(false);
+  const [compareScoreMode, setCompareScoreMode] = useState<"raw" | "corrected">(
+    "raw"
+  );
+  const [windProfilesByTrackId, setWindProfilesByTrackId] = useState<
+    Record<string, WindLayer[]>
+  >({});
+  const [windUnavailableTrackIds, setWindUnavailableTrackIds] = useState<
+    string[]
+  >([]);
 
-  const preparedTracks = useMemo(
+  const baseTracks = useMemo(
     () =>
       tracks
         .slice(0, 6)
@@ -4920,51 +4930,6 @@ function TrackComparisonChart({
               return null;
             }
 
-            const windowTrackPoints = jumpTrackPoints.slice(
-              scoringWindowResult.startIndex,
-              scoringWindowResult.endIndex + 1
-            );
-            const preWindowDivePoints = jumpTrackPoints.slice(
-              0,
-              scoringWindowResult.startIndex + 1
-            );
-            const isSpeedRun =
-              scoringWindowResult.timeSeconds > 0 &&
-              scoringWindowResult.timeSeconds <= 40;
-            const peakSpeedPoints = isSpeedRun
-              ? windowTrackPoints
-              : preWindowDivePoints;
-            const windowEntryPoint = windowTrackPoints[0] ?? null;
-            const windowExitPoint = windowTrackPoints.at(-1) ?? null;
-
-            const distanceFromEntryByIndex = jumpTrackPoints.map(() => 0);
-
-            for (
-              let index = scoringWindowResult.startIndex + 1;
-              index < jumpTrackPoints.length;
-              index += 1
-            ) {
-              distanceFromEntryByIndex[index] =
-                distanceFromEntryByIndex[index - 1] +
-                getTrackDistanceM([
-                  jumpTrackPoints[index - 1],
-                  jumpTrackPoints[index],
-                ]);
-            }
-
-            for (
-              let index = scoringWindowResult.startIndex - 1;
-              index >= 0;
-              index -= 1
-            ) {
-              distanceFromEntryByIndex[index] =
-                distanceFromEntryByIndex[index + 1] -
-                getTrackDistanceM([
-                  jumpTrackPoints[index],
-                  jumpTrackPoints[index + 1],
-                ]);
-            }
-
             const firstIndex = Math.max(
               0,
               scoringWindowResult.startIndex -
@@ -4982,72 +4947,12 @@ function TrackComparisonChart({
               color: compareTrackColors[trackIndex],
               dataKey: "track" + trackIndex,
               taskType: track.taskType,
-              windowDurationSeconds: scoringWindowResult.timeSeconds,
-              windowDistanceM: scoringWindowResult.distanceM,
-              windowSpeedKmh:
-                scoringWindowResult.timeSeconds > 0
-                  ? metresPerSecondToKmh(
-                      scoringWindowResult.distanceM /
-                        scoringWindowResult.timeSeconds
-                      )
-                  : null,
-              windowEntryGlideRatio:
-                windowEntryPoint === null
-                  ? null
-                  : getDisplayGlideRatio(windowEntryPoint, [], false),
-              windowExitGlideRatio:
-                windowExitPoint === null
-                  ? null
-                  : getDisplayGlideRatio(windowExitPoint, [], false),
-              peakDiveAngleDeg:
-                preWindowDivePoints.length > 0
-                  ? Math.max(
-                      ...preWindowDivePoints.map(getPointDiveAngleDeg)
-                    )
-                  : null,
-              peakHorizontalSpeedKmh:
-                peakSpeedPoints.length > 0
-                  ? metresPerSecondToKmh(
-                      Math.max(
-                        ...peakSpeedPoints.map(
-                          (point) => point.horizontalSpeedMps
-                        )
-                      )
-                    )
-                  : null,
-              peakVerticalSpeedKmh:
-                preWindowDivePoints.length > 0
-                  ? metresPerSecondToKmh(
-                      Math.max(
-                        ...preWindowDivePoints.map(
-                          (point) => point.verticalSpeedMps
-                        )
-                      )
-                    )
-                  : null,
-              peakTotalSpeedKmh:
-                peakSpeedPoints.length > 0
-                  ? metresPerSecondToKmh(
-                      Math.max(
-                        ...peakSpeedPoints.map((point) => point.totalSpeedMps)
-                      )
-                    )
-                  : null,
-              points: jumpTrackPoints
-                .slice(firstIndex, lastIndex + 1)
-                .map((point, pointOffset) => {
-                  const originalIndex = firstIndex + pointOffset;
-                  return {
-                    relativeTimeSeconds: Number(
-                      (
-                        (originalIndex - scoringWindowResult.startIndex) *
-                        GPS_SAMPLE_PERIOD_SECONDS
-                      ).toFixed(1)
-                    ),
-                    altitudeM: point.altitudeM,
-                    distanceFromEntryM: distanceFromEntryByIndex[originalIndex],
-                  };
-                }),
+              dzElevationM: track.dzElevationM,
+              exitPoint: validatedJump.exitPoint,
+              jumpTrackPoints,
+              scoringWindowResult,
+              firstIndex,
+              lastIndex,
             };
           } catch {
             return null;
@@ -5055,6 +4960,251 @@ function TrackComparisonChart({
         })
         .filter((track): track is NonNullable<typeof track> => track !== null),
     [tracks, windowOffsetM]
+  );
+
+  const windRequestKey = baseTracks
+    .map(
+      (track) =>
+        `${track.id}:${track.exitPoint?.timestampMs ?? "none"}:${track.dzElevationM}`
+    )
+    .join("|");
+
+  useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      const results = await Promise.all(
+        baseTracks.map(async (track) => {
+          const exitPoint = track.exitPoint;
+
+          if (!exitPoint || exitPoint.timestampMs === null) {
+            return { id: track.id, winds: null };
+          }
+
+          try {
+            const winds = await fetchHistoricalWindProfile({
+              latitude: exitPoint.lat,
+              longitude: exitPoint.lon,
+              timestampMs: exitPoint.timestampMs,
+              dzElevationM: track.dzElevationM,
+            });
+
+            return { id: track.id, winds };
+          } catch {
+            return { id: track.id, winds: null };
+          }
+        })
+      );
+
+      if (!active) {
+        return;
+      }
+
+      setWindProfilesByTrackId(
+        Object.fromEntries(
+          results
+            .filter(
+              (result): result is { id: string; winds: WindLayer[] } =>
+                result.winds !== null
+            )
+            .map((result) => [result.id, result.winds])
+        )
+      );
+      setWindUnavailableTrackIds(
+        results
+          .filter((result) => result.winds === null)
+          .map((result) => result.id)
+      );
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [windRequestKey, baseTracks]);
+
+  const allTracksHaveWinds =
+    baseTracks.length > 0 &&
+    baseTracks.every(
+      (track) => (windProfilesByTrackId[track.id]?.length ?? 0) > 0
+    );
+  const isLoadingComparisonWinds = baseTracks.some(
+    (track) =>
+      windProfilesByTrackId[track.id] === undefined &&
+      !windUnavailableTrackIds.includes(track.id)
+  );
+  const effectiveScoreMode =
+    compareScoreMode === "corrected" && allTracksHaveWinds
+      ? "corrected"
+      : "raw";
+
+  const preparedTracks = useMemo(
+    () =>
+      baseTracks.map((track) => {
+        const winds = windProfilesByTrackId[track.id] ?? [];
+        const useCorrected =
+          effectiveScoreMode === "corrected" && winds.length > 0;
+        const {
+          jumpTrackPoints,
+          scoringWindowResult,
+          firstIndex,
+          lastIndex,
+        } = track;
+        const windowTrackPoints = jumpTrackPoints.slice(
+          scoringWindowResult.startIndex,
+          scoringWindowResult.endIndex + 1
+        );
+        const preWindowDivePoints = jumpTrackPoints.slice(
+          0,
+          scoringWindowResult.startIndex + 1
+        );
+        const isSpeedRun =
+          scoringWindowResult.timeSeconds > 0 &&
+          scoringWindowResult.timeSeconds <= 40;
+        const peakSpeedPoints = isSpeedRun
+          ? windowTrackPoints
+          : preWindowDivePoints;
+        const windowEntryPoint = windowTrackPoints[0] ?? null;
+        const windowExitPoint = windowTrackPoints.at(-1) ?? null;
+        const windowDistanceM = useCorrected
+          ? getWindCorrectedWindowDistanceM(windowTrackPoints, winds)
+          : scoringWindowResult.distanceM;
+        const distanceFromEntryByIndex = jumpTrackPoints.map(() => 0);
+
+        const getSegmentDistanceM = (
+          previousPoint: GpsTrackPoint,
+          currentPoint: GpsTrackPoint
+        ) => {
+          if (!useCorrected) {
+            return getTrackDistanceM([previousPoint, currentPoint]);
+          }
+
+          const previousSpeedMps = getWindCorrectedHorizontalSpeedMps(
+            previousPoint,
+            winds
+          );
+          const currentSpeedMps = getWindCorrectedHorizontalSpeedMps(
+            currentPoint,
+            winds
+          );
+          const elapsedSeconds =
+            previousPoint.timestampMs !== null && currentPoint.timestampMs !== null
+              ? Math.max(
+                  (currentPoint.timestampMs - previousPoint.timestampMs) / 1000,
+                  0
+                )
+              : GPS_SAMPLE_PERIOD_SECONDS;
+
+          return ((previousSpeedMps + currentSpeedMps) / 2) * elapsedSeconds;
+        };
+
+        for (
+          let index = scoringWindowResult.startIndex + 1;
+          index < jumpTrackPoints.length;
+          index += 1
+        ) {
+          distanceFromEntryByIndex[index] =
+            distanceFromEntryByIndex[index - 1] +
+            getSegmentDistanceM(
+              jumpTrackPoints[index - 1],
+              jumpTrackPoints[index]
+            );
+        }
+
+        for (
+          let index = scoringWindowResult.startIndex - 1;
+          index >= 0;
+          index -= 1
+        ) {
+          distanceFromEntryByIndex[index] =
+            distanceFromEntryByIndex[index + 1] -
+            getSegmentDistanceM(
+              jumpTrackPoints[index],
+              jumpTrackPoints[index + 1]
+            );
+        }
+
+        return {
+          ...track,
+          winds,
+          windowDurationSeconds: scoringWindowResult.timeSeconds,
+          windowDistanceM,
+          windowSpeedKmh:
+            scoringWindowResult.timeSeconds > 0
+              ? metresPerSecondToKmh(
+                  windowDistanceM / scoringWindowResult.timeSeconds
+                )
+              : null,
+          windowEntryGlideRatio:
+            windowEntryPoint === null
+              ? null
+              : getDisplayGlideRatio(windowEntryPoint, winds, useCorrected),
+          windowExitGlideRatio:
+            windowExitPoint === null
+              ? null
+              : getDisplayGlideRatio(windowExitPoint, winds, useCorrected),
+          peakDiveAngleDeg:
+            preWindowDivePoints.length > 0
+              ? Math.max(
+                  ...preWindowDivePoints.map((point) =>
+                    Math.atan2(
+                      Math.max(point.verticalSpeedMps, 0),
+                      Math.max(
+                        getDisplayHorizontalSpeedMps(point, winds, useCorrected),
+                        0.001
+                      )
+                    ) *
+                    (180 / Math.PI)
+                  )
+                )
+              : null,
+          peakHorizontalSpeedKmh:
+            peakSpeedPoints.length > 0
+              ? metresPerSecondToKmh(
+                  Math.max(
+                    ...peakSpeedPoints.map((point) =>
+                      getDisplayHorizontalSpeedMps(point, winds, useCorrected)
+                    )
+                  )
+                )
+              : null,
+          peakVerticalSpeedKmh:
+            preWindowDivePoints.length > 0
+              ? metresPerSecondToKmh(
+                  Math.max(
+                    ...preWindowDivePoints.map(
+                      (point) => point.verticalSpeedMps
+                    )
+                  )
+                )
+              : null,
+          peakTotalSpeedKmh:
+            peakSpeedPoints.length > 0
+              ? metresPerSecondToKmh(
+                  Math.max(
+                    ...peakSpeedPoints.map((point) =>
+                      getDisplayTotalSpeedMps(point, winds, useCorrected)
+                    )
+                  )
+                )
+              : null,
+          points: jumpTrackPoints
+            .slice(firstIndex, lastIndex + 1)
+            .map((point, pointOffset) => {
+              const originalIndex = firstIndex + pointOffset;
+              return {
+                relativeTimeSeconds: Number(
+                  (
+                    (originalIndex - scoringWindowResult.startIndex) *
+                    GPS_SAMPLE_PERIOD_SECONDS
+                  ).toFixed(1)
+                ),
+                altitudeM: point.altitudeM,
+                distanceFromEntryM: distanceFromEntryByIndex[originalIndex],
+              };
+            }),
+        };
+      }),
+    [baseTracks, effectiveScoreMode, windProfilesByTrackId]
   );
 
   const comparisonPoints = preparedTracks.flatMap((track) => track.points);
@@ -5109,12 +5259,12 @@ function TrackComparisonChart({
   const xAxisUnit = useTimeAxis ? "s" : "m";
   const chartSubtitle =
     comparisonTask === "time"
-      ? "Each time track has its own interactive graph, aligned by seconds from window entry."
+      ? "All time tracks play together by seconds from window entry. Full flight-detail graphs are shown below."
       : comparisonTask === "speed"
-        ? "Each speed track has its own interactive graph, aligned by distance from window entry."
+        ? "All speed tracks play together by distance from window entry. Full flight-detail graphs are shown below."
         : comparisonTask === "distance"
-          ? "Each distance track has its own interactive graph, aligned by distance from window entry."
-          : "Each selected track has its own graph, aligned by distance from window entry.";
+          ? "All distance tracks play together by distance from window entry. Full flight-detail graphs are shown below."
+          : "All selected tracks play together by distance from window entry. Full flight-detail graphs are shown below.";
 
   type CompareChartMouseState = {
     activeLabel?: string | number;
@@ -5342,6 +5492,32 @@ function TrackComparisonChart({
     };
   }
 
+  function getTrackTraceAtTime(
+    track: (typeof preparedTracks)[number],
+    timeSeconds: number
+  ) {
+    const currentPoint = getTrackPositionAtTime(track, timeSeconds);
+
+    if (!currentPoint) {
+      return [];
+    }
+
+    if (timeSeconds <= track.points[0].relativeTimeSeconds) {
+      return [currentPoint];
+    }
+
+    const completedPoints = track.points.filter(
+      (point) => point.relativeTimeSeconds < timeSeconds
+    );
+
+    return [...completedPoints, currentPoint];
+  }
+
+  const animatedTrackTraces = preparedTracks.map((track) => ({
+    track,
+    points: getTrackTraceAtTime(track, playheadSeconds),
+  }));
+
   const animatedDots = preparedTracks
     .map((track) => {
       const point = getTrackPositionAtTime(track, playheadSeconds);
@@ -5387,7 +5563,27 @@ function TrackComparisonChart({
         </p>
 
         <div className="compare-control-row">
-          <span />
+          <label className="score-mode-switch compare-score-mode-switch">
+            <span className={effectiveScoreMode === "raw" ? "active" : ""}>
+              Raw
+            </span>
+            <input
+              type="checkbox"
+              checked={effectiveScoreMode === "corrected"}
+              onChange={(event) =>
+                setCompareScoreMode(event.target.checked ? "corrected" : "raw")
+              }
+              disabled={!allTracksHaveWinds}
+            />
+            <span className="score-mode-track">
+              <span className="score-mode-knob" />
+            </span>
+            <span
+              className={effectiveScoreMode === "corrected" ? "active" : ""}
+            >
+              Corrected
+            </span>
+          </label>
           <button
             type="button"
             className="compare-play-button"
@@ -5413,6 +5609,16 @@ function TrackComparisonChart({
             <span />
           )}
         </div>
+
+        <p className="compare-wind-status" role="status">
+          {isLoadingComparisonWinds
+            ? "Loading historical wind data for every selected track…"
+            : allTracksHaveWinds
+              ? effectiveScoreMode === "corrected"
+                ? "Corrected air-relative values are applied to every track."
+                : "Historical wind data is ready for every track."
+              : "Corrected mode is unavailable because one or more tracks do not have usable historical wind data."}
+        </p>
       </div>
 
       {preparedTracks.length === 0 ? (
@@ -5420,13 +5626,185 @@ function TrackComparisonChart({
           Selected tracks need a detected scoring window before they can be compared.
         </p>
       ) : (
-        <div className="compare-track-panels">
-          {preparedTracks.map((track) => {
-            const animatedDot = animatedDots.find(
-              (dot) => dot.track.id === track.id
-            );
+        <>
+          <div className="compare-chart-legend">
+            {preparedTracks.map((track) => (
+              <span key={track.id}>
+                <span
+                  className="compare-color-swatch"
+                  style={{ background: track.color }}
+                />
+                {track.label}
+                <strong className="compare-distance-readout">
+                  {getCompareReadout(
+                    track,
+                    animatedDots.find((dot) => dot.track.id === track.id)
+                  )}
+                </strong>
+              </span>
+            ))}
+          </div>
 
-            return (
+          <div
+            className="compare-chart-wrap compare-overview-chart-wrap"
+            aria-label="Interactive playback graph comparing all selected tracks"
+          >
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <LineChart
+                margin={{ top: 18, right: 28, bottom: 34, left: 12 }}
+                onMouseDown={handleCompareMouseDown}
+                onMouseMove={handleCompareMouseMove}
+                onMouseUp={finishCompareSelection}
+                onMouseLeave={finishCompareSelection}
+              >
+                <CartesianGrid
+                  stroke="rgba(148, 163, 184, 0.22)"
+                  strokeDasharray="4 4"
+                />
+                <XAxis
+                  dataKey={xAxisKey}
+                  type="number"
+                  domain={activeXAxisDomain}
+                  allowDataOverflow
+                  tickFormatter={(value) =>
+                    String(Number(value).toFixed(0)) + " " + xAxisUnit
+                  }
+                  label={{
+                    value: useTimeAxis
+                      ? "Time from window entry"
+                      : "Distance from window entry",
+                    fill: "#dffcff",
+                    position: "insideBottom",
+                    offset: -20,
+                  }}
+                  stroke="#d1d5db"
+                />
+                <YAxis
+                  dataKey="altitudeM"
+                  type="number"
+                  domain={[windowBottomM, windowTopM]}
+                  ticks={altitudeTicks}
+                  tickFormatter={(value) =>
+                    String(Number(value).toFixed(0)) + " m"
+                  }
+                  label={{
+                    value: "Altitude AGL",
+                    angle: -90,
+                    fill: "#dffcff",
+                    position: "insideLeft",
+                  }}
+                  stroke="#d1d5db"
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "rgba(2, 6, 23, 0.94)",
+                    border: "1px solid #22d3ee",
+                    borderRadius: "8px",
+                    color: "#ffffff",
+                  }}
+                  labelFormatter={(value) =>
+                    (useTimeAxis
+                      ? "Time from entry: "
+                      : "Distance from entry: ") +
+                    Number(value).toFixed(useTimeAxis ? 1 : 0) +
+                    " " +
+                    xAxisUnit
+                  }
+                  formatter={(value, name) => [
+                    String(Number(value).toFixed(0)) + " m altitude",
+                    preparedTracks.find((track) => track.dataKey === name)
+                      ?.label ?? String(name),
+                  ]}
+                />
+                {selectionStartX !== null && selectionEndX !== null && (
+                  <ReferenceArea
+                    x1={Math.min(selectionStartX, selectionEndX)}
+                    x2={Math.max(selectionStartX, selectionEndX)}
+                    stroke="#22d3ee"
+                    strokeOpacity={0.85}
+                    fill="#22d3ee"
+                    fillOpacity={0.16}
+                  />
+                )}
+                <ReferenceLine
+                  y={windowTopM}
+                  stroke="#22c55e"
+                  strokeDasharray="6 4"
+                  label={{
+                    value: "Window start",
+                    fill: "#22c55e",
+                    position: "insideTopRight",
+                  }}
+                />
+                <ReferenceLine
+                  y={windowBottomM}
+                  stroke="#ef4444"
+                  strokeDasharray="6 4"
+                  label={{
+                    value: "Window end",
+                    fill: "#ef4444",
+                    position: "insideBottomRight",
+                  }}
+                />
+                {animatedTrackTraces.map(({ track, points }) => (
+                  <Line
+                    key={track.id}
+                    type="monotone"
+                    data={points}
+                    dataKey="altitudeM"
+                    name={track.dataKey}
+                    stroke={track.color}
+                    strokeWidth={3}
+                    dot={false}
+                    connectNulls={false}
+                    isAnimationActive={false}
+                    activeDot={{ r: 5 }}
+                  />
+                ))}
+                {animatedDots.map((dot) => (
+                  <ReferenceDot
+                    key={dot.track.id}
+                    x={
+                      useTimeAxis
+                        ? dot.relativeTimeSeconds
+                        : dot.distanceFromEntryM
+                    }
+                    y={dot.altitudeM}
+                    r={7}
+                    fill={dot.track.color}
+                    stroke={
+                      dot.track.color === "#ffffff" ? "#020617" : "#ffffff"
+                    }
+                    strokeWidth={2}
+                    ifOverflow="extendDomain"
+                    onMouseDown={() => {
+                      setIsPlaying(false);
+                      setIsDraggingDot(true);
+                    }}
+                    onTouchStart={() => {
+                      setIsPlaying(false);
+                      setIsDraggingDot(true);
+                    }}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="compare-individual-heading">
+            <h3>Individual flight details</h3>
+            <p>
+              Every graph and metric below follows the Raw/Corrected setting above.
+            </p>
+          </div>
+
+          <div className="compare-track-panels">
+            {preparedTracks.map((track) => {
+              const animatedDot = animatedDots.find(
+                (dot) => dot.track.id === track.id
+              );
+
+              return (
               <article
                 key={track.id}
                 className="compare-track-panel"
@@ -5450,149 +5828,22 @@ function TrackComparisonChart({
                   </strong>
                 </div>
 
-                <p className="compare-chart-instructions">
-                  Hover or tap for values. Drag across the graph to zoom.
-                </p>
-
                 <div
-                  className="compare-chart-wrap"
+                  className="compare-track-flight-chart"
                   aria-label={`Interactive graph for ${track.label}`}
                 >
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <LineChart
-                      margin={{ top: 18, right: 28, bottom: 34, left: 12 }}
-                      onMouseDown={handleCompareMouseDown}
-                      onMouseMove={handleCompareMouseMove}
-                      onMouseUp={finishCompareSelection}
-                      onMouseLeave={finishCompareSelection}
-                    >
-                      <CartesianGrid
-                        stroke="rgba(148, 163, 184, 0.22)"
-                        strokeDasharray="4 4"
-                      />
-                      <XAxis
-                        dataKey={xAxisKey}
-                        type="number"
-                        domain={activeXAxisDomain}
-                        allowDataOverflow
-                        tickFormatter={(value) =>
-                          String(Number(value).toFixed(0)) + " " + xAxisUnit
-                        }
-                        label={{
-                          value: useTimeAxis
-                            ? "Time from window entry"
-                            : "Distance from window entry",
-                          fill: "#dffcff",
-                          position: "insideBottom",
-                          offset: -20,
-                        }}
-                        stroke="#d1d5db"
-                      />
-                      <YAxis
-                        dataKey="altitudeM"
-                        type="number"
-                        domain={[windowBottomM, windowTopM]}
-                        ticks={altitudeTicks}
-                        tickFormatter={(value) =>
-                          String(Number(value).toFixed(0)) + " m"
-                        }
-                        label={{
-                          value: "Altitude AGL",
-                          angle: -90,
-                          fill: "#dffcff",
-                          position: "insideLeft",
-                        }}
-                        stroke="#d1d5db"
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          background: "rgba(2, 6, 23, 0.94)",
-                          border: `1px solid ${track.color}`,
-                          borderRadius: "8px",
-                          color: "#ffffff",
-                        }}
-                        labelFormatter={(value) =>
-                          (useTimeAxis
-                            ? "Time from entry: "
-                            : "Distance from entry: ") +
-                          Number(value).toFixed(useTimeAxis ? 1 : 0) +
-                          " " +
-                          xAxisUnit
-                        }
-                        formatter={(value) => [
-                          String(Number(value).toFixed(0)) + " m",
-                          "Altitude AGL",
-                        ]}
-                      />
-                      {selectionStartX !== null && selectionEndX !== null && (
-                        <ReferenceArea
-                          x1={Math.min(selectionStartX, selectionEndX)}
-                          x2={Math.max(selectionStartX, selectionEndX)}
-                          stroke="#22d3ee"
-                          strokeOpacity={0.85}
-                          fill="#22d3ee"
-                          fillOpacity={0.16}
-                        />
-                      )}
-                      <ReferenceLine
-                        y={windowTopM}
-                        stroke="#22c55e"
-                        strokeDasharray="6 4"
-                        label={{
-                          value: "Window start",
-                          fill: "#22c55e",
-                          position: "insideTopRight",
-                        }}
-                      />
-                      <ReferenceLine
-                        y={windowBottomM}
-                        stroke="#ef4444"
-                        strokeDasharray="6 4"
-                        label={{
-                          value: "Window end",
-                          fill: "#ef4444",
-                          position: "insideBottomRight",
-                        }}
-                      />
-                      <Line
-                        type="monotone"
-                        data={track.points}
-                        dataKey="altitudeM"
-                        name={track.label}
-                        stroke={track.color}
-                        strokeWidth={3}
-                        dot={false}
-                        connectNulls={false}
-                        isAnimationActive={false}
-                        activeDot={{ r: 5 }}
-                      />
-                      {animatedDot && (
-                        <ReferenceDot
-                          x={
-                            useTimeAxis
-                              ? animatedDot.relativeTimeSeconds
-                              : animatedDot.distanceFromEntryM
-                          }
-                          y={animatedDot.altitudeM}
-                          r={7}
-                          fill={track.color}
-                          stroke={
-                            track.color === "#ffffff" ? "#020617" : "#ffffff"
-                          }
-                          strokeWidth={2}
-                          ifOverflow="extendDomain"
-                          onMouseDown={() => {
-                            setIsPlaying(false);
-                            setIsDraggingDot(true);
-                          }}
-                          onTouchStart={() => {
-                            setIsPlaying(false);
-                            setIsDraggingDot(true);
-                          }}
-                        />
-                      )}
-                    </LineChart>
-                  </ResponsiveContainer>
+                  <InteractiveTrackChart
+                    points={track.jumpTrackPoints}
+                    windowOffsetM={windowOffsetM}
+                    winds={track.winds}
+                    graphView="full"
+                    onGraphViewChange={() => undefined}
+                    scoreMode={effectiveScoreMode}
+                    onScoreModeChange={setCompareScoreMode}
+                    showCompetitionContext
+                    showScoreModeControl={false}
+                    showViewControls={false}
+                  />
                 </div>
 
                 <div
@@ -5640,9 +5891,10 @@ function TrackComparisonChart({
                   </div>
                 </div>
               </article>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </section>
   );
