@@ -1923,16 +1923,33 @@ function windAdjustedDistanceGR(
   return Number((baseGR + windAdjustmentGR).toFixed(1));
 }
 
-function downloadTextFile(filename: string, text: string) {
-  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+function downloadTextFile(
+  filename: string,
+  text: string,
+  mimeType = "text/plain;charset=utf-8",
+) {
+  const blob = new Blob([text], { type: mimeType });
   const url = URL.createObjectURL(blob);
 
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
+  document.body.appendChild(link);
   link.click();
+  link.remove();
 
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function getTrackDownloadFilename(displayName: string): string {
+  const nameWithoutExtension = displayName.trim().replace(/\.csv$/i, "");
+  const safeBaseName = (nameWithoutExtension || "flysight-track")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/-+/g, "-")
+    .trim();
+
+  return `${safeBaseName || "flysight-track"}.csv`;
 }
 
 function interpolateGRByWeight(weightKg: number): {
@@ -6497,6 +6514,17 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     setAuthBusy(false);
   }
 
+  function downloadLoadedTrack() {
+    if (!rawGpsCsv || gpsTrackPoints.length === 0) {
+      setSaveJumpStatus("Open or import a track before downloading it.");
+      return;
+    }
+
+    const filename = getTrackDownloadFilename(gpsFileName);
+    downloadTextFile(filename, rawGpsCsv, "text/csv;charset=utf-8");
+    setSaveJumpStatus(`Downloaded ${filename}.`);
+  }
+
     async function handleSaveJump(taskType: LogbookTrackType) {
     const editingSavedJumpId = trackInfoEditJumpId;
 
@@ -9021,6 +9049,17 @@ if (activePage === "lane") {
   </p>
 
   <div className="landing-actions track-info-actions">
+    {rawGpsCsv && gpsTrackPoints.length > 0 && (
+      <button
+        type="button"
+        className="download-track-button"
+        onClick={downloadLoadedTrack}
+        title="Download the complete original FlySight CSV"
+      >
+        Download track
+      </button>
+    )}
+
     <button
       type="button"
       onClick={() => handleSaveJump("speed")}
