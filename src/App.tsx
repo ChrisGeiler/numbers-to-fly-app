@@ -1634,8 +1634,7 @@ const compareTrackColors = [
   "#ffffff",
   "#f97316",
 ];
-const comparePreWindowSeconds = 25;
-const comparePostWindowSeconds = 35;
+const compareGraphTopM = 3353;
 
 type CompareTrackOption = {
   id: string;
@@ -4930,16 +4929,16 @@ function TrackComparisonChart({
               return null;
             }
 
-            const firstIndex = Math.max(
-              0,
-              scoringWindowResult.startIndex -
-                Math.round(comparePreWindowSeconds / GPS_SAMPLE_PERIOD_SECONDS)
+            const comparisonStartIndex = jumpTrackPoints.findIndex(
+              (point) => point.altitudeM <= compareGraphTopM
             );
-            const lastIndex = Math.min(
-              jumpTrackPoints.length - 1,
-              scoringWindowResult.endIndex +
-                Math.round(comparePostWindowSeconds / GPS_SAMPLE_PERIOD_SECONDS)
-            );
+
+            if (comparisonStartIndex === -1) {
+              return null;
+            }
+
+            const firstIndex = comparisonStartIndex;
+            const lastIndex = scoringWindowResult.endIndex;
 
             return {
               id: track.id,
@@ -5226,11 +5225,11 @@ function TrackComparisonChart({
   const minTime =
     comparisonPoints.length > 0
       ? Math.min(...comparisonPoints.map((point) => point.relativeTimeSeconds))
-      : -comparePreWindowSeconds;
+      : 0;
   const maxTime =
     comparisonPoints.length > 0
       ? Math.max(...comparisonPoints.map((point) => point.relativeTimeSeconds))
-      : comparePostWindowSeconds;
+      : 1;
   const minDistance =
     comparisonPoints.length > 0
       ? Math.floor(
@@ -5248,9 +5247,13 @@ function TrackComparisonChart({
   const windowTopM = 2500 + windowOffsetM;
   const windowBottomM = 1500 + windowOffsetM;
   const altitudeTicks = Array.from(
-    { length: Math.floor((windowTopM - windowBottomM) / 250) + 1 },
+    { length: Math.floor((compareGraphTopM - windowBottomM) / 250) + 1 },
     (_, index) => windowBottomM + index * 250
   );
+
+  if (altitudeTicks.at(-1) !== compareGraphTopM) {
+    altitudeTicks.push(compareGraphTopM);
+  }
   const xAxisKey = useTimeAxis ? "relativeTimeSeconds" : "distanceFromEntryM";
   const fullXAxisDomain: [number, number] = useTimeAxis
     ? [minTime, maxTime]
@@ -5682,7 +5685,7 @@ function TrackComparisonChart({
                 <YAxis
                   dataKey="altitudeM"
                   type="number"
-                  domain={[windowBottomM, windowTopM]}
+                  domain={[windowBottomM, compareGraphTopM]}
                   ticks={altitudeTicks}
                   tickFormatter={(value) =>
                     String(Number(value).toFixed(0)) + " m"
@@ -5833,7 +5836,10 @@ function TrackComparisonChart({
                   aria-label={`Interactive graph for ${track.label}`}
                 >
                   <InteractiveTrackChart
-                    points={track.jumpTrackPoints}
+                    points={track.jumpTrackPoints.slice(
+                      track.firstIndex,
+                      track.lastIndex + 1
+                    )}
                     windowOffsetM={windowOffsetM}
                     winds={track.winds}
                     graphView="full"
