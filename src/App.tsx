@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   FormEvent,
+  MutableRefObject,
   PointerEvent as ReactPointerEvent,
   WheelEvent as ReactWheelEvent,
 } from "react";
@@ -3108,12 +3109,14 @@ function MapViewportUpdater({
   userMapLocation,
   savedReferencePoints,
   trackPoints,
+  preserveReferenceViewportKeyRef,
 }: {
   referenceLat: string;
   referenceLon: string;
   userMapLocation: LatLon | null;
   savedReferencePoints: SavedReferencePoint[];
   trackPoints: GpsTrackPoint[];
+  preserveReferenceViewportKeyRef: MutableRefObject<string | null>;
 }) {
   const map = useMap();
   const lastViewportTargetKey = useRef("");
@@ -3138,6 +3141,20 @@ function MapViewportUpdater({
 
     const lat = optionalNumberFromInput(referenceLat);
     const lon = optionalNumberFromInput(referenceLon);
+    const referenceViewportKey =
+      lat === null || lon === null
+        ? null
+        : `${lat.toFixed(6)},${lon.toFixed(6)}`;
+
+    if (
+      referenceViewportKey !== null &&
+      preserveReferenceViewportKeyRef.current === referenceViewportKey
+    ) {
+      preserveReferenceViewportKeyRef.current = null;
+      return;
+    }
+
+    preserveReferenceViewportKeyRef.current = null;
 
     if (lat !== null && lon !== null) {
       if (trackPoints.length > 0) {
@@ -3220,6 +3237,7 @@ function MapClickPicker({
 
   const hasReferencePoint = lat !== null && lon !== null;
   const hasUserMapLocation = userMapLocation !== null;
+  const preserveReferenceViewportKeyRef = useRef<string | null>(null);
 
   const center: [number, number] = hasReferencePoint
     ? [lat, lon]
@@ -3248,6 +3266,8 @@ function MapClickPicker({
   function ClickHandler() {
     useMapEvents({
       click(event) {
+        preserveReferenceViewportKeyRef.current =
+          `${event.latlng.lat.toFixed(6)},${event.latlng.lng.toFixed(6)}`;
         onPick(event.latlng.lat, event.latlng.lng);
       },
     });
@@ -3326,6 +3346,7 @@ function MapClickPicker({
           userMapLocation={userMapLocation}
           savedReferencePoints={savedReferencePoints}
           trackPoints={trackPoints}
+          preserveReferenceViewportKeyRef={preserveReferenceViewportKeyRef}
         />
 
         <TileLayer
@@ -3440,7 +3461,11 @@ function MapClickPicker({
               point.id === selectedSavedReferencePointId,
             )}
             eventHandlers={{
-              click: () => onSavedReferencePointPick?.(point),
+              click: () => {
+                preserveReferenceViewportKeyRef.current =
+                  `${point.lat.toFixed(6)},${point.lon.toFixed(6)}`;
+                onSavedReferencePointPick?.(point);
+              },
             }}
           >
             <LeafletTooltip
