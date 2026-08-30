@@ -2572,8 +2572,13 @@ function calculateWindAdvantageSummary(
 function delayedPerformanceDropKph(altitudeM: number): number {
   if (altitudeM >= 2200) return 0;
 
-  const drop = ((2200 - altitudeM) / 700) * 30;
-  return Math.min(Math.max(drop, 0), 30);
+  if (altitudeM >= 1600) {
+    const middleWindowDrop = ((2200 - altitudeM) / 600) * 20;
+    return Math.min(Math.max(middleWindowDrop, 0), 20);
+  }
+
+  const finalWindowDrop = 20 + ((1600 - altitudeM) / 100) * 10;
+  return Math.min(Math.max(finalWindowDrop, 0), 30);
 }
 
 function baseGRAtAltitude(
