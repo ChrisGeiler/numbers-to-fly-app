@@ -860,6 +860,10 @@ function findCompetitionDiveStartIndex(
   const maxLookbackSamples = Math.round(
     COMPETITION_DIVE_MAX_LOOKBACK_SECONDS / GPS_SAMPLE_PERIOD_SECONDS
   );
+  const descentConfirmationSamples = Math.round(
+    VALIDATION_DIVE_CONFIRMATION_SECONDS / GPS_SAMPLE_PERIOD_SECONDS
+  );
+  let renewedDescentIndex: number | null = null;
 
   for (let index = aircraftExitIndex + 1; index < points.length; index += 1) {
     const currentAltitudeAglM = points[index].altitudeM - dzElevationM;
@@ -873,6 +877,32 @@ function findCompetitionDiveStartIndex(
     // entry crossing and makes an otherwise complete track look incomplete.
     if (currentAltitudeAglM <= COMPETITION_WINDOW_TOP_M) {
       break;
+    }
+
+    const crossedVerticalSpeedTrigger =
+      points[index - 1].verticalSpeedMps <
+        VALIDATION_VERTICAL_SPEED_TRIGGER_MPS &&
+      points[index].verticalSpeedMps >=
+        VALIDATION_VERTICAL_SPEED_TRIGGER_MPS;
+
+    if (crossedVerticalSpeedTrigger) {
+      const confirmationEndIndex = Math.min(
+        points.length - 1,
+        index + descentConfirmationSamples - 1
+      );
+      const confirmationPoints = points.slice(
+        index,
+        confirmationEndIndex + 1
+      );
+      const descendingPointRatio =
+        confirmationPoints.filter(
+          (point) =>
+            point.verticalSpeedMps >= VALIDATION_VERTICAL_SPEED_TRIGGER_MPS
+        ).length / confirmationPoints.length;
+
+      if (descendingPointRatio >= 0.8) {
+        renewedDescentIndex = index;
+      }
     }
 
     const previousAngleDeg = getPointDiveAngleDeg(points[index - 1]);
@@ -918,11 +948,21 @@ function findCompetitionDiveStartIndex(
       angleIncreaseDeg >= COMPETITION_DIVE_MIN_RISE_DEG;
 
     if (sustainedDive) {
-      return eligibleDiveStartIndex;
+      // When the setup glide settles below 10 m/s before the competition dive,
+      // the renewed sustained descent is the stronger boundary. It prevents
+      // the angle lookback from pulling the effective exit into the earlier
+      // high-altitude glide.
+      return Math.max(
+        eligibleDiveStartIndex,
+        renewedDescentIndex ?? eligibleDiveStartIndex
+      );
     }
   }
 
-  return aircraftExitIndex;
+  // A confirmed aircraft exit above the competition maximum should never make
+  // the high setup portion the effective competition jump. If the angle trigger
+  // is inconclusive, retain the strongest later boundary available.
+  return renewedDescentIndex ?? firstEligibleIndex;
 }
 
 export function getValidatedJumpTrack(

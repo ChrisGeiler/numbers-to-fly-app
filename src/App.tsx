@@ -1635,6 +1635,9 @@ const compareTrackColors = [
   "#f97316",
 ];
 const compareGraphTopM = 3353;
+const MANUAL_EXIT_METADATA_PREFIX = "$VAR,NTF_MANUAL_EXIT_TIME,";
+const MANUAL_EXIT_METADATA_PATTERN =
+  /(?:^|\r?\n)\$VAR,NTF_MANUAL_EXIT_TIME,([^\r\n]*)(?=\r?\n|$)/;
 
 type CompareTrackOption = {
   id: string;
@@ -1643,6 +1646,70 @@ type CompareTrackOption = {
   dzElevationM: number;
   taskType: LogbookTrackType | null;
 };
+
+function getManualExitTimestampMs(csvText: string): number | null {
+  const value = csvText.match(MANUAL_EXIT_METADATA_PATTERN)?.[1]?.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  const timestampMs = Date.parse(value);
+  return Number.isFinite(timestampMs) ? timestampMs : null;
+}
+
+function stripManualExitMetadata(csvText: string): string {
+  return csvText.replace(MANUAL_EXIT_METADATA_PATTERN, "");
+}
+
+function storeManualExitMetadata(
+  csvText: string,
+  timestampMs: number | null,
+): string {
+  const originalCsv = stripManualExitMetadata(csvText);
+
+  if (timestampMs === null) {
+    return originalCsv;
+  }
+
+  const newline = originalCsv.includes("\r\n") ? "\r\n" : "\n";
+  const separator = originalCsv.endsWith("\n") ? "" : newline;
+
+  return (
+    originalCsv +
+    separator +
+    MANUAL_EXIT_METADATA_PREFIX +
+    new Date(timestampMs).toISOString() +
+    newline
+  );
+}
+
+function getValidatedJumpTrackWithManualExit(
+  points: GpsTrackPoint[],
+  dzElevationM: number,
+  manualExitTimestampMs: number | null,
+) {
+  const automaticTrack = getValidatedJumpTrack(points, dzElevationM);
+
+  if (manualExitTimestampMs === null) {
+    return automaticTrack;
+  }
+
+  const manualExitIndex = points.findIndex(
+    (point) => point.timestampMs === manualExitTimestampMs,
+  );
+
+  if (manualExitIndex === -1) {
+    return automaticTrack;
+  }
+
+  return {
+    ...automaticTrack,
+    isValidJump: true,
+    exitPoint: points[manualExitIndex],
+    jumpPoints: points.slice(manualExitIndex),
+  };
+}
 
 function formatLogbookTrackType(taskType: LogbookTrackType | null): string {
   if (taskType === "non-comp") return "Non-comp";
@@ -4065,6 +4132,9 @@ function InteractiveTrackChart({
   showCompetitionContext = true,
   showScoreModeControl = showCompetitionContext,
   showViewControls = showCompetitionContext,
+  exitSelectionMode = false,
+  onExitPointSelect,
+  onCancelExitSelection,
 }: {
   points: GpsTrackPoint[];
   windowOffsetM: number;
@@ -4076,6 +4146,9 @@ function InteractiveTrackChart({
   showCompetitionContext?: boolean;
   showScoreModeControl?: boolean;
   showViewControls?: boolean;
+  exitSelectionMode?: boolean;
+  onExitPointSelect?: (point: GpsTrackPoint) => void;
+  onCancelExitSelection?: () => void;
 }) {
 const windAltitudes = winds.map((wind) => wind.altitudeM);
 
@@ -4311,6 +4384,10 @@ const diveAngleDeg =
   }
 
   function handleChartMouseDown(state: ChartMouseState | undefined) {
+    if (exitSelectionMode) {
+      return;
+    }
+
     const label = getNumericLabel(state);
 
     if (label === null) {
@@ -4322,7 +4399,7 @@ const diveAngleDeg =
   }
 
   function handleChartMouseMove(state: ChartMouseState | undefined) {
-    if (selectionStart === null) {
+    if (exitSelectionMode || selectionStart === null) {
       return;
     }
 
@@ -4334,6 +4411,12 @@ const diveAngleDeg =
   }
 
   function finishChartSelection() {
+    if (exitSelectionMode) {
+      setSelectionStart(null);
+      setSelectionEnd(null);
+      return;
+    }
+
     if (selectionStart === null || selectionEnd === null) {
       setSelectionStart(null);
       setSelectionEnd(null);
@@ -4355,6 +4438,31 @@ const diveAngleDeg =
     setVisibleDomain(null);
     setSelectionStart(null);
     setSelectionEnd(null);
+  }
+
+  function handleExitPointClick(state: ChartMouseState | undefined) {
+    if (!exitSelectionMode || !onExitPointSelect) {
+      return;
+    }
+
+    const label = getNumericLabel(state);
+
+    if (label === null) {
+      return;
+    }
+
+    const selectedIndex = Math.max(
+      0,
+      Math.min(
+        points.length - 1,
+        Math.round(label / GPS_SAMPLE_PERIOD_SECONDS),
+      ),
+    );
+    const selectedPoint = points[selectedIndex];
+
+    if (selectedPoint) {
+      onExitPointSelect(selectedPoint);
+    }
   }
 
   function handleWheel(event: ReactWheelEvent<HTMLDivElement>) {
@@ -4496,7 +4604,9 @@ const diveAngleDeg =
           <h2>Interactive Flight Graph</h2>
 
           <p className="subtitle">
-            Pinch to zoom, or drag across the graph on desktop to zoom into a range.
+            {exitSelectionMode
+              ? "Tap or click the point where you start the competition dive."
+              : "Pinch to zoom, or drag across the graph on desktop to zoom into a range."}
           </p>
 
           <p className="chart-rotate-hint">
@@ -4575,8 +4685,23 @@ const diveAngleDeg =
         )}
       </div>
 
+      {exitSelectionMode && (
+        <div className="exit-selection-banner" role="status">
+          <p>Tap the graph where your competition dive starts.</p>
+
+          {onCancelExitSelection && (
+            <button type="button" onClick={onCancelExitSelection}>
+              Cancel
+            </button>
+          )}
+        </div>
+      )}
+
       <div
-        className="interactive-chart-wrap"
+        className={
+          "interactive-chart-wrap" +
+          (exitSelectionMode ? " exit-selection-active" : "")
+        }
         onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -4597,6 +4722,7 @@ const diveAngleDeg =
             onMouseMove={handleChartMouseMove}
             onMouseUp={finishChartSelection}
             onMouseLeave={finishChartSelection}
+            onClick={handleExitPointClick}
           >
             <CartesianGrid
               stroke="rgba(148, 163, 184, 0.22)"
@@ -4926,12 +5052,14 @@ function TrackComparisonChart({
         .slice(0, 6)
         .map((track, trackIndex) => {
           try {
+            const manualExitTimestampMs = getManualExitTimestampMs(track.rawCsv);
             const parsedPoints = trimTrackForAnalysis(
-              parseFlySightCsv(track.rawCsv)
+              parseFlySightCsv(stripManualExitMetadata(track.rawCsv)),
             );
-            const validatedJump = getValidatedJumpTrack(
+            const validatedJump = getValidatedJumpTrackWithManualExit(
               parsedPoints,
-              track.dzElevationM
+              track.dzElevationM,
+              manualExitTimestampMs,
             );
 
             if (!validatedJump.isValidJump) {
@@ -6525,6 +6653,58 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     setSaveJumpStatus(`Downloaded ${filename}.`);
   }
 
+  function beginManualExitSelection() {
+    setIsSettingManualExit(true);
+    setGraphView("full");
+    setSaveJumpStatus("Tap the graph where the competition dive starts.");
+    window.setTimeout(() => {
+      document.querySelector(".exit-selection-container")?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 100);
+  }
+
+  function cancelManualExitSelection() {
+    setIsSettingManualExit(false);
+    setSaveJumpStatus("Exit selection cancelled.");
+  }
+
+  function clearManualExit() {
+    setManualExitTimestampMs(null);
+    setIsSettingManualExit(false);
+    setSaveJumpStatus("Using the automatically detected exit.");
+  }
+
+  function selectManualExitPoint(point: GpsTrackPoint) {
+    if (point.timestampMs === null) {
+      setSaveJumpStatus("That graph point does not have a valid timestamp.");
+      return;
+    }
+
+    const originalPoint =
+      gpsTrackPoints.find(
+        (trackPoint) => trackPoint.timestampMs === point.timestampMs,
+      ) ?? point;
+    const dzElevationNumber = numberFromInput(dzElevationM, 0);
+    const altitudeAglM = originalPoint.altitudeM - dzElevationNumber;
+    const scoringWindowTopM = 2500 + windowOffsetM;
+
+    if (altitudeAglM <= scoringWindowTopM) {
+      setSaveJumpStatus(
+        `Choose the start of the dive above the ${Math.round(scoringWindowTopM)} m scoring-window entry.`,
+      );
+      return;
+    }
+
+    setManualExitTimestampMs(point.timestampMs);
+    setIsSettingManualExit(false);
+    setGraphView("full");
+    setSaveJumpStatus(
+      `Manual exit set at ${new Date(point.timestampMs).toLocaleTimeString()} (${Math.round(altitudeAglM)} m AGL). Use the save buttons in Track Info to keep it with this track.`,
+    );
+  }
+
     async function handleSaveJump(taskType: LogbookTrackType) {
     const editingSavedJumpId = trackInfoEditJumpId;
 
@@ -6540,9 +6720,10 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
 
     const dzElevationNumber = numberFromInput(dzElevationM, 0);
 
-    const validatedJump = getValidatedJumpTrack(
+    const validatedJump = getValidatedJumpTrackWithManualExit(
       gpsTrackPoints,
-      dzElevationNumber
+      dzElevationNumber,
+      manualExitTimestampMs,
     );
 
     const isNonCompetitionTrack = taskType === "non-comp";
@@ -6615,7 +6796,7 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
       window_time_s: scoringWindowResult?.timeSeconds ?? null,
       window_distance_m: scoringWindowResult?.distanceM ?? null,
       window_speed_kmh: windowSpeedKmh,
-      raw_csv: rawGpsCsv,
+      raw_csv: storeManualExitMetadata(rawGpsCsv, manualExitTimestampMs),
     };
 
     let error;
@@ -6835,14 +7016,18 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
         return;
       }
 
-      const parsedPoints = parseFlySightCsv(jump.raw_csv);
+      const savedManualExitTimestampMs = getManualExitTimestampMs(jump.raw_csv);
+      const originalCsv = stripManualExitMetadata(jump.raw_csv);
+      const parsedPoints = parseFlySightCsv(originalCsv);
       const workingTrackPoints = trimTrackForAnalysis(parsedPoints);
       const dzElevationNumber = jump.dz_elevation_m ?? 0;
 
       if (!options.preserveTrackInfoEdit) {
         setTrackInfoEditJumpId(null);
       }
-      setRawGpsCsv(jump.raw_csv);
+      setRawGpsCsv(originalCsv);
+      setManualExitTimestampMs(savedManualExitTimestampMs);
+      setIsSettingManualExit(false);
       setGpsTrackPoints(workingTrackPoints);
       setIgnoredGroundSampleCount(
         Math.max(0, parsedPoints.length - workingTrackPoints.length)
@@ -6874,9 +7059,10 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
         });
       }, 100);
 
-      const validatedJump = getValidatedJumpTrack(
+      const validatedJump = getValidatedJumpTrackWithManualExit(
         workingTrackPoints,
-        dzElevationNumber
+        dzElevationNumber,
+        savedManualExitTimestampMs,
       );
       const detectedJumpTrack = getDetectedJumpTrack(workingTrackPoints);
       const exitPoint =
@@ -7023,6 +7209,10 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [gpsTrackPoints, setGpsTrackPoints] = useState<GpsTrackPoint[]>([]);
   const [ignoredGroundSampleCount, setIgnoredGroundSampleCount] = useState(0);
   const [rawGpsCsv, setRawGpsCsv] = useState("");
+  const [manualExitTimestampMs, setManualExitTimestampMs] = useState<
+    number | null
+  >(null);
+  const [isSettingManualExit, setIsSettingManualExit] = useState(false);
   const [showCompareSelector, setShowCompareSelector] = useState(false);
   const [compareOptions, setCompareOptions] = useState<CompareTrackOption[]>([]);
   const [selectedCompareTrackIds, setSelectedCompareTrackIds] = useState<string[]>([]);
@@ -8532,6 +8722,9 @@ if (activePage === "lane") {
                       setGpsFileName("");
                       setGpsTrackPoints([]);
                       setIgnoredGroundSampleCount(0);
+                      setRawGpsCsv("");
+                      setManualExitTimestampMs(null);
+                      setIsSettingManualExit(false);
                       setCompetitionReferenceLat("");
                       setCompetitionReferenceLon("");
                       setCompetitionReferenceGroupId(null);
@@ -8556,8 +8749,13 @@ if (activePage === "lane") {
                     setJumpNotes("");
                     setSaveJumpStatus("");
 
-                    const csvText = await file.text();
+                    const storedCsvText = await file.text();
+                    const importedManualExitTimestampMs =
+                      getManualExitTimestampMs(storedCsvText);
+                    const csvText = stripManualExitMetadata(storedCsvText);
                     setRawGpsCsv(csvText);
+                    setManualExitTimestampMs(importedManualExitTimestampMs);
+                    setIsSettingManualExit(false);
 
                     const parsedPoints = parseFlySightCsv(csvText);
                     const workingTrackPoints = trimTrackForAnalysis(parsedPoints);
@@ -8581,9 +8779,10 @@ if (activePage === "lane") {
                       setDzElevationM(String(estimatedDzElevationM));
                     }
 
-                    const validatedJump = getValidatedJumpTrack(
+                    const validatedJump = getValidatedJumpTrackWithManualExit(
                       workingTrackPoints,
-                      dzElevationNumber
+                      dzElevationNumber,
+                      importedManualExitTimestampMs,
                     );
                     const detectedJumpTrack = getDetectedJumpTrack(
                       workingTrackPoints
@@ -9048,7 +9247,39 @@ if (activePage === "lane") {
     window.
   </p>
 
+  {manualExitTimestampMs !== null && (
+    <p className="manual-exit-summary" role="status">
+      Manual exit selected at{" "}
+      {new Date(manualExitTimestampMs).toLocaleTimeString()}. It will be kept
+      when you save or update this logbook track.
+    </p>
+  )}
+
   <div className="landing-actions track-info-actions">
+    {rawGpsCsv && gpsTrackPoints.length > 0 && (
+      <button
+        type="button"
+        className="set-exit-button"
+        onClick={
+          isSettingManualExit
+            ? cancelManualExitSelection
+            : beginManualExitSelection
+        }
+      >
+        {isSettingManualExit
+          ? "Cancel setting exit"
+          : manualExitTimestampMs !== null
+            ? "Change exit"
+            : "Set exit"}
+      </button>
+    )}
+
+    {manualExitTimestampMs !== null && (
+      <button type="button" onClick={clearManualExit}>
+        Use automatic exit
+      </button>
+    )}
+
     {rawGpsCsv && gpsTrackPoints.length > 0 && (
       <button
         type="button"
@@ -9241,11 +9472,44 @@ if (activePage === "lane") {
       0
     );
 
-    const validatedJump = getValidatedJumpTrack(
+    const validatedJump = getValidatedJumpTrackWithManualExit(
       gpsTrackPoints,
-      dzElevationNumber
+      dzElevationNumber,
+      manualExitTimestampMs,
     );
     const detectedJumpTrack = getDetectedJumpTrack(gpsTrackPoints);
+
+    if (isSettingManualExit) {
+      const selectionSourcePoints = detectedJumpTrack.isExitDetected
+        ? detectedJumpTrack.jumpPoints
+        : gpsTrackPoints;
+      const selectionPoints = trimTrackAfterLanding(selectionSourcePoints).map(
+        (point) => ({
+          ...point,
+          altitudeM: point.altitudeM - dzElevationNumber,
+        }),
+      );
+
+      return (
+        <div className="graph-view-container exit-selection-container">
+          <InteractiveTrackChart
+            key="exit-selection"
+            points={selectionPoints}
+            windowOffsetM={windowOffsetM}
+            winds={historicalWinds}
+            graphView="full"
+            onGraphViewChange={() => undefined}
+            scoreMode={jumpScoreMode}
+            onScoreModeChange={setJumpScoreMode}
+            showViewControls={false}
+            showScoreModeControl={false}
+            exitSelectionMode
+            onExitPointSelect={selectManualExitPoint}
+            onCancelExitSelection={cancelManualExitSelection}
+          />
+        </div>
+      );
+    }
 
     if (!validatedJump.isValidJump) {
       return (
@@ -10486,6 +10750,7 @@ if (activePage === "lane") {
 
       <div className="graph-view-container">
         <InteractiveTrackChart
+          key="analysis"
           points={displayedGraphPoints}
           windowOffsetM={windowOffsetM}
           winds={historicalWinds}

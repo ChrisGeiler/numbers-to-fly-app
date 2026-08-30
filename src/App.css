@@ -1539,6 +1539,36 @@ button:disabled {
   user-select: none;
 }
 
+.exit-selection-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(250, 204, 21, 0.7);
+  border-radius: 10px;
+  background: rgba(120, 53, 15, 0.28);
+  color: #fef3c7;
+}
+
+.exit-selection-banner p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.exit-selection-banner button {
+  width: auto;
+  margin: 0;
+  padding: 7px 12px;
+}
+
+.interactive-chart-wrap.exit-selection-active {
+  outline: 2px solid #facc15;
+  outline-offset: -2px;
+  cursor: crosshair;
+}
+
 .interactive-chart-wrap > .recharts-responsive-container {
   display: block;
   width: 100% !important;
@@ -1571,6 +1601,22 @@ button:disabled {
   padding: 10px 12px;
   border-radius: 10px;
   line-height: 1.1;
+}
+
+.track-info-actions .set-exit-button {
+  border-color: #facc15;
+  background: #ca8a04;
+  color: #111827;
+  font-weight: 800;
+}
+
+.manual-exit-summary {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(250, 204, 21, 0.55);
+  border-radius: 10px;
+  background: rgba(120, 53, 15, 0.2);
+  color: #fef3c7;
 }
 
 .save-jump-card label {
