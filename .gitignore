@@ -134,3 +134,8 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Local Codex analysis and generated artifacts
+.codex-tmp/
+outputs/
+work/
