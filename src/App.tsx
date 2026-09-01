@@ -1389,6 +1389,107 @@ function getSavedFindDetails(session: Session | null): SavedFindDetails | null {
 
 type ConfigTask = "distance" | "speed" | "time";
 
+type ConfigAlarmElevations = {
+  alarm9: string;
+  alarm5: string;
+  alarm4: string;
+  alarm3: string;
+  alarm2: string;
+  alarm1: string;
+  alarmBeep: string;
+  alarmFlare: string;
+  alarmTask: string;
+};
+
+type StoredConfigAlarmPresets = Partial<
+  Record<ConfigTask, ConfigAlarmElevations>
+>;
+
+type SavedConfigAlarmProfile = {
+  version: 1;
+  presets: StoredConfigAlarmPresets;
+};
+
+const CONFIG_ALARM_METADATA_KEY = "numbers_to_fly_alarm_elevations";
+
+function getConfigAlarmElevations(value: unknown): ConfigAlarmElevations | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const alarms = value as Record<string, unknown>;
+  const alarmKeys: readonly (keyof ConfigAlarmElevations)[] = [
+    "alarm9",
+    "alarm5",
+    "alarm4",
+    "alarm3",
+    "alarm2",
+    "alarm1",
+    "alarmBeep",
+    "alarmFlare",
+    "alarmTask",
+  ];
+
+  if (
+    alarmKeys.some((key) => {
+      const alarmValue = alarms[key];
+      return (
+        typeof alarmValue !== "string" ||
+        alarmValue.trim() === "" ||
+        !Number.isFinite(Number(alarmValue)) ||
+        Number(alarmValue) < 0
+      );
+    })
+  ) {
+    return null;
+  }
+
+  return {
+    alarm9: alarms.alarm9 as string,
+    alarm5: alarms.alarm5 as string,
+    alarm4: alarms.alarm4 as string,
+    alarm3: alarms.alarm3 as string,
+    alarm2: alarms.alarm2 as string,
+    alarm1: alarms.alarm1 as string,
+    alarmBeep: alarms.alarmBeep as string,
+    alarmFlare: alarms.alarmFlare as string,
+    alarmTask: alarms.alarmTask as string,
+  };
+}
+
+function getSavedConfigAlarmPresets(
+  session: Session | null,
+): StoredConfigAlarmPresets {
+  const value = session?.user.user_metadata?.[CONFIG_ALARM_METADATA_KEY];
+
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  const savedProfile = value as Record<string, unknown>;
+
+  if (
+    savedProfile.version !== 1 ||
+    !savedProfile.presets ||
+    typeof savedProfile.presets !== "object"
+  ) {
+    return {};
+  }
+
+  const savedPresets = savedProfile.presets as Record<string, unknown>;
+  const presets: StoredConfigAlarmPresets = {};
+
+  for (const task of ["distance", "speed", "time"] as const) {
+    const alarmElevations = getConfigAlarmElevations(savedPresets[task]);
+
+    if (alarmElevations) {
+      presets[task] = alarmElevations;
+    }
+  }
+
+  return presets;
+}
+
 type StoredConfigTonePresets = Partial<
   Record<
     ConfigTask,
@@ -6363,6 +6464,13 @@ const loadFindDetailsFromSession = useCallback((session: Session | null) => {
   }
 
   loadedFindDetailsUserIdRef.current = userId;
+  const savedAlarmPresets = getSavedConfigAlarmPresets(session);
+  setStoredConfigAlarmPresets(savedAlarmPresets);
+
+  if (savedAlarmPresets.distance) {
+    applyConfigAlarmElevations(savedAlarmPresets.distance);
+  }
+
   const savedDetails = getSavedFindDetails(session);
 
   if (!savedDetails) {
@@ -7574,6 +7682,10 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [configAlarmBeep, setConfigAlarmBeep] = useState("2500");
   const [configAlarmFlare, setConfigAlarmFlare] = useState("1600");
   const [configAlarmTask, setConfigAlarmTask] = useState("1450");
+  const [storedConfigAlarmPresets, setStoredConfigAlarmPresets] =
+    useState<StoredConfigAlarmPresets>({});
+  const [configAlarmProfileStatus, setConfigAlarmProfileStatus] = useState("");
+  const [configAlarmProfileBusy, setConfigAlarmProfileBusy] = useState(false);
   const [showAlarmHelp, setShowAlarmHelp] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
 
@@ -8029,6 +8141,89 @@ function calculateConfigTonePresetForTask(
 
   setConfigToneMin(tonePreset.toneMin);
   setConfigToneMax(tonePreset.toneMax);
+}
+
+function applyConfigAlarmElevations(alarms: ConfigAlarmElevations) {
+  setConfigAlarm9(alarms.alarm9);
+  setConfigAlarm5(alarms.alarm5);
+  setConfigAlarm4(alarms.alarm4);
+  setConfigAlarm3(alarms.alarm3);
+  setConfigAlarm2(alarms.alarm2);
+  setConfigAlarm1(alarms.alarm1);
+  setConfigAlarmBeep(alarms.alarmBeep);
+  setConfigAlarmFlare(alarms.alarmFlare);
+  setConfigAlarmTask(alarms.alarmTask);
+}
+
+function getCurrentConfigAlarmElevations(): ConfigAlarmElevations {
+  return {
+    alarm9: configAlarm9,
+    alarm5: configAlarm5,
+    alarm4: configAlarm4,
+    alarm3: configAlarm3,
+    alarm2: configAlarm2,
+    alarm1: configAlarm1,
+    alarmBeep: configAlarmBeep,
+    alarmFlare: configAlarmFlare,
+    alarmTask: configAlarmTask,
+  };
+}
+
+function updateConfigAlarmElevation(
+  setter: (value: string) => void,
+  value: string,
+) {
+  setter(value);
+  setConfigAlarmProfileStatus("");
+}
+
+async function saveConfigAlarmElevations() {
+  if (!supabaseSession) {
+    setConfigAlarmProfileStatus(
+      "Your signed-in session is still loading. Please try again.",
+    );
+    return;
+  }
+
+  const alarmElevations = getCurrentConfigAlarmElevations();
+
+  if (!getConfigAlarmElevations(alarmElevations)) {
+    setConfigAlarmProfileStatus(
+      "Enter a valid elevation of zero or more for every alarm before saving.",
+    );
+    return;
+  }
+
+  const nextPresets: StoredConfigAlarmPresets = {
+    ...storedConfigAlarmPresets,
+    [configTask]: alarmElevations,
+  };
+  const savedProfile: SavedConfigAlarmProfile = {
+    version: 1,
+    presets: nextPresets,
+  };
+
+  setConfigAlarmProfileBusy(true);
+  setConfigAlarmProfileStatus("");
+
+  const { error } = await supabase.auth.updateUser({
+    data: {
+      [CONFIG_ALARM_METADATA_KEY]: savedProfile,
+    },
+  });
+
+  if (error) {
+    setConfigAlarmProfileStatus(
+      `Could not save your alarm elevations: ${error.message}`,
+    );
+  } else {
+    setStoredConfigAlarmPresets(nextPresets);
+    setConfigAlarmProfileStatus(
+      `Your ${configTask} alarm elevations have been saved to your profile.`,
+    );
+  }
+
+  setConfigAlarmProfileBusy(false);
 }
 
 function applyConfigAlarmDefaults(nextTask: ConfigTask) {
@@ -11655,9 +11850,19 @@ if (activePage === "rules") {
               onChange={(e) => {
                 const nextTask = e.target.value as ConfigTask;
                 const storedPreset = storedConfigTonePresets[nextTask];
+                const storedAlarmPreset = storedConfigAlarmPresets[nextTask];
 
                 setConfigTask(nextTask);
-                applyConfigAlarmDefaults(nextTask);
+
+                if (storedAlarmPreset) {
+                  applyConfigAlarmElevations(storedAlarmPreset);
+                  setConfigAlarmProfileStatus(
+                    `Your saved ${nextTask} alarm elevations have been loaded.`,
+                  );
+                } else {
+                  applyConfigAlarmDefaults(nextTask);
+                  setConfigAlarmProfileStatus("");
+                }
 
                 if (storedPreset) {
                   setConfigToneMin(storedPreset.toneMin);
@@ -11994,7 +12199,9 @@ if (activePage === "rules") {
               <input
                 type="number"
                 value={configAlarm9}
-                onChange={(e) => setConfigAlarm9(e.target.value)}
+                onChange={(e) =>
+                  updateConfigAlarmElevation(setConfigAlarm9, e.target.value)
+                }
               />
             </label>
 
@@ -12003,7 +12210,9 @@ if (activePage === "rules") {
               <input
                 type="number"
                 value={configAlarm5}
-                onChange={(e) => setConfigAlarm5(e.target.value)}
+                onChange={(e) =>
+                  updateConfigAlarmElevation(setConfigAlarm5, e.target.value)
+                }
               />
             </label>
 
@@ -12012,7 +12221,9 @@ if (activePage === "rules") {
               <input
                 type="number"
                 value={configAlarm4}
-                onChange={(e) => setConfigAlarm4(e.target.value)}
+                onChange={(e) =>
+                  updateConfigAlarmElevation(setConfigAlarm4, e.target.value)
+                }
               />
             </label>
 
@@ -12021,7 +12232,9 @@ if (activePage === "rules") {
               <input
                 type="number"
                 value={configAlarm3}
-                onChange={(e) => setConfigAlarm3(e.target.value)}
+                onChange={(e) =>
+                  updateConfigAlarmElevation(setConfigAlarm3, e.target.value)
+                }
               />
             </label>
 
@@ -12030,7 +12243,9 @@ if (activePage === "rules") {
               <input
                 type="number"
                 value={configAlarm2}
-                onChange={(e) => setConfigAlarm2(e.target.value)}
+                onChange={(e) =>
+                  updateConfigAlarmElevation(setConfigAlarm2, e.target.value)
+                }
               />
             </label>
 
@@ -12039,7 +12254,9 @@ if (activePage === "rules") {
               <input
                 type="number"
                 value={configAlarm1}
-                onChange={(e) => setConfigAlarm1(e.target.value)}
+                onChange={(e) =>
+                  updateConfigAlarmElevation(setConfigAlarm1, e.target.value)
+                }
               />
             </label>
 
@@ -12048,7 +12265,9 @@ if (activePage === "rules") {
               <input
                 type="number"
                 value={configAlarmBeep}
-                onChange={(e) => setConfigAlarmBeep(e.target.value)}
+                onChange={(e) =>
+                  updateConfigAlarmElevation(setConfigAlarmBeep, e.target.value)
+                }
               />
             </label>
 
@@ -12057,7 +12276,9 @@ if (activePage === "rules") {
               <input
                 type="number"
                 value={configAlarmFlare}
-                onChange={(e) => setConfigAlarmFlare(e.target.value)}
+                onChange={(e) =>
+                  updateConfigAlarmElevation(setConfigAlarmFlare, e.target.value)
+                }
               />
             </label>
 
@@ -12066,10 +12287,38 @@ if (activePage === "rules") {
               <input
                 type="number"
                 value={configAlarmTask}
-                onChange={(e) => setConfigAlarmTask(e.target.value)}
+                onChange={(e) =>
+                  updateConfigAlarmElevation(setConfigAlarmTask, e.target.value)
+                }
               />
             </label>
           </div>
+
+          <p className="subtitle config-alarm-profile-note">
+            Alarm elevations are saved separately for Distance, Speed, and Time.
+          </p>
+
+          <div className="config-alarm-profile-actions">
+            <button
+              type="button"
+              disabled={configAlarmProfileBusy}
+              onClick={() => void saveConfigAlarmElevations()}
+            >
+              {configAlarmProfileBusy
+                ? "Saving alarm elevations..."
+                : "Save alarm elevations to profile"}
+            </button>
+          </div>
+
+          {configAlarmProfileStatus && (
+            <p
+              className="config-alarm-profile-status"
+              role="status"
+              aria-live="polite"
+            >
+              {configAlarmProfileStatus}
+            </p>
+          )}
         </section>
 
         <section className="card">
