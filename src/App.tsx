@@ -1272,6 +1272,13 @@ type WindSource =
   | "open-meteo"
   | "meteomatics"
   | "windy";
+type WindCorrectionSource = "open-meteo" | "mark-schulze" | "meteomatics";
+
+const WIND_CORRECTION_SOURCE_LABELS: Record<WindCorrectionSource, string> = {
+  "open-meteo": "Open-Meteo historical",
+  "mark-schulze": "Mark Schulze forecast service",
+  meteomatics: "Meteomatics forecast service",
+};
 type SuitSetup =
   | ""
   | "crplus-no-wingtips"
@@ -1713,6 +1720,67 @@ type OpenMeteoResponse = {
   }
 
   return windLayers.sort((a, b) => a.altitudeM - b.altitudeM);
+}
+
+type WindCorrectionProfile = {
+  winds: WindLayer[];
+  sourceLabel: string;
+};
+
+async function fetchWindCorrectionProfile({
+  source,
+  latitude,
+  longitude,
+  timestampMs,
+  dzElevationM,
+}: {
+  source: WindCorrectionSource;
+  latitude: number;
+  longitude: number;
+  timestampMs: number;
+  dzElevationM: number;
+}): Promise<WindCorrectionProfile> {
+  if (source === "open-meteo") {
+    const winds = await fetchHistoricalWindProfile({
+      latitude,
+      longitude,
+      timestampMs,
+      dzElevationM,
+    });
+
+    return {
+      winds,
+      sourceLabel: WIND_CORRECTION_SOURCE_LABELS[source],
+    };
+  }
+
+  const hourOffset = Math.round(
+    (timestampMs - Date.now()) / (60 * 60 * 1000),
+  );
+  const endpoint = source === "meteomatics" ? "/meteomatics" : "/";
+  const url = `${windProxyUrl}${endpoint}?lat=${encodeURIComponent(
+    latitude,
+  )}&lon=${encodeURIComponent(longitude)}&hourOffset=${encodeURIComponent(
+    hourOffset,
+  )}`;
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(
+      `${WIND_CORRECTION_SOURCE_LABELS[source]} request failed with status ${response.status}.`,
+    );
+  }
+
+  const data = (await response.json()) as MeteomaticsProxyResponse;
+  const winds =
+    source === "meteomatics"
+      ? mapMeteomaticsToWindLayers(data)
+      : mapMarkSchulzeToWindLayers(data);
+
+  return {
+    winds,
+    sourceLabel: data.model?.trim() || WIND_CORRECTION_SOURCE_LABELS[source],
+  };
 }
 
 type WindAdvantageSummary = {
@@ -5155,9 +5223,11 @@ function NonCompetitionTrackReview({
 function TrackComparisonChart({
   tracks,
   windowOffsetM,
+  windCorrectionSource,
 }: {
   tracks: CompareTrackOption[];
   windowOffsetM: number;
+  windCorrectionSource: WindCorrectionSource;
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playheadSeconds, setPlayheadSeconds] = useState(0);
@@ -5243,15 +5313,18 @@ function TrackComparisonChart({
     [tracks, windowOffsetM]
   );
 
-  const windRequestKey = baseTracks
+  const windRequestKey = `${windCorrectionSource}|${baseTracks
     .map(
       (track) =>
         `${track.id}:${track.exitPoint?.timestampMs ?? "none"}:${track.dzElevationM}`
     )
-    .join("|");
+    .join("|")}`;
 
   useEffect(() => {
     let active = true;
+
+    setWindProfilesByTrackId({});
+    setWindUnavailableTrackIds([]);
 
     void (async () => {
       const results = await Promise.all(
@@ -5263,14 +5336,15 @@ function TrackComparisonChart({
           }
 
           try {
-            const winds = await fetchHistoricalWindProfile({
+            const profile = await fetchWindCorrectionProfile({
+              source: windCorrectionSource,
               latitude: exitPoint.lat,
               longitude: exitPoint.lon,
               timestampMs: exitPoint.timestampMs,
               dzElevationM: track.dzElevationM,
             });
 
-            return { id: track.id, winds };
+            return { id: track.id, winds: profile.winds };
           } catch {
             return { id: track.id, winds: null };
           }
@@ -5301,7 +5375,7 @@ function TrackComparisonChart({
     return () => {
       active = false;
     };
-  }, [windRequestKey, baseTracks]);
+  }, [windRequestKey, baseTracks, windCorrectionSource]);
 
   const allTracksHaveWinds =
     baseTracks.length > 0 &&
@@ -5897,12 +5971,12 @@ function TrackComparisonChart({
 
         <p className="compare-wind-status" role="status">
           {isLoadingComparisonWinds
-            ? "Loading historical wind data for every selected track…"
+            ? `Loading ${WIND_CORRECTION_SOURCE_LABELS[windCorrectionSource]} wind data for every selected track…`
             : allTracksHaveWinds
               ? effectiveScoreMode === "corrected"
-                ? "Corrected air-relative values are applied to every track."
-                : "Historical wind data is ready for every track."
-              : "Corrected mode is unavailable because one or more tracks do not have usable historical wind data."}
+                ? `Corrected air-relative values from ${WIND_CORRECTION_SOURCE_LABELS[windCorrectionSource]} are applied to every track.`
+                : `${WIND_CORRECTION_SOURCE_LABELS[windCorrectionSource]} wind data is ready for every track.`
+              : `Corrected mode is unavailable because ${WIND_CORRECTION_SOURCE_LABELS[windCorrectionSource]} did not return usable wind data for one or more tracks.`}
         </p>
       </div>
 
@@ -7174,8 +7248,6 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
       setCompetitionReferenceLon("");
       setCompetitionReferenceGroupId(null);
       setShowCompetitionReferencePicker(false);
-      setHistoricalWinds([]);
-      setHistoricalWindStatus("Loading historical winds...");
 
       setGpsFileName(
         jump.jump_date
@@ -7197,47 +7269,12 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
         });
       }, 100);
 
-      const validatedJump = getValidatedJumpTrackWithManualExit(
+      await loadWindCorrectionForTrack(
         workingTrackPoints,
         dzElevationNumber,
         savedManualExitTimestampMs,
+        windCorrectionSource,
       );
-      const detectedJumpTrack = getDetectedJumpTrack(workingTrackPoints);
-      const exitPoint =
-        validatedJump.exitPoint ?? detectedJumpTrack.exitPoint;
-
-      if (
-        !exitPoint ||
-        exitPoint.timestampMs === null
-      ) {
-        setHistoricalWindStatus(
-          "Historical winds could not be loaded because no timestamped jump exit was detected."
-        );
-        return;
-      }
-
-      try {
-        const importedWinds = await fetchHistoricalWindProfile({
-          latitude: exitPoint.lat,
-          longitude: exitPoint.lon,
-          timestampMs: exitPoint.timestampMs,
-          dzElevationM: dzElevationNumber,
-        });
-
-        setHistoricalWinds(importedWinds);
-        setHistoricalWindStatus(
-          `Loaded ${importedWinds.length} historical wind levels.`
-        );
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Unknown historical wind error.";
-
-        setHistoricalWindStatus(
-          `Could not load historical winds: ${message}`
-        );
-      }
     }
 
     async function saveEditedJump() {
@@ -7358,6 +7395,8 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [compareStatus, setCompareStatus] = useState("");
   const [historicalWinds, setHistoricalWinds] = useState<WindLayer[]>([]);
   const [historicalWindStatus, setHistoricalWindStatus] = useState("");
+  const [windCorrectionSource, setWindCorrectionSource] =
+    useState<WindCorrectionSource>("open-meteo");
   const [taskMode, setTaskMode] = useState<TaskMode>("distance");
 
   const [windSource, setWindSource] =
@@ -7382,6 +7421,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const saveLaneButtonRef = useRef<HTMLButtonElement | null>(null);
   const logbookSectionRef = useRef<HTMLElement | null>(null);
   const compareChartSectionRef = useRef<HTMLDivElement | null>(null);
+  const windCorrectionRequestIdRef = useRef(0);
 
   const visibleSavedJumps = useMemo(() => {
     const { filters, remainingQuery } =
@@ -7539,6 +7579,85 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
 
   const [globalWindFromDeg, setGlobalWindFromDeg] = useState("");
   const [globalWindSpeedKt, setGlobalWindSpeedKt] = useState("");
+
+  async function loadWindCorrectionForTrack(
+    points: GpsTrackPoint[],
+    dzElevationNumber: number,
+    selectedManualExitTimestampMs: number | null,
+    source: WindCorrectionSource,
+  ) {
+    const requestId = windCorrectionRequestIdRef.current + 1;
+    windCorrectionRequestIdRef.current = requestId;
+    setHistoricalWinds([]);
+    setHistoricalWindStatus(
+      `Loading winds from ${WIND_CORRECTION_SOURCE_LABELS[source]}...`,
+    );
+
+    const validatedJump = getValidatedJumpTrackWithManualExit(
+      points,
+      dzElevationNumber,
+      selectedManualExitTimestampMs,
+    );
+    const detectedJumpTrack = getDetectedJumpTrack(points);
+    const exitPoint = validatedJump.exitPoint ?? detectedJumpTrack.exitPoint;
+
+    if (!exitPoint || exitPoint.timestampMs === null) {
+      setHistoricalWindStatus(
+        "Wind correction could not be loaded because no timestamped jump exit was detected.",
+      );
+      return;
+    }
+
+    try {
+      const profile = await fetchWindCorrectionProfile({
+        source,
+        latitude: exitPoint.lat,
+        longitude: exitPoint.lon,
+        timestampMs: exitPoint.timestampMs,
+        dzElevationM: dzElevationNumber,
+      });
+
+      if (windCorrectionRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setHistoricalWinds(profile.winds);
+      setHistoricalWindStatus(
+        `Loaded ${profile.winds.length} wind levels from ${profile.sourceLabel}.`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unknown wind correction error.";
+
+      if (windCorrectionRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setHistoricalWindStatus(
+        `Could not load winds from ${WIND_CORRECTION_SOURCE_LABELS[source]}: ${message}`,
+      );
+    }
+  }
+
+  async function handleWindCorrectionSourceChange(
+    source: WindCorrectionSource,
+  ) {
+    setWindCorrectionSource(source);
+
+    if (gpsTrackPoints.length === 0) {
+      setHistoricalWindStatus("");
+      return;
+    }
+
+    await loadWindCorrectionForTrack(
+      gpsTrackPoints,
+      numberFromInput(dzElevationM, 0),
+      manualExitTimestampMs,
+      source,
+    );
+  }
 
   const [referenceLat, setReferenceLat] = useState("");
   const [referenceLon, setReferenceLon] = useState("");
@@ -8936,6 +9055,27 @@ if (activePage === "lane") {
               </label>
 
               <label>
+                Wind correction source
+                <select
+                  value={windCorrectionSource}
+                  onChange={(event) =>
+                    void handleWindCorrectionSourceChange(
+                      event.target.value as WindCorrectionSource,
+                    )
+                  }
+                >
+                  <option value="open-meteo">Open-Meteo historical</option>
+                  <option value="mark-schulze">Mark Schulze</option>
+                  <option value="meteomatics">Meteomatics</option>
+                </select>
+              </label>
+
+              <p className="subtitle">
+                This source is used by Corrected mode for the open track and every
+                track in a comparison.
+              </p>
+
+              <label>
                 Choose GPS track file
                 <input
                   type="file"
@@ -8944,6 +9084,7 @@ if (activePage === "lane") {
                     const file = event.target.files?.[0];
 
                     if (!file) {
+                      windCorrectionRequestIdRef.current += 1;
                       setGpsFileName("");
                       setGpsTrackPoints([]);
                       setIgnoredGroundSampleCount(0);
@@ -8959,6 +9100,8 @@ if (activePage === "lane") {
                       setJumpSuitName("");
                       setJumpNotes("");
                       setSaveJumpStatus("");
+                      setHistoricalWinds([]);
+                      setHistoricalWindStatus("");
                       return;
                     }
 
@@ -9004,27 +9147,6 @@ if (activePage === "lane") {
                       setDzElevationM(String(estimatedDzElevationM));
                     }
 
-                    const validatedJump = getValidatedJumpTrackWithManualExit(
-                      workingTrackPoints,
-                      dzElevationNumber,
-                      importedManualExitTimestampMs,
-                    );
-                    const detectedJumpTrack = getDetectedJumpTrack(
-                      workingTrackPoints
-                    );
-                    const exitPoint =
-                      validatedJump.exitPoint ?? detectedJumpTrack.exitPoint;
-
-                    if (
-                      !exitPoint ||
-                      exitPoint.timestampMs === null
-                    ) {
-                      setHistoricalWindStatus(
-                        "Historical winds could not be loaded because no timestamped jump exit was detected."
-                      );
-                      return;
-                    }
-
                     const trimmedTrackPoints = workingTrackPoints;
                     const landingPoint =
                       trimmedTrackPoints[trimmedTrackPoints.length - 1] ??
@@ -9041,28 +9163,12 @@ if (activePage === "lane") {
                         `Matched saved location: ${matchingLocation.locationName}.`
                       );
                     }
-                    setHistoricalWindStatus("Loading historical winds...");
-
-                    try {
-                      const importedWinds = await fetchHistoricalWindProfile({
-                        latitude: exitPoint.lat,
-                        longitude: exitPoint.lon,
-                        timestampMs: exitPoint.timestampMs,
-                        dzElevationM: dzElevationNumber,
-                      });
-
-                      setHistoricalWinds(importedWinds);
-                      setHistoricalWindStatus(
-                        `Loaded ${importedWinds.length} historical wind levels.`
-                      );
-                    } catch (error) {
-                      const message =
-                        error instanceof Error
-                          ? error.message
-                          : "Unknown historical wind error.";
-
-                      setHistoricalWindStatus(`Could not load historical winds: ${message}`);
-                    }
+                    await loadWindCorrectionForTrack(
+                      workingTrackPoints,
+                      dzElevationNumber,
+                      importedManualExitTimestampMs,
+                      windCorrectionSource,
+                    );
                   }}          />
               </label>
 
@@ -11195,6 +11301,7 @@ if (activePage === "lane") {
           <TrackComparisonChart
             tracks={selectedCompareTracks}
             windowOffsetM={windowOffsetM}
+            windCorrectionSource={windCorrectionSource}
           />
         </div>
       )}
