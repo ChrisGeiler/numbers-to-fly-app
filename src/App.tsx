@@ -4304,6 +4304,30 @@ function ruleMatchesSearchWords(
   });
 }
 
+function WindCorrectionSourceControl({
+  source,
+  onChange,
+}: {
+  source: WindCorrectionSource;
+  onChange: (source: WindCorrectionSource) => void;
+}) {
+  return (
+    <label className="wind-correction-source-control">
+      <span>Wind correction source</span>
+      <select
+        value={source}
+        onChange={(event) =>
+          onChange(event.target.value as WindCorrectionSource)
+        }
+      >
+        <option value="open-meteo">Open-Meteo historical</option>
+        <option value="mark-schulze">Mark Schulze</option>
+        <option value="meteomatics">Meteomatics</option>
+      </select>
+    </label>
+  );
+}
+
 function BottomBackButton({
   label,
   onClick,
@@ -5137,6 +5161,8 @@ function NonCompetitionTrackReview({
   winds,
   scoreMode,
   onScoreModeChange,
+  windCorrectionSource,
+  onWindCorrectionSourceChange,
 }: {
   points: GpsTrackPoint[];
   dzElevationM: number;
@@ -5145,6 +5171,8 @@ function NonCompetitionTrackReview({
   winds: WindLayer[];
   scoreMode: "raw" | "corrected";
   onScoreModeChange: (mode: "raw" | "corrected") => void;
+  windCorrectionSource: WindCorrectionSource;
+  onWindCorrectionSourceChange: (source: WindCorrectionSource) => void;
 }) {
   const displayedPoints = points.map((point) => ({
     ...point,
@@ -5178,6 +5206,11 @@ function NonCompetitionTrackReview({
             ? "The graph starts at the detected exit and this jump can be saved as Non-comp."
             : "The available track is shown below and can be saved as Non-comp."}
         </p>
+
+        <WindCorrectionSourceControl
+          source={windCorrectionSource}
+          onChange={onWindCorrectionSourceChange}
+        />
 
         <div className="main-score-columns">
           <div className="main-score-column">
@@ -5224,10 +5257,12 @@ function TrackComparisonChart({
   tracks,
   windowOffsetM,
   windCorrectionSource,
+  onWindCorrectionSourceChange,
 }: {
   tracks: CompareTrackOption[];
   windowOffsetM: number;
   windCorrectionSource: WindCorrectionSource;
+  onWindCorrectionSourceChange: (source: WindCorrectionSource) => void;
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playheadSeconds, setPlayheadSeconds] = useState(0);
@@ -5920,6 +5955,11 @@ function TrackComparisonChart({
         <p className="subtitle">
           {chartSubtitle}
         </p>
+
+        <WindCorrectionSourceControl
+          source={windCorrectionSource}
+          onChange={onWindCorrectionSourceChange}
+        />
 
         <div className="compare-control-row">
           <label className="score-mode-switch compare-score-mode-switch">
@@ -9055,27 +9095,6 @@ if (activePage === "lane") {
               </label>
 
               <label>
-                Wind correction source
-                <select
-                  value={windCorrectionSource}
-                  onChange={(event) =>
-                    void handleWindCorrectionSourceChange(
-                      event.target.value as WindCorrectionSource,
-                    )
-                  }
-                >
-                  <option value="open-meteo">Open-Meteo historical</option>
-                  <option value="mark-schulze">Mark Schulze</option>
-                  <option value="meteomatics">Meteomatics</option>
-                </select>
-              </label>
-
-              <p className="subtitle">
-                This source is used by Corrected mode for the open track and every
-                track in a comparison.
-              </p>
-
-              <label>
                 Choose GPS track file
                 <input
                   type="file"
@@ -9860,6 +9879,10 @@ if (activePage === "lane") {
           winds={historicalWinds}
           scoreMode={jumpScoreMode}
           onScoreModeChange={setJumpScoreMode}
+          windCorrectionSource={windCorrectionSource}
+          onWindCorrectionSourceChange={(source) =>
+            void handleWindCorrectionSourceChange(source)
+          }
         />
       );
     }
@@ -9893,6 +9916,10 @@ if (activePage === "lane") {
           winds={historicalWinds}
           scoreMode={jumpScoreMode}
           onScoreModeChange={setJumpScoreMode}
+          windCorrectionSource={windCorrectionSource}
+          onWindCorrectionSourceChange={(source) =>
+            void handleWindCorrectionSourceChange(source)
+          }
         />
       );
     }
@@ -10638,6 +10665,13 @@ if (activePage === "lane") {
         <div className="metric-section">
           <h3>Main Scores</h3>
 
+          <WindCorrectionSourceControl
+            source={windCorrectionSource}
+            onChange={(source) =>
+              void handleWindCorrectionSourceChange(source)
+            }
+          />
+
           <label className="score-mode-switch">
             <span className={jumpScoreMode === "raw" ? "active" : ""}>Raw</span>
 
@@ -11302,6 +11336,9 @@ if (activePage === "lane") {
             tracks={selectedCompareTracks}
             windowOffsetM={windowOffsetM}
             windCorrectionSource={windCorrectionSource}
+            onWindCorrectionSourceChange={(source) =>
+              void handleWindCorrectionSourceChange(source)
+            }
           />
         </div>
       )}

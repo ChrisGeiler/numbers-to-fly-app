@@ -1057,6 +1057,26 @@ button:disabled {
   font-size: 1.1rem;
 }
 
+.wind-correction-source-control {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: min(100%, 360px);
+  margin: 10px auto 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  border-radius: 12px;
+  background: rgba(8, 145, 178, 0.1);
+  color: #a5f3fc;
+  text-align: center;
+  font-weight: 850;
+}
+
+.wind-correction-source-control select {
+  width: 100%;
+  margin: 0;
+}
+
 .score-mode-switch {
   display: flex;
   align-items: center;
