@@ -3526,6 +3526,13 @@ function MapClickPicker({
         <TileLayer
           attribution="Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community"
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+          zIndex={1}
+        />
+
+        <TileLayer
+          attribution="Place labels &copy; Esri, HERE, Garmin, OpenStreetMap contributors, and the GIS User Community"
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+          zIndex={2}
         />
 
         <ClickHandler />
