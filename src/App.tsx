@@ -7809,6 +7809,36 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     (total, group) => total + group.points.length,
     0,
   );
+  const sportDropzoneSearchIndex = useMemo(
+    () =>
+      new Fuse(
+        SPORT_DROPZONES.map((dropzone) => ({
+          dropzone,
+          searchText: [
+            dropzone.name,
+            ...(dropzone.aliases ?? []),
+            dropzone.town,
+            dropzone.state ?? "",
+            dropzone.country,
+          ].join(" "),
+        })),
+        {
+          keys: [
+            { name: "dropzone.name", weight: 0.35 },
+            { name: "dropzone.aliases", weight: 0.25 },
+            { name: "dropzone.town", weight: 0.2 },
+            { name: "dropzone.state", weight: 0.08 },
+            { name: "dropzone.country", weight: 0.05 },
+            { name: "searchText", weight: 0.07 },
+          ],
+          threshold: 0.4,
+          ignoreLocation: true,
+          includeScore: true,
+          minMatchCharLength: 2,
+        },
+      ),
+    [],
+  );
   const sportDropzoneSuggestions = useMemo(() => {
     const normalizedSearch = sportDropzoneSearch.trim().toLowerCase();
 
@@ -7816,41 +7846,53 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
       return [];
     }
 
-    return SPORT_DROPZONES.map((dropzone) => {
-      const name = dropzone.name.toLowerCase();
-      const town = dropzone.town.toLowerCase();
-      const state = (dropzone.state ?? "").toLowerCase();
-      const country = dropzone.country.toLowerCase();
-      const searchableLocation = [name, town, state, country].join(" ");
-      let score = Number.POSITIVE_INFINITY;
+    const searchableValues = (dropzone: SportDropzone) => [
+      dropzone.name,
+      ...(dropzone.aliases ?? []),
+      dropzone.town,
+      dropzone.state ?? "",
+      dropzone.country,
+    ];
+    const directMatches = SPORT_DROPZONES.filter((dropzone) =>
+      searchableValues(dropzone).some((value) =>
+        value.toLowerCase().includes(normalizedSearch),
+      ),
+    ).sort((left, right) => {
+      const matchPriority = (dropzone: SportDropzone) => {
+        const values = searchableValues(dropzone).map((value) =>
+          value.toLowerCase(),
+        );
 
-      if (name === normalizedSearch) {
-        score = 0;
-      } else if (name.startsWith(normalizedSearch)) {
-        score = 1;
-      } else if (name.includes(normalizedSearch)) {
-        score = 2;
-      } else if (town.startsWith(normalizedSearch)) {
-        score = 3;
-      } else if (state.startsWith(normalizedSearch)) {
-        score = 4;
-      } else if (country.startsWith(normalizedSearch)) {
-        score = 5;
-      } else if (searchableLocation.includes(normalizedSearch)) {
-        score = 6;
-      }
+        if (values.some((value) => value === normalizedSearch)) {
+          return 0;
+        }
 
-      return { dropzone, score };
-    })
-      .filter(({ score }) => Number.isFinite(score))
-      .sort(
-        (left, right) =>
-          left.score - right.score ||
-          left.dropzone.name.localeCompare(right.dropzone.name),
-      )
-      .slice(0, 8)
-      .map(({ dropzone }) => dropzone);
-  }, [sportDropzoneSearch]);
+        if (values.some((value) => value.startsWith(normalizedSearch))) {
+          return 1;
+        }
+
+        return 2;
+      };
+
+      return (
+        matchPriority(left) - matchPriority(right) ||
+        left.name.localeCompare(right.name)
+      );
+    });
+    const fuzzyMatches =
+      normalizedSearch.length >= 2
+        ? sportDropzoneSearchIndex
+            .search(normalizedSearch, { limit: 16 })
+            .map((result) => result.item.dropzone)
+        : [];
+    const uniqueMatches = new Map<string, SportDropzone>();
+
+    [...directMatches, ...fuzzyMatches].forEach((dropzone) => {
+      uniqueMatches.set(dropzone.id, dropzone);
+    });
+
+    return [...uniqueMatches.values()].slice(0, 8);
+  }, [sportDropzoneSearch, sportDropzoneSearchIndex]);
   const selectedSavedReferencePointsForMap = useMemo(() => {
     const lat = optionalNumberFromInput(referenceLat);
     const lon = optionalNumberFromInput(referenceLon);
@@ -12759,7 +12801,8 @@ if (activePage === "rules") {
         >
           <label htmlFor="sport-dropzone-search">Find a sport drop zone</label>
           <p className="dropzone-search-help">
-            Type its name to centre the map near the drop zone.
+            Search by business name or city to centre the map near the drop
+            zone.
           </p>
 
           <div className="dropzone-search-combobox">
@@ -12780,7 +12823,7 @@ if (activePage === "rules") {
                   : undefined
               }
               value={sportDropzoneSearch}
-              placeholder="Drop-zone name, town or country"
+              placeholder="Business name or city"
               onFocus={() => {
                 if (sportDropzoneSearch.trim()) {
                   setShowSportDropzoneSuggestions(true);

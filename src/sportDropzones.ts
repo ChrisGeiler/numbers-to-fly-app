@@ -5,7 +5,8 @@ export type SportDropzone = {
   name: string;
   town: string;
   country: string;
-  state?: "NSW" | "NT" | "QLD" | "SA" | "VIC" | "WA";
+  state?: string;
+  aliases?: string[];
   lat: number;
   lon: number;
 };
@@ -183,10 +184,41 @@ const AUSTRALIAN_SPORT_DROPZONES: Array<Omit<SportDropzone, "country">> = [
   },
 ];
 
+// Verified sport-jumping locations that are missing from the generated venue
+// feed. Aliases cover common business, airport, and local drop-zone names.
+const VERIFIED_WORLDWIDE_SPORT_DROPZONES: SportDropzone[] = [
+  {
+    id: "skydive-perris",
+    name: "Skydive Perris",
+    aliases: ["Perris Valley Skydiving", "Perris Valley Airport", "L65"],
+    town: "Perris",
+    state: "California",
+    country: "United States",
+    lat: 33.764639,
+    lon: -117.219,
+  },
+  {
+    id: "skydive-elsinore",
+    name: "Skydive Elsinore",
+    aliases: [
+      "Skydive Lake Elsinore",
+      "Lake Elsinore Drop Zone",
+      "Skylark Field",
+      "CA89",
+    ],
+    town: "Lake Elsinore",
+    state: "California",
+    country: "United States",
+    lat: 33.630023,
+    lon: -117.301704,
+  },
+];
+
 export const SPORT_DROPZONES: SportDropzone[] = [
   ...AUSTRALIAN_SPORT_DROPZONES.map((dropzone) => ({
     ...dropzone,
     country: "Australia",
   })),
+  ...VERIFIED_WORLDWIDE_SPORT_DROPZONES,
   ...WORLDWIDE_SPORT_DROPZONES,
 ];
