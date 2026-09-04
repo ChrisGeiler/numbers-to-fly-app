@@ -1,0 +1,190 @@
+export type SportDropzone = {
+  id: string;
+  name: string;
+  town: string;
+  state: "NSW" | "NT" | "QLD" | "SA" | "VIC" | "WA";
+  lat: number;
+  lon: number;
+};
+
+export const SPORT_DROPZONE_STATE_ORDER: SportDropzone["state"][] = [
+  "NSW",
+  "QLD",
+  "VIC",
+  "SA",
+  "WA",
+  "NT",
+];
+
+// One entry per physical sport-jumping location. Tandem-only locations and
+// duplicate operator listings at the same airfield are intentionally omitted.
+export const SPORT_DROPZONES: SportDropzone[] = [
+  {
+    id: "coffs-harbour",
+    name: "Coffs City Skydivers",
+    town: "Coffs Harbour",
+    state: "NSW",
+    lat: -30.314445,
+    lon: 153.116112,
+  },
+  {
+    id: "elderslie",
+    name: "SKYONE Hunter Valley / Newcastle Sport Parachute Club",
+    town: "Elderslie",
+    state: "NSW",
+    lat: -32.60047,
+    lon: 151.343681,
+  },
+  {
+    id: "byron-bay",
+    name: "Skydive Byron Bay",
+    town: "Tyagarah",
+    state: "NSW",
+    lat: -28.59446,
+    lon: 153.54714,
+  },
+  {
+    id: "moruya",
+    name: "SKYONE Moruya",
+    town: "Moruya",
+    state: "NSW",
+    lat: -35.90375,
+    lon: 150.142917,
+  },
+  {
+    id: "taree",
+    name: "Skydiving NSW Drop Zone",
+    town: "Cundletown / Taree",
+    state: "NSW",
+    lat: -31.889506,
+    lon: 152.511167,
+  },
+  {
+    id: "wilton",
+    name: "SKYONE Sydney",
+    town: "Wilton",
+    state: "NSW",
+    lat: -34.221667,
+    lon: 150.671112,
+  },
+  {
+    id: "airlie-beach",
+    name: "SKYONE Airlie Beach",
+    town: "Laguna Quays",
+    state: "QLD",
+    lat: -20.268005,
+    lon: 148.718326,
+  },
+  {
+    id: "cairns-mundoo",
+    name: "SKYONE Cairns",
+    town: "Mundoo / Innisfail",
+    state: "QLD",
+    lat: -17.5595,
+    lon: 146.0117,
+  },
+  {
+    id: "tully",
+    name: "Far North Freefall Club",
+    town: "Tully",
+    state: "QLD",
+    lat: -17.930628,
+    lon: 145.940425,
+  },
+  {
+    id: "funny-farm",
+    name: "Funny Farm",
+    town: "Bungunya",
+    state: "QLD",
+    lat: -28.1236,
+    lon: 149.6856,
+  },
+  {
+    id: "toogoolawah",
+    name: "Ramblers Parachute Centre",
+    town: "Toogoolawah",
+    state: "QLD",
+    lat: -27.06929,
+    lon: 152.38352,
+  },
+  {
+    id: "caloundra",
+    name: "Sunshine Coast Skydivers",
+    town: "Caloundra",
+    state: "QLD",
+    lat: -26.797615,
+    lon: 153.109932,
+  },
+  {
+    id: "morwell",
+    name: "Commando Skydivers",
+    town: "Morwell",
+    state: "VIC",
+    lat: -38.208334,
+    lon: 146.472778,
+  },
+  {
+    id: "great-ocean-road",
+    name: "Skydive Great Ocean Road",
+    town: "Connewarre / Barwon Heads",
+    state: "VIC",
+    lat: -38.25901,
+    lon: 144.4289,
+  },
+  {
+    id: "torquay",
+    name: "SKYONE Great Ocean Road",
+    town: "Torquay",
+    state: "VIC",
+    lat: -38.3,
+    lon: 144.366667,
+  },
+  {
+    id: "lower-light",
+    name: "Adelaide Skydiving Centre / SA Sport Parachute Club",
+    town: "Lower Light",
+    state: "SA",
+    lat: -34.518511,
+    lon: 138.423923,
+  },
+  {
+    id: "langhorne-creek",
+    name: "SA Skydiving",
+    town: "Langhorne Creek",
+    state: "SA",
+    lat: -35.304167,
+    lon: 139.265834,
+  },
+  {
+    id: "darkan",
+    name: "Hillman Farm / The Skydive School",
+    town: "Darkan",
+    state: "WA",
+    lat: -33.26417,
+    lon: 116.819398,
+  },
+  {
+    id: "kambalda",
+    name: "Kambalda Skysports",
+    town: "Kambalda West",
+    state: "WA",
+    lat: -31.195159,
+    lon: 121.598673,
+  },
+  {
+    id: "jurien-bay",
+    name: "Skydive Jurien Bay",
+    town: "Jurien Bay",
+    state: "WA",
+    lat: -30.319098,
+    lon: 115.052053,
+  },
+  {
+    id: "batchelor",
+    name: "Darwin Parachute Club",
+    town: "Batchelor",
+    state: "NT",
+    lat: -13.052184,
+    lon: 131.025667,
+  },
+];

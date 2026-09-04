@@ -32,6 +32,11 @@ import {
 } from "./flight/geo";
 import type { LatLon } from "./flight/geo";
 import {
+  SPORT_DROPZONES,
+  SPORT_DROPZONE_STATE_ORDER,
+} from "./sportDropzones";
+import type { SportDropzone } from "./sportDropzones";
+import {
   estimateDzElevationM,
   formatNumber,
   getDetectedJumpTrack,
@@ -460,6 +465,10 @@ type EnergyManagementSample = {
   totalSpeedKmh: number;
   diveAngleDeg: number;
   glideRatio: number | null;
+};
+
+type MapFocusLocation = LatLon & {
+  key: string;
 };
 type EnergyManagementResult = {
   rating: EnergyManagementRating;
@@ -3281,6 +3290,7 @@ function MapViewportUpdater({
   referenceLat,
   referenceLon,
   userMapLocation,
+  focusLocation,
   savedReferencePoints,
   trackPoints,
   preserveReferenceViewportKeyRef,
@@ -3288,15 +3298,20 @@ function MapViewportUpdater({
   referenceLat: string;
   referenceLon: string;
   userMapLocation: LatLon | null;
+  focusLocation: MapFocusLocation | null;
   savedReferencePoints: SavedReferencePoint[];
   trackPoints: GpsTrackPoint[];
   preserveReferenceViewportKeyRef: MutableRefObject<string | null>;
 }) {
   const map = useMap();
   const lastViewportTargetKey = useRef("");
+  const lastFocusLocationKey = useRef("");
   const viewportTargetKey = [
     referenceLat,
     referenceLon,
+    focusLocation === null
+      ? ""
+      : `${focusLocation.key}:${focusLocation.lat},${focusLocation.lon}`,
     userMapLocation === null
       ? ""
       : `${userMapLocation.lat},${userMapLocation.lon}`,
@@ -3312,6 +3327,16 @@ function MapViewportUpdater({
     }
 
     lastViewportTargetKey.current = viewportTargetKey;
+
+    if (
+      focusLocation !== null &&
+      lastFocusLocationKey.current !== focusLocation.key
+    ) {
+      lastFocusLocationKey.current = focusLocation.key;
+      preserveReferenceViewportKeyRef.current = null;
+      map.setView([focusLocation.lat, focusLocation.lon], 12);
+      return;
+    }
 
     const lat = optionalNumberFromInput(referenceLat);
     const lon = optionalNumberFromInput(referenceLon);
@@ -3387,6 +3412,7 @@ function MapClickPicker({
   referenceLat,
   referenceLon,
   userMapLocation,
+  focusLocation,
   dropPoint,
   runHeadingDeg,
   laneColor = "#22c55e",
@@ -3398,6 +3424,7 @@ function MapClickPicker({
   referenceLat: string;
   referenceLon: string;
   userMapLocation: LatLon | null;
+  focusLocation: MapFocusLocation | null;
   dropPoint: LatLon | null;
   runHeadingDeg: string;
   laneColor?: string;
@@ -3413,16 +3440,18 @@ function MapClickPicker({
   const hasUserMapLocation = userMapLocation !== null;
   const preserveReferenceViewportKeyRef = useRef<string | null>(null);
 
-  const center: [number, number] = hasReferencePoint
-    ? [lat, lon]
-    : savedReferencePoints.length > 0
-      ? [savedReferencePoints[0].lat, savedReferencePoints[0].lon]
-    : hasUserMapLocation
-      ? [userMapLocation.lat, userMapLocation.lon]
-      : [20, 0];
+  const center: [number, number] = focusLocation !== null
+    ? [focusLocation.lat, focusLocation.lon]
+    : hasReferencePoint
+      ? [lat, lon]
+      : savedReferencePoints.length > 0
+        ? [savedReferencePoints[0].lat, savedReferencePoints[0].lon]
+        : hasUserMapLocation
+          ? [userMapLocation.lat, userMapLocation.lon]
+          : [20, 0];
 
   const initialZoom =
-    hasReferencePoint || savedReferencePoints.length > 0
+    focusLocation !== null || hasReferencePoint || savedReferencePoints.length > 0
       ? 12
       : hasUserMapLocation
         ? 13
@@ -3518,6 +3547,7 @@ function MapClickPicker({
           referenceLat={referenceLat}
           referenceLon={referenceLon}
           userMapLocation={userMapLocation}
+          focusLocation={focusLocation}
           savedReferencePoints={savedReferencePoints}
           trackPoints={trackPoints}
           preserveReferenceViewportKeyRef={preserveReferenceViewportKeyRef}
@@ -7748,6 +7778,9 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [fetchStatus, setFetchStatus] = useState("");
   const [referenceStatus, setReferenceStatus] = useState("");
   const [showMapPicker, setShowMapPicker] = useState(false);
+  const [showSportDropzones, setShowSportDropzones] = useState(false);
+  const [mapFocusLocation, setMapFocusLocation] =
+    useState<MapFocusLocation | null>(null);
   const [showLatLonEntry, setShowLatLonEntry] = useState(false);
   const [referenceLatInput, setReferenceLatInput] = useState("");
   const [referenceLonInput, setReferenceLonInput] = useState("");
@@ -8015,6 +8048,8 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
 
     if (!openingMap) {
       setShowLatLonEntry(false);
+    } else {
+      setMapFocusLocation(null);
     }
 
     if (openingMap && userMapLocation === null) {
@@ -8023,6 +8058,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   }
 
   function openReferenceMapAndScroll() {
+    setMapFocusLocation(null);
     setShowLatLonEntry(false);
     setShowMapPicker(true);
 
@@ -8046,7 +8082,28 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
 
     setReferenceLatInput(referenceLat);
     setReferenceLonInput(referenceLon);
+    setMapFocusLocation(null);
     setShowMapPicker(true);
+  }
+
+  function openSportDropzone(dropzone: SportDropzone) {
+    setMapFocusLocation({
+      key: `${dropzone.id}-${Date.now()}`,
+      lat: dropzone.lat,
+      lon: dropzone.lon,
+    });
+    setShowLatLonEntry(false);
+    setShowMapPicker(true);
+    setLocationStatus(
+      `Map centred on ${dropzone.name}, ${dropzone.town}. Tap the exact competition reference point.`,
+    );
+
+    window.setTimeout(() => {
+      mapPickerSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 200);
   }
 
   function toggleFindUnitSystem() {
@@ -12656,6 +12713,17 @@ if (activePage === "rules") {
 
           <button
             type="button"
+            className="primary-action-button sport-dropzone-toggle"
+            aria-expanded={showSportDropzones}
+            onClick={() => setShowSportDropzones((current) => !current)}
+          >
+            {showSportDropzones
+              ? "Hide sport drop zones"
+              : `Sport drop zones (${SPORT_DROPZONES.length})`}
+          </button>
+
+          <button
+            type="button"
             className="primary-action-button saved-reference-points-toggle"
             aria-expanded={showSavedReferencePoints}
             onClick={() => {
@@ -12676,6 +12744,51 @@ if (activePage === "rules") {
         </div>
 
         {locationStatus && <p className="subtitle">{locationStatus}</p>}
+
+        {showSportDropzones && (
+          <div className="sport-dropzone-panel">
+            <h3>Australian sport drop zones</h3>
+
+            <p className="sport-dropzone-help">
+              Tandem-only locations are excluded. Choose a drop zone to centre
+              the map, then tap the exact competition reference point. Check
+              with the operator before travelling because jump days can change.
+            </p>
+
+            <div className="sport-dropzone-groups">
+              {SPORT_DROPZONE_STATE_ORDER.map((state) => {
+                const stateDropzones = SPORT_DROPZONES.filter(
+                  (dropzone) => dropzone.state === state,
+                );
+
+                return (
+                  <section className="sport-dropzone-group" key={state}>
+                    <h4>{state}</h4>
+
+                    <div className="sport-dropzone-list">
+                      {stateDropzones.map((dropzone) => (
+                        <button
+                          type="button"
+                          className="sport-dropzone-button"
+                          key={dropzone.id}
+                          onClick={() => openSportDropzone(dropzone)}
+                        >
+                          <span>{dropzone.name}</span>
+                          <small>{dropzone.town}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+
+            <p className="sport-dropzone-source">
+              Based on the Australian Parachute Federation drop-zone directory
+              and current operator information.
+            </p>
+          </div>
+        )}
 
         {showSavedReferencePoints && (
           <div className="saved-reference-panel">
@@ -12909,6 +13022,7 @@ if (activePage === "rules") {
               referenceLat={referenceLat}
               referenceLon={referenceLon}
               userMapLocation={userMapLocation}
+              focusLocation={mapFocusLocation}
               dropPoint={calculatedDropPoint}
               onPick={pickReferenceFromMap}
               savedReferencePoints={selectedSavedReferencePointsForMap}
