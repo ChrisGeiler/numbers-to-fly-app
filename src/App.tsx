@@ -466,6 +466,7 @@ type EnergyManagementSample = {
 
 type MapFocusLocation = LatLon & {
   key: string;
+  label: string;
 };
 type EnergyManagementResult = {
   rating: EnergyManagementRating;
@@ -1921,6 +1922,14 @@ const referencePointIcon = L.divIcon({
   html: "<div></div>",
   iconSize: [24, 24],
   iconAnchor: [12, 12],
+});
+
+const dropzoneLocationIcon = L.divIcon({
+  className: "dropzone-location-marker",
+  html: "<div><span>DZ</span></div>",
+  iconSize: [40, 48],
+  iconAnchor: [20, 46],
+  tooltipAnchor: [0, -40],
 });
 
 function savedReferencePointMapIcon(index: number, selected: boolean) {
@@ -3563,6 +3572,22 @@ function MapClickPicker({
         />
 
         <ClickHandler />
+
+        {focusLocation !== null && (
+          <Marker
+            position={[focusLocation.lat, focusLocation.lon]}
+            icon={dropzoneLocationIcon}
+            zIndexOffset={1000}
+          >
+            <LeafletTooltip
+              className="dropzone-location-tooltip"
+              direction="top"
+              permanent
+            >
+              {focusLocation.label}
+            </LeafletTooltip>
+          </Marker>
+        )}
 
         {userMapLocation !== null && !hasReferencePoint && (
           <Marker
@@ -8182,6 +8207,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
       key: `${dropzone.id}-${Date.now()}`,
       lat: dropzone.lat,
       lon: dropzone.lon,
+      label: dropzone.name,
     });
     setShowLatLonEntry(false);
     setShowMapPicker(true);

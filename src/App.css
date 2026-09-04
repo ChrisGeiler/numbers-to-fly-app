@@ -309,6 +309,63 @@ tr:last-child td {
     0 0 18px rgba(34, 211, 238, 0.9);
 }
 
+.dropzone-location-marker {
+  background: transparent;
+  border: 0;
+}
+
+.dropzone-location-marker div {
+  position: relative;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 3px solid #ecfeff;
+  border-radius: 50%;
+  background: #0891b2;
+  color: #001018;
+  box-shadow:
+    0 0 0 4px rgba(2, 6, 23, 0.86),
+    0 0 20px rgba(34, 211, 238, 0.95);
+}
+
+.dropzone-location-marker div::after {
+  position: absolute;
+  bottom: -13px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border: 8px solid transparent;
+  border-top: 13px solid #ecfeff;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.dropzone-location-marker span {
+  position: relative;
+  z-index: 1;
+  font-size: 0.72rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.leaflet-tooltip.dropzone-location-tooltip {
+  padding: 6px 9px;
+  border: 2px solid #67e8f9;
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.96);
+  color: #ecfeff;
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1.1;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+}
+
+.leaflet-tooltip-top.dropzone-location-tooltip::before {
+  border-top-color: #67e8f9;
+}
+
 .saved-reference-map-marker {
   background: transparent;
   border: 0;
