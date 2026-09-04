@@ -7775,9 +7775,13 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [fetchStatus, setFetchStatus] = useState("");
   const [referenceStatus, setReferenceStatus] = useState("");
   const [showMapPicker, setShowMapPicker] = useState(false);
-  const [showSportDropzones, setShowSportDropzones] = useState(false);
   const [sportDropzoneSearch, setSportDropzoneSearch] = useState("");
-  const [sportDropzoneCountry, setSportDropzoneCountry] = useState("");
+  const [showSportDropzoneSuggestions, setShowSportDropzoneSuggestions] =
+    useState(false);
+  const [
+    activeSportDropzoneSuggestionIndex,
+    setActiveSportDropzoneSuggestionIndex,
+  ] = useState(-1);
   const [mapFocusLocation, setMapFocusLocation] =
     useState<MapFocusLocation | null>(null);
   const [showLatLonEntry, setShowLatLonEntry] = useState(false);
@@ -7805,48 +7809,48 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     (total, group) => total + group.points.length,
     0,
   );
-  const sportDropzoneCountries = useMemo(
-    () =>
-      [...new Set(SPORT_DROPZONES.map((dropzone) => dropzone.country))].sort(
-        (left, right) => left.localeCompare(right),
-      ),
-    [],
-  );
-  const visibleSportDropzones = useMemo(() => {
+  const sportDropzoneSuggestions = useMemo(() => {
     const normalizedSearch = sportDropzoneSearch.trim().toLowerCase();
 
-    return SPORT_DROPZONES.filter((dropzone) => {
-      if (
-        sportDropzoneCountry &&
-        dropzone.country !== sportDropzoneCountry
-      ) {
-        return false;
+    if (!normalizedSearch) {
+      return [];
+    }
+
+    return SPORT_DROPZONES.map((dropzone) => {
+      const name = dropzone.name.toLowerCase();
+      const town = dropzone.town.toLowerCase();
+      const state = (dropzone.state ?? "").toLowerCase();
+      const country = dropzone.country.toLowerCase();
+      const searchableLocation = [name, town, state, country].join(" ");
+      let score = Number.POSITIVE_INFINITY;
+
+      if (name === normalizedSearch) {
+        score = 0;
+      } else if (name.startsWith(normalizedSearch)) {
+        score = 1;
+      } else if (name.includes(normalizedSearch)) {
+        score = 2;
+      } else if (town.startsWith(normalizedSearch)) {
+        score = 3;
+      } else if (state.startsWith(normalizedSearch)) {
+        score = 4;
+      } else if (country.startsWith(normalizedSearch)) {
+        score = 5;
+      } else if (searchableLocation.includes(normalizedSearch)) {
+        score = 6;
       }
 
-      if (!normalizedSearch) {
-        return true;
-      }
-
-      return [
-        dropzone.name,
-        dropzone.town,
-        dropzone.state ?? "",
-        dropzone.country,
-      ].some((value) => value.toLowerCase().includes(normalizedSearch));
-    });
-  }, [sportDropzoneCountry, sportDropzoneSearch]);
-  const visibleSportDropzonesByCountry = useMemo(
-    () =>
-      sportDropzoneCountries
-        .map((country) => ({
-          country,
-          dropzones: visibleSportDropzones.filter(
-            (dropzone) => dropzone.country === country,
-          ),
-        }))
-        .filter((group) => group.dropzones.length > 0),
-    [sportDropzoneCountries, visibleSportDropzones],
-  );
+      return { dropzone, score };
+    })
+      .filter(({ score }) => Number.isFinite(score))
+      .sort(
+        (left, right) =>
+          left.score - right.score ||
+          left.dropzone.name.localeCompare(right.dropzone.name),
+      )
+      .slice(0, 8)
+      .map(({ dropzone }) => dropzone);
+  }, [sportDropzoneSearch]);
   const selectedSavedReferencePointsForMap = useMemo(() => {
     const lat = optionalNumberFromInput(referenceLat);
     const lon = optionalNumberFromInput(referenceLon);
@@ -8149,6 +8153,13 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
         block: "start",
       });
     }, 200);
+  }
+
+  function selectSportDropzone(dropzone: SportDropzone) {
+    setSportDropzoneSearch(dropzone.name);
+    setShowSportDropzoneSuggestions(false);
+    setActiveSportDropzoneSuggestionIndex(-1);
+    openSportDropzone(dropzone);
   }
 
   function toggleFindUnitSystem() {
@@ -12735,6 +12746,139 @@ if (activePage === "rules") {
           latitude and longitude.
         </p>
 
+        <div
+          className="dropzone-search-panel"
+          onBlur={(event) => {
+            if (
+              !event.currentTarget.contains(event.relatedTarget as Node | null)
+            ) {
+              setShowSportDropzoneSuggestions(false);
+              setActiveSportDropzoneSuggestionIndex(-1);
+            }
+          }}
+        >
+          <label htmlFor="sport-dropzone-search">Find a sport drop zone</label>
+          <p className="dropzone-search-help">
+            Type its name to centre the map near the drop zone.
+          </p>
+
+          <div className="dropzone-search-combobox">
+            <input
+              id="sport-dropzone-search"
+              type="search"
+              role="combobox"
+              autoComplete="off"
+              aria-autocomplete="list"
+              aria-expanded={
+                showSportDropzoneSuggestions &&
+                sportDropzoneSearch.trim().length > 0
+              }
+              aria-controls="sport-dropzone-suggestions"
+              aria-activedescendant={
+                activeSportDropzoneSuggestionIndex >= 0
+                  ? `sport-dropzone-option-${sportDropzoneSuggestions[activeSportDropzoneSuggestionIndex]?.id}`
+                  : undefined
+              }
+              value={sportDropzoneSearch}
+              placeholder="Drop-zone name, town or country"
+              onFocus={() => {
+                if (sportDropzoneSearch.trim()) {
+                  setShowSportDropzoneSuggestions(true);
+                }
+              }}
+              onChange={(event) => {
+                setSportDropzoneSearch(event.target.value);
+                setShowSportDropzoneSuggestions(true);
+                setActiveSportDropzoneSuggestionIndex(-1);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setShowSportDropzoneSuggestions(false);
+                  setActiveSportDropzoneSuggestionIndex(-1);
+                  return;
+                }
+
+                if (sportDropzoneSuggestions.length === 0) {
+                  return;
+                }
+
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setShowSportDropzoneSuggestions(true);
+                  setActiveSportDropzoneSuggestionIndex((current) =>
+                    Math.min(current + 1, sportDropzoneSuggestions.length - 1),
+                  );
+                } else if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setShowSportDropzoneSuggestions(true);
+                  setActiveSportDropzoneSuggestionIndex((current) =>
+                    current <= 0
+                      ? sportDropzoneSuggestions.length - 1
+                      : current - 1,
+                  );
+                } else if (event.key === "Enter") {
+                  event.preventDefault();
+                  selectSportDropzone(
+                    sportDropzoneSuggestions[
+                      activeSportDropzoneSuggestionIndex >= 0
+                        ? activeSportDropzoneSuggestionIndex
+                        : 0
+                    ],
+                  );
+                }
+              }}
+            />
+
+            {showSportDropzoneSuggestions &&
+              sportDropzoneSearch.trim().length > 0 &&
+              (sportDropzoneSuggestions.length > 0 ? (
+                <div
+                  id="sport-dropzone-suggestions"
+                  className="dropzone-search-suggestions"
+                  role="listbox"
+                  aria-label="Matching sport drop zones"
+                >
+                  {sportDropzoneSuggestions.map((dropzone, index) => (
+                    <button
+                      id={`sport-dropzone-option-${dropzone.id}`}
+                      type="button"
+                      role="option"
+                      aria-selected={
+                        index === activeSportDropzoneSuggestionIndex
+                      }
+                      className={`dropzone-search-option${
+                        index === activeSportDropzoneSuggestionIndex
+                          ? " is-active"
+                          : ""
+                      }`}
+                      key={dropzone.id}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() =>
+                        setActiveSportDropzoneSuggestionIndex(index)
+                      }
+                      onClick={() => selectSportDropzone(dropzone)}
+                    >
+                      <span>{dropzone.name}</span>
+                      <small>
+                        {[dropzone.town, dropzone.state, dropzone.country]
+                          .filter(Boolean)
+                          .join(", ")}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p
+                  id="sport-dropzone-suggestions"
+                  className="dropzone-search-empty"
+                  role="status"
+                >
+                  No matching sport drop zone found.
+                </p>
+              ))}
+          </div>
+        </div>
+
         <div className="reference-method-actions">
           <button
             ref={referenceButtonRef}
@@ -12754,17 +12898,6 @@ if (activePage === "rules") {
             {showLatLonEntry
               ? "Hide Lat/Lon entry"
               : "Enter your Lat/Lon reference"}
-          </button>
-
-          <button
-            type="button"
-            className="primary-action-button sport-dropzone-toggle"
-            aria-expanded={showSportDropzones}
-            onClick={() => setShowSportDropzones((current) => !current)}
-          >
-            {showSportDropzones
-              ? "Hide sport drop zones"
-              : `Sport drop zones (${SPORT_DROPZONES.length})`}
           </button>
 
           <button
@@ -12789,112 +12922,6 @@ if (activePage === "rules") {
         </div>
 
         {locationStatus && <p className="subtitle">{locationStatus}</p>}
-
-        {showSportDropzones && (
-          <div className="sport-dropzone-panel">
-            <h3>Worldwide sport drop zones</h3>
-
-            <p className="sport-dropzone-help">
-              Tandem-only locations are excluded. Choose a drop zone to centre
-              the map, then tap the exact competition reference point. Check
-              with the operator before travelling because jump days can change.
-            </p>
-
-            <div className="sport-dropzone-filters">
-              <label>
-                Search
-                <input
-                  type="search"
-                  value={sportDropzoneSearch}
-                  placeholder="Drop zone, town or country"
-                  onChange={(event) =>
-                    setSportDropzoneSearch(event.target.value)
-                  }
-                />
-              </label>
-
-              <label>
-                Country
-                <select
-                  value={sportDropzoneCountry}
-                  onChange={(event) =>
-                    setSportDropzoneCountry(event.target.value)
-                  }
-                >
-                  <option value="">
-                    All countries ({sportDropzoneCountries.length})
-                  </option>
-                  {sportDropzoneCountries.map((country) => (
-                    <option key={country} value={country}>
-                      {country}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <p className="sport-dropzone-results" aria-live="polite">
-              Showing {visibleSportDropzones.length} of {SPORT_DROPZONES.length}
-            </p>
-
-            {visibleSportDropzonesByCountry.length > 0 ? (
-              <div className="sport-dropzone-groups">
-                {visibleSportDropzonesByCountry.map((group) => (
-                  <section
-                    className="sport-dropzone-group"
-                    key={group.country}
-                  >
-                    <h4>
-                      {group.country} <span>{group.dropzones.length}</span>
-                    </h4>
-
-                    <div className="sport-dropzone-list">
-                      {group.dropzones.map((dropzone) => (
-                        <button
-                          type="button"
-                          className="sport-dropzone-button"
-                          key={dropzone.id}
-                          onClick={() => openSportDropzone(dropzone)}
-                        >
-                          <span>{dropzone.name}</span>
-                          <small>
-                            {[dropzone.town, dropzone.state]
-                              .filter(Boolean)
-                              .join(", ") || "Map location"}
-                          </small>
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                ))}
-              </div>
-            ) : (
-              <p className="sport-dropzone-empty">
-                No sport drop zones match that search.
-              </p>
-            )}
-
-            <p className="sport-dropzone-source">
-              Australian locations are based on the{" "}
-              <a
-                href="https://www.apf.com.au/DealerLocator/locator.aspx?action=search&usercountry=Australia"
-                target="_blank"
-                rel="noreferrer"
-              >
-                APF directory
-              </a>
-              . Worldwide locations use sport-parachuting venue data from{" "}
-              <a
-                href="https://www.openstreetmap.org/copyright"
-                target="_blank"
-                rel="noreferrer"
-              >
-                OpenStreetMap contributors
-              </a>
-              .
-            </p>
-          </div>
-        )}
 
         {showSavedReferencePoints && (
           <div className="saved-reference-panel">

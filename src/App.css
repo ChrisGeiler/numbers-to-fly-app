@@ -2190,103 +2190,62 @@ button:disabled {
   white-space: normal;
 }
 
-.reference-method-actions .saved-reference-points-toggle,
-.reference-method-actions .sport-dropzone-toggle {
+.reference-method-actions .saved-reference-points-toggle {
   grid-column: 1 / -1;
 }
 
-.sport-dropzone-panel {
+.dropzone-search-panel {
+  position: relative;
   margin: 16px 0;
-  padding: 16px;
+  padding: 14px;
   border: 1px solid rgba(34, 211, 238, 0.42);
-  border-radius: 18px;
+  border-radius: 16px;
   background: rgba(8, 47, 73, 0.3);
 }
 
-.sport-dropzone-panel h3 {
-  margin: 0 0 10px;
-  color: #67e8f9;
-  font-size: 1.2rem;
-  text-align: center;
-}
-
-.sport-dropzone-help,
-.sport-dropzone-source {
-  max-width: 680px;
-  margin: 6px auto 16px;
-  color: #a5f3fc;
-  font-size: 0.92rem;
-  line-height: 1.45;
-  text-align: center;
-}
-
-.sport-dropzone-filters {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-  gap: 12px;
-  margin: 16px 0 10px;
-}
-
-.sport-dropzone-filters label {
-  min-width: 0;
+.dropzone-search-panel label {
   margin: 0;
+  color: #67e8f9;
+  font-weight: 900;
 }
 
-.sport-dropzone-filters input,
-.sport-dropzone-filters select {
+.dropzone-search-help {
+  margin: 4px 0 10px;
+  color: #a5f3fc;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.dropzone-search-combobox {
+  position: relative;
+}
+
+.dropzone-search-combobox input {
+  margin-top: 0;
   margin-bottom: 0;
 }
 
-.sport-dropzone-results,
-.sport-dropzone-empty {
-  margin: 8px 0 14px;
-  color: #a5f3fc;
-  font-size: 0.9rem;
-  font-weight: 800;
-  text-align: center;
-}
-
-.sport-dropzone-groups {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.sport-dropzone-group {
-  min-width: 0;
-  padding: 12px;
+.dropzone-search-suggestions,
+.dropzone-search-empty {
+  position: absolute;
+  z-index: 1200;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  margin: 0;
+  padding: 6px;
   border: 1px solid rgba(34, 211, 238, 0.22);
-  border-radius: 14px;
-  background: rgba(2, 6, 23, 0.46);
+  border-radius: 12px;
+  background: #0f172a;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
 }
 
-.sport-dropzone-group h4 {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 0 0 10px;
-  color: #67e8f9;
-  font-size: 1rem;
+.dropzone-search-suggestions {
+  max-height: min(360px, 50vh);
+  overflow-y: auto;
 }
 
-.sport-dropzone-group h4 span {
-  display: inline-grid;
-  min-width: 28px;
-  min-height: 28px;
-  place-items: center;
-  border: 1px solid rgba(34, 211, 238, 0.38);
-  border-radius: 999px;
-  color: #cffafe;
-  font-size: 0.78rem;
-}
-
-.sport-dropzone-list {
-  display: grid;
-  gap: 8px;
-}
-
-.sport-dropzone-button {
+.dropzone-search-option {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -2294,32 +2253,38 @@ button:disabled {
   min-width: 0;
   margin: 0;
   padding: 10px 12px;
+  border-color: transparent;
+  background: transparent;
   text-align: left;
 }
 
-.sport-dropzone-button span,
-.sport-dropzone-button small {
+.dropzone-search-option:hover,
+.dropzone-search-option:focus-visible,
+.dropzone-search-option.is-active {
+  border-color: rgba(34, 211, 238, 0.46);
+  background: rgba(8, 145, 178, 0.22);
+}
+
+.dropzone-search-option span,
+.dropzone-search-option small {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sport-dropzone-button small {
+.dropzone-search-option small {
   margin-top: 3px;
   font-weight: 700;
   opacity: 0.78;
 }
 
-.sport-dropzone-source {
-  margin-bottom: 0;
-  font-size: 0.82rem;
-  opacity: 0.82;
-}
-
-.sport-dropzone-source a {
-  color: #67e8f9;
+.dropzone-search-empty {
+  padding: 12px;
+  color: #a5f3fc;
+  font-size: 0.9rem;
   font-weight: 800;
+  text-align: center;
 }
 
 .saved-reference-panel {
@@ -2727,8 +2692,7 @@ button {
 
 @media (max-width: 600px) {
   .reference-method-actions,
-  .reference-coordinate-grid,
-  .sport-dropzone-filters {
+  .reference-coordinate-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2736,7 +2700,6 @@ button {
     margin: 0;
   }
 
-  .sport-dropzone-groups,
   .saved-reference-list {
     grid-template-columns: 1fr;
   }
