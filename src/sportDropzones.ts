@@ -1,4 +1,5 @@
-import { WORLDWIDE_SPORT_DROPZONES } from "./worldwideSportDropzones.generated";
+import { WORLDWIDE_SPORT_DROPZONES } from "./worldwideSportDropzones.generated.ts";
+import { SKYDERBY_SPORT_DROPZONES } from "./skyderbySportDropzones.generated.ts";
 
 export type SportDropzone = {
   id: string;
@@ -214,11 +215,79 @@ const VERIFIED_WORLDWIDE_SPORT_DROPZONES: SportDropzone[] = [
   },
 ];
 
-export const SPORT_DROPZONES: SportDropzone[] = [
-  ...AUSTRALIAN_SPORT_DROPZONES.map((dropzone) => ({
+function normalizeDropzoneName(name: string) {
+  return name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/^dz\s+/, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function distanceKm(first: SportDropzone, second: SportDropzone) {
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const latDelta = toRadians(second.lat - first.lat);
+  const lonDelta = toRadians(second.lon - first.lon);
+  const a =
+    Math.sin(latDelta / 2) ** 2 +
+    Math.cos(toRadians(first.lat)) *
+      Math.cos(toRadians(second.lat)) *
+      Math.sin(lonDelta / 2) ** 2;
+
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function mergeDropzoneSources(sources: SportDropzone[][]) {
+  const merged: SportDropzone[] = [];
+
+  sources.flat().forEach((dropzone) => {
+    const normalizedName = normalizeDropzoneName(dropzone.name);
+    const existing = merged.find(
+      (candidate) =>
+        candidate.country === dropzone.country &&
+        (normalizeDropzoneName(candidate.name) === normalizedName ||
+          distanceKm(candidate, dropzone) <= 3),
+    );
+
+    if (!existing) {
+      merged.push({
+        ...dropzone,
+        aliases: dropzone.aliases ? [...dropzone.aliases] : undefined,
+      });
+      return;
+    }
+
+    const aliases = new Set([
+      ...(existing.aliases ?? []),
+      ...(dropzone.aliases ?? []),
+      ...(existing.name !== dropzone.name ? [dropzone.name] : []),
+    ]);
+
+    existing.aliases = [...aliases];
+
+    if (!existing.town && dropzone.town) {
+      existing.town = dropzone.town;
+    }
+
+    if (!existing.state && dropzone.state) {
+      existing.state = dropzone.state;
+    }
+  });
+
+  return merged;
+}
+
+const AUSTRALIAN_DROPZONES_WITH_COUNTRY: SportDropzone[] =
+  AUSTRALIAN_SPORT_DROPZONES.map((dropzone) => ({
     ...dropzone,
     country: "Australia",
-  })),
-  ...VERIFIED_WORLDWIDE_SPORT_DROPZONES,
-  ...WORLDWIDE_SPORT_DROPZONES,
-];
+  }));
+
+export const SPORT_DROPZONES = mergeDropzoneSources([
+  AUSTRALIAN_DROPZONES_WITH_COUNTRY,
+  VERIFIED_WORLDWIDE_SPORT_DROPZONES,
+  [...WORLDWIDE_SPORT_DROPZONES],
+  SKYDERBY_SPORT_DROPZONES,
+]);
