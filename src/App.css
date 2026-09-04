@@ -2220,6 +2220,32 @@ button:disabled {
   text-align: center;
 }
 
+.sport-dropzone-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 12px;
+  margin: 16px 0 10px;
+}
+
+.sport-dropzone-filters label {
+  min-width: 0;
+  margin: 0;
+}
+
+.sport-dropzone-filters input,
+.sport-dropzone-filters select {
+  margin-bottom: 0;
+}
+
+.sport-dropzone-results,
+.sport-dropzone-empty {
+  margin: 8px 0 14px;
+  color: #a5f3fc;
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-align: center;
+}
+
 .sport-dropzone-groups {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2235,9 +2261,24 @@ button:disabled {
 }
 
 .sport-dropzone-group h4 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin: 0 0 10px;
   color: #67e8f9;
   font-size: 1rem;
+}
+
+.sport-dropzone-group h4 span {
+  display: inline-grid;
+  min-width: 28px;
+  min-height: 28px;
+  place-items: center;
+  border: 1px solid rgba(34, 211, 238, 0.38);
+  border-radius: 999px;
+  color: #cffafe;
+  font-size: 0.78rem;
 }
 
 .sport-dropzone-list {
@@ -2274,6 +2315,11 @@ button:disabled {
   margin-bottom: 0;
   font-size: 0.82rem;
   opacity: 0.82;
+}
+
+.sport-dropzone-source a {
+  color: #67e8f9;
+  font-weight: 800;
 }
 
 .saved-reference-panel {
@@ -2681,7 +2727,8 @@ button {
 
 @media (max-width: 600px) {
   .reference-method-actions,
-  .reference-coordinate-grid {
+  .reference-coordinate-grid,
+  .sport-dropzone-filters {
     grid-template-columns: 1fr;
   }
 

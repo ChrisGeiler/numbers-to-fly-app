@@ -1,24 +1,18 @@
+import { WORLDWIDE_SPORT_DROPZONES } from "./worldwideSportDropzones.generated";
+
 export type SportDropzone = {
   id: string;
   name: string;
   town: string;
-  state: "NSW" | "NT" | "QLD" | "SA" | "VIC" | "WA";
+  country: string;
+  state?: "NSW" | "NT" | "QLD" | "SA" | "VIC" | "WA";
   lat: number;
   lon: number;
 };
 
-export const SPORT_DROPZONE_STATE_ORDER: SportDropzone["state"][] = [
-  "NSW",
-  "QLD",
-  "VIC",
-  "SA",
-  "WA",
-  "NT",
-];
-
 // One entry per physical sport-jumping location. Tandem-only locations and
 // duplicate operator listings at the same airfield are intentionally omitted.
-export const SPORT_DROPZONES: SportDropzone[] = [
+const AUSTRALIAN_SPORT_DROPZONES: Array<Omit<SportDropzone, "country">> = [
   {
     id: "coffs-harbour",
     name: "Coffs City Skydivers",
@@ -187,4 +181,12 @@ export const SPORT_DROPZONES: SportDropzone[] = [
     lat: -13.052184,
     lon: 131.025667,
   },
+];
+
+export const SPORT_DROPZONES: SportDropzone[] = [
+  ...AUSTRALIAN_SPORT_DROPZONES.map((dropzone) => ({
+    ...dropzone,
+    country: "Australia",
+  })),
+  ...WORLDWIDE_SPORT_DROPZONES,
 ];

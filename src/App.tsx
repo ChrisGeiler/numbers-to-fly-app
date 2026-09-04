@@ -31,10 +31,7 @@ import {
   signedAngleDeg,
 } from "./flight/geo";
 import type { LatLon } from "./flight/geo";
-import {
-  SPORT_DROPZONES,
-  SPORT_DROPZONE_STATE_ORDER,
-} from "./sportDropzones";
+import { SPORT_DROPZONES } from "./sportDropzones";
 import type { SportDropzone } from "./sportDropzones";
 import {
   estimateDzElevationM,
@@ -7779,6 +7776,8 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [referenceStatus, setReferenceStatus] = useState("");
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [showSportDropzones, setShowSportDropzones] = useState(false);
+  const [sportDropzoneSearch, setSportDropzoneSearch] = useState("");
+  const [sportDropzoneCountry, setSportDropzoneCountry] = useState("");
   const [mapFocusLocation, setMapFocusLocation] =
     useState<MapFocusLocation | null>(null);
   const [showLatLonEntry, setShowLatLonEntry] = useState(false);
@@ -7805,6 +7804,48 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const totalSavedReferencePoints = savedReferencePointStore.groups.reduce(
     (total, group) => total + group.points.length,
     0,
+  );
+  const sportDropzoneCountries = useMemo(
+    () =>
+      [...new Set(SPORT_DROPZONES.map((dropzone) => dropzone.country))].sort(
+        (left, right) => left.localeCompare(right),
+      ),
+    [],
+  );
+  const visibleSportDropzones = useMemo(() => {
+    const normalizedSearch = sportDropzoneSearch.trim().toLowerCase();
+
+    return SPORT_DROPZONES.filter((dropzone) => {
+      if (
+        sportDropzoneCountry &&
+        dropzone.country !== sportDropzoneCountry
+      ) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      return [
+        dropzone.name,
+        dropzone.town,
+        dropzone.state ?? "",
+        dropzone.country,
+      ].some((value) => value.toLowerCase().includes(normalizedSearch));
+    });
+  }, [sportDropzoneCountry, sportDropzoneSearch]);
+  const visibleSportDropzonesByCountry = useMemo(
+    () =>
+      sportDropzoneCountries
+        .map((country) => ({
+          country,
+          dropzones: visibleSportDropzones.filter(
+            (dropzone) => dropzone.country === country,
+          ),
+        }))
+        .filter((group) => group.dropzones.length > 0),
+    [sportDropzoneCountries, visibleSportDropzones],
   );
   const selectedSavedReferencePointsForMap = useMemo(() => {
     const lat = optionalNumberFromInput(referenceLat);
@@ -8087,6 +8128,10 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   }
 
   function openSportDropzone(dropzone: SportDropzone) {
+    const locationLabel = [dropzone.town, dropzone.state, dropzone.country]
+      .filter(Boolean)
+      .join(", ");
+
     setMapFocusLocation({
       key: `${dropzone.id}-${Date.now()}`,
       lat: dropzone.lat,
@@ -8095,7 +8140,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     setShowLatLonEntry(false);
     setShowMapPicker(true);
     setLocationStatus(
-      `Map centred on ${dropzone.name}, ${dropzone.town}. Tap the exact competition reference point.`,
+      `Map centred on ${dropzone.name}${locationLabel ? `, ${locationLabel}` : ""}. Tap the exact competition reference point.`,
     );
 
     window.setTimeout(() => {
@@ -12747,7 +12792,7 @@ if (activePage === "rules") {
 
         {showSportDropzones && (
           <div className="sport-dropzone-panel">
-            <h3>Australian sport drop zones</h3>
+            <h3>Worldwide sport drop zones</h3>
 
             <p className="sport-dropzone-help">
               Tandem-only locations are excluded. Choose a drop zone to centre
@@ -12755,18 +12800,56 @@ if (activePage === "rules") {
               with the operator before travelling because jump days can change.
             </p>
 
-            <div className="sport-dropzone-groups">
-              {SPORT_DROPZONE_STATE_ORDER.map((state) => {
-                const stateDropzones = SPORT_DROPZONES.filter(
-                  (dropzone) => dropzone.state === state,
-                );
+            <div className="sport-dropzone-filters">
+              <label>
+                Search
+                <input
+                  type="search"
+                  value={sportDropzoneSearch}
+                  placeholder="Drop zone, town or country"
+                  onChange={(event) =>
+                    setSportDropzoneSearch(event.target.value)
+                  }
+                />
+              </label>
 
-                return (
-                  <section className="sport-dropzone-group" key={state}>
-                    <h4>{state}</h4>
+              <label>
+                Country
+                <select
+                  value={sportDropzoneCountry}
+                  onChange={(event) =>
+                    setSportDropzoneCountry(event.target.value)
+                  }
+                >
+                  <option value="">
+                    All countries ({sportDropzoneCountries.length})
+                  </option>
+                  {sportDropzoneCountries.map((country) => (
+                    <option key={country} value={country}>
+                      {country}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <p className="sport-dropzone-results" aria-live="polite">
+              Showing {visibleSportDropzones.length} of {SPORT_DROPZONES.length}
+            </p>
+
+            {visibleSportDropzonesByCountry.length > 0 ? (
+              <div className="sport-dropzone-groups">
+                {visibleSportDropzonesByCountry.map((group) => (
+                  <section
+                    className="sport-dropzone-group"
+                    key={group.country}
+                  >
+                    <h4>
+                      {group.country} <span>{group.dropzones.length}</span>
+                    </h4>
 
                     <div className="sport-dropzone-list">
-                      {stateDropzones.map((dropzone) => (
+                      {group.dropzones.map((dropzone) => (
                         <button
                           type="button"
                           className="sport-dropzone-button"
@@ -12774,18 +12857,41 @@ if (activePage === "rules") {
                           onClick={() => openSportDropzone(dropzone)}
                         >
                           <span>{dropzone.name}</span>
-                          <small>{dropzone.town}</small>
+                          <small>
+                            {[dropzone.town, dropzone.state]
+                              .filter(Boolean)
+                              .join(", ") || "Map location"}
+                          </small>
                         </button>
                       ))}
                     </div>
                   </section>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="sport-dropzone-empty">
+                No sport drop zones match that search.
+              </p>
+            )}
 
             <p className="sport-dropzone-source">
-              Based on the Australian Parachute Federation drop-zone directory
-              and current operator information.
+              Australian locations are based on the{" "}
+              <a
+                href="https://www.apf.com.au/DealerLocator/locator.aspx?action=search&usercountry=Australia"
+                target="_blank"
+                rel="noreferrer"
+              >
+                APF directory
+              </a>
+              . Worldwide locations use sport-parachuting venue data from{" "}
+              <a
+                href="https://www.openstreetmap.org/copyright"
+                target="_blank"
+                rel="noreferrer"
+              >
+                OpenStreetMap contributors
+              </a>
+              .
             </p>
           </div>
         )}
