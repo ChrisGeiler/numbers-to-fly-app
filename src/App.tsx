@@ -3735,6 +3735,11 @@ function LaneViewMap({
   runHeadingDeg,
   dropDistanceNm,
   winds,
+  trackPoints = NO_TRACK_POINTS,
+  windowPoints = NO_TRACK_POINTS,
+  onPick,
+  savedReferencePoints = NO_SAVED_REFERENCE_POINTS,
+  onSavedReferencePointPick,
 }: {
   referenceLat: string;
   referenceLon: string;
@@ -3742,6 +3747,11 @@ function LaneViewMap({
   runHeadingDeg: string;
   dropDistanceNm: string;
   winds: WindLayer[];
+  trackPoints?: GpsTrackPoint[];
+  windowPoints?: GpsTrackPoint[];
+  onPick?: (lat: number, lon: number) => void;
+  savedReferencePoints?: SavedReferencePoint[];
+  onSavedReferencePointPick?: (point: SavedReferencePoint) => void;
 }) {
   
   const mapContainerRef = useMemo(
@@ -3749,10 +3759,21 @@ function LaneViewMap({
     []
   );
 
+  const pickRef = useRef(onPick);
+  const savedPickRef = useRef(onSavedReferencePointPick);
+  pickRef.current = onPick;
+  savedPickRef.current = onSavedReferencePointPick;
+
   useEffect(() => {
-    const lat = optionalNumberFromInput(referenceLat);
-    const lon = optionalNumberFromInput(referenceLon);
-    const headingNumber = optionalNumberFromInput(runHeadingDeg);
+    const isAnalysis = windowPoints.length > 1;
+    const hasReference = optionalNumberFromInput(referenceLat) !== null &&
+      optionalNumberFromInput(referenceLon) !== null;
+    const flightEnd = windowPoints[windowPoints.length - 1];
+    const lat = optionalNumberFromInput(referenceLat) ?? flightEnd?.lat ?? null;
+    const lon = optionalNumberFromInput(referenceLon) ?? flightEnd?.lon ?? null;
+    const headingNumber = optionalNumberFromInput(runHeadingDeg) ?? (isAnalysis
+      ? bearingBetweenPointsDeg(windowPoints[0].lat, windowPoints[0].lon, flightEnd.lat, flightEnd.lon)
+      : null);
 
     if (
       lat === null ||
@@ -3765,6 +3786,35 @@ function LaneViewMap({
     }
 
     const referencePoint = { lat, lon };
+    const viewBearing = isAnalysis ? 0 : headingNumber;
+    const flightBearing = isAnalysis
+      ? bearingBetweenPointsDeg(windowPoints[0].lat, windowPoints[0].lon, flightEnd.lat, flightEnd.lon)
+      : headingNumber;
+    const windsBelowLane = Math.abs(Math.sin(degToRad(flightBearing))) >=
+      Math.abs(Math.cos(degToRad(flightBearing)));
+
+    function windPosition(wind: WindLayer) {
+      if (isAnalysis) {
+        for (let index = 1; index < windowPoints.length; index += 1) {
+          const before = windowPoints[index - 1];
+          const after = windowPoints[index];
+          if (before.altitudeM >= wind.altitudeM && after.altitudeM <= wind.altitudeM) {
+            const progress = before.altitudeM === after.altitudeM ? 0 :
+              (before.altitudeM - wind.altitudeM) / (before.altitudeM - after.altitudeM);
+            return {
+              lat: before.lat + (after.lat - before.lat) * progress,
+              lon: before.lon + (after.lon - before.lon) * progress,
+            };
+          }
+        }
+        return wind.altitudeM >= windowPoints[0].altitudeM
+          ? windowPoints[0] : windowPoints[windowPoints.length - 1];
+      }
+      const progress = Math.min(Math.max((2500 - wind.altitudeM) / 1000, 0), 1);
+      const lanePoint = destinationPoint(dropPoint!.lat, dropPoint!.lon, headingNumber!,
+        nmToMetres(numberFromInput(dropDistanceNm, 0)) * progress);
+      return destinationPoint(lanePoint.lat, lanePoint.lon, normalizeDeg(headingNumber! - 90), 600);
+    }
 
     const center: [number, number] = [
       (lon + dropPoint.lon) / 2,
@@ -3854,62 +3904,56 @@ function LaneViewMap({
       },
       center,
       zoom: 12,
-      bearing: headingNumber,
+      bearing: viewBearing,
       pitch: 0,
     });
 
+    if (isAnalysis) {
+      map.dragRotate.disable();
+      map.touchZoomRotate.disableRotation();
+      map.keyboard.disableRotation();
+      map.touchPitch.disable();
+    }
+
+    map.on("click", (event) => {
+      pickRef.current?.(event.lngLat.lat, event.lngLat.lng);
+    });
+    if (pickRef.current) map.getCanvas().style.cursor = "crosshair";
+
     let handleLaneWheel: ((event: WheelEvent) => void) | null = null;
     map.on("load", () => {
-      const windMarkerSideBearing = normalizeDeg(headingNumber - 90);
-      const laneLengthM = nmToMetres(numberFromInput(dropDistanceNm, 0));
 
       const bounds = new maplibregl.LngLatBounds();
 
-      [
+      (hasReference ? [
         ...leftRedLanePolygon,
         ...rightRedLanePolygon,
         ...leftYellowLanePolygon,
         ...rightYellowLanePolygon,
         ...greenLanePolygon,
-      ].forEach(([pointLat, pointLon]) => {
+      ] : []).forEach(([pointLat, pointLon]) => {
         bounds.extend([pointLon, pointLat]);
       });
 
+      trackPoints.forEach((point) => bounds.extend([point.lon, point.lat]));
       winds.forEach((wind) => {
-        const segmentProgress = Math.min(
-          Math.max((2500 - wind.altitudeM) / 1000, 0),
-          1
-        );
-
-        const lanePoint = destinationPoint(
-          dropPoint.lat,
-          dropPoint.lon,
-          headingNumber,
-          laneLengthM * segmentProgress
-        );
-
-        const windEdgePoint = destinationPoint(
-          lanePoint.lat,
-          lanePoint.lon,
-          windMarkerSideBearing,
-          600
-        );
-
+        const windEdgePoint = windPosition(wind);
         bounds.extend([windEdgePoint.lon, windEdgePoint.lat]);
       });
 
       if (!bounds.isEmpty()) {
         map.fitBounds(bounds, {
+          bearing: viewBearing,
           padding: {
             top: 45,
-            bottom: 85,
-            left: 105,
-            right: 25,
+            bottom: isAnalysis && windsBelowLane ? 190 : 85,
+            left: isAnalysis && !windsBelowLane ? 200 : 105,
+            right: 85,
           },
           duration: 0,
         });
 
-        map.setBearing(headingNumber);
+        map.setBearing(viewBearing);
         map.setPitch(0);
 
         const laneCenter = bounds.getCenter();
@@ -3930,7 +3974,7 @@ function LaneViewMap({
           map.easeTo({
             center: laneCenter,
             zoom: nextZoom,
-            bearing: headingNumber,
+            bearing: viewBearing,
             pitch: 0,
             duration: 100,
           });
@@ -3942,6 +3986,7 @@ function LaneViewMap({
             passive: false,
           });
       }
+      if (hasReference) {
       map.addSource("lane-red-left", {
         type: "geojson",
         data: makePolygonFeature(leftRedLanePolygon) as GeoJSON.Feature,
@@ -4018,27 +4063,24 @@ function LaneViewMap({
         },
       });
 
+      }
+
+      if (trackPoints.length > 1) {
+        map.addSource("flown-track", {
+          type: "geojson",
+          data: { type: "Feature", properties: {}, geometry: {
+            type: "LineString", coordinates: trackPoints.map((point) => [point.lon, point.lat]),
+          } },
+        });
+        map.addLayer({ id: "flown-track", type: "line", source: "flown-track",
+          paint: { "line-color": "#22d3ee", "line-width": 4 } });
+      }
+
       const mapBearingDeg = normalizeDeg(headingNumber + 180);
 
+      const analysisWindMarkers: { marker: maplibregl.Marker; point: LatLon; element: HTMLElement }[] = [];
       winds.forEach((wind) => {
-        const segmentProgress = Math.min(
-          Math.max((2500 - wind.altitudeM) / 1000, 0),
-          1
-        );
-
-        const lanePoint = destinationPoint(
-          dropPoint.lat,
-          dropPoint.lon,
-          headingNumber,
-          laneLengthM * segmentProgress
-        );
-
-        const markerPoint = destinationPoint(
-          lanePoint.lat,
-          lanePoint.lon,
-          windMarkerSideBearing,
-          600
-        );
+        const markerPoint = windPosition(wind);
 
         const windSpeedKt = Math.round(numberFromInput(wind.speedKt, 0));
         const windFromDeg = Math.round(numberFromInput(wind.directionFromDeg, 0));
@@ -4049,9 +4091,9 @@ function LaneViewMap({
           signedAngleDeg(mapBearingDeg, windTowardDeg) + 90;
 
         const markerElement = document.createElement("div");
-        markerElement.className = "lane-wind-marker";
+        markerElement.className = isAnalysis ? "lane-wind-marker analysis-lane-wind" : "lane-wind-marker";
         markerElement.innerHTML = `
-          <div class="lane-wind-speed">${windSpeedKt} kt</div>
+          <div class="lane-wind-speed">${isAnalysis ? `${wind.altitudeM} m · ` : ""}${windSpeedKt} kt</div>
           <div
             class="lane-wind-arrow"
             style="transform: rotate(${windScreenRotationDeg}deg);"
@@ -4059,19 +4101,114 @@ function LaneViewMap({
             ➜
           </div>
         `;
-        new maplibregl.Marker({
+        if (isAnalysis) {
+          const arrow = markerElement.querySelector<HTMLElement>(".lane-wind-arrow")!;
+          const updateArrow = () => {
+            arrow.style.transform = `rotate(${windTowardDeg - map.getBearing() - 90}deg)`;
+          };
+          updateArrow();
+          map.on("rotate", updateArrow);
+          markerElement.title = `${wind.altitudeM} m: ${windSpeedKt} kt from ${windFromDeg}°`;
+        }
+        const windMarker = new maplibregl.Marker({
           element: markerElement,
           rotationAlignment: "viewport",
-          anchor: "right",
-          offset: [-8, 0],
+          anchor: isAnalysis ? "left" : "right",
+          offset: isAnalysis ? [8, 0] : [-8, 0],
 })
   .setLngLat([markerPoint.lon, markerPoint.lat])
   .addTo(map);
+        if (isAnalysis) {
+          analysisWindMarkers.push({ marker: windMarker, point: markerPoint, element: markerElement });
+        }
       });
 
-      new maplibregl.Marker({ color: "#22d3ee" })
-        .setLngLat([lon, lat])
-        .addTo(map);
+      if (isAnalysis && analysisWindMarkers.length > 0) {
+        map.addSource("wind-label-connectors", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+        map.addLayer({
+          id: "wind-label-connectors", type: "line", source: "wind-label-connectors",
+          paint: { "line-color": "#cbd5e1", "line-width": 1, "line-opacity": 0.6 },
+        });
+        const positionWindLabels = () => {
+          const labels = analysisWindMarkers.map((entry) => ({
+            ...entry,
+            anchor: map.project([entry.point.lon, entry.point.lat]),
+            height: entry.element.offsetHeight || 42,
+            width: entry.element.offsetWidth || 150,
+            x: 0,
+            y: 0,
+          })).sort((a, b) => windsBelowLane ? a.anchor.x - b.anchor.x : a.anchor.y - b.anchor.y);
+          const perimeter = [
+            ...trackPoints.map((point) => map.project([point.lon, point.lat])),
+            ...(hasReference ? [...leftRedLanePolygon, ...rightRedLanePolygon, ...greenLanePolygon]
+              .map(([lat, lon]) => map.project([lon, lat])) : []),
+            ...labels.map((label) => label.anchor),
+          ];
+          const bottom = Math.max(...perimeter.map((point) => point.y));
+          const left = Math.min(...perimeter.map((point) => point.x));
+          if (windsBelowLane) {
+            // Retain each altitude's east/west position; stagger only colliding boxes.
+            const rowEnds: number[] = [];
+            const rowHeight = Math.max(...labels.map((label) => label.height)) + 10;
+            labels.forEach((label) => {
+              label.x = Math.max(12, Math.min(map.getContainer().clientWidth - label.width - 12,
+                label.anchor.x - label.width / 2));
+              let row = rowEnds.findIndex((end) => end + 10 <= label.x);
+              if (row === -1) row = rowEnds.length;
+              rowEnds[row] = label.x + label.width;
+              label.y = bottom + 24 + label.height / 2 + row * rowHeight;
+            });
+          } else {
+            labels.forEach((label, index) => {
+              const previous = labels[index - 1];
+              label.x = left - 24 - label.width;
+              label.y = Math.max(label.anchor.y, previous
+                ? previous.y + (previous.height + label.height) / 2 + 10
+                : label.height / 2 + 12);
+            });
+            const last = labels[labels.length - 1];
+            const overflow = Math.max(0, last.y + last.height / 2 + 12 - map.getContainer().clientHeight);
+            labels.forEach((label) => { label.y -= overflow; });
+            const topOverflow = Math.max(0, labels[0].height / 2 + 12 - labels[0].y);
+            labels.forEach((label) => { label.y += topOverflow; });
+          }
+          const features: GeoJSON.Feature<GeoJSON.LineString>[] = labels.map((label) => {
+            label.marker.setOffset([label.x - label.anchor.x, label.y - label.anchor.y]);
+            const end = map.unproject(windsBelowLane
+              ? [label.x + label.width / 2, label.y - label.height / 2 - 4]
+              : [label.x + label.width + 4, label.y]);
+            return { type: "Feature", properties: {}, geometry: {
+              type: "LineString", coordinates: [[label.point.lon, label.point.lat], [end.lng, end.lat]],
+            } };
+          });
+          (map.getSource("wind-label-connectors") as maplibregl.GeoJSONSource)
+            .setData({ type: "FeatureCollection", features });
+        };
+        positionWindLabels();
+        map.on("move", positionWindLabels);
+        map.on("resize", positionWindLabels);
+      }
+
+      if (hasReference) {
+        new maplibregl.Marker({ color: "#22d3ee" })
+          .setLngLat([lon, lat]).addTo(map);
+      }
+      savedReferencePoints.forEach((point) => {
+        const element = document.createElement("button");
+        element.type = "button";
+        element.className = "analysis-reference-marker";
+        element.textContent = point.name;
+        element.setAttribute("aria-label", `Choose ${point.name}`);
+        element.addEventListener("click", (event) => {
+          event.stopPropagation();
+          savedPickRef.current?.(point);
+        });
+        new maplibregl.Marker({ element, anchor: "bottom", offset: [0, -35] })
+          .setLngLat([point.lon, point.lat]).addTo(map);
+      });
     });
 
     return () => {
@@ -4085,6 +4222,9 @@ function LaneViewMap({
   dropDistanceNm,
   winds,
   mapContainerRef,
+  trackPoints,
+  windowPoints,
+  savedReferencePoints,
 ]);
 
   return <div ref={mapContainerRef} className="lane-view-map" />;
@@ -11428,9 +11568,6 @@ if (activePage === "lane") {
               const openingMap = !showCompetitionReferencePicker;
               setShowCompetitionReferencePicker(openingMap);
 
-              if (openingMap && userMapLocation === null) {
-                requestUserMapLocation();
-              }
             }}
           >
             {showCompetitionReferencePicker ? "Hide map" : "Choose Reference Point on map"}
@@ -11449,29 +11586,45 @@ if (activePage === "lane") {
         </div>
 
         {showCompetitionReferencePicker && pointA && (
-          <MapClickPicker
-            referenceLat={competitionReferenceLat}
-            referenceLon={competitionReferenceLon}
-            userMapLocation={pointA}
-            focusLocation={null}
-            dropPoint={pointA}
-            runHeadingDeg={laneHeadingDeg}
-            trackPoints={laneEvaluationPoints}
-            savedReferencePoints={selectedCompetitionReferencePointsForMap}
-            onSavedReferencePointPick={(point) => {
-              if (selectedCompetitionReferenceGroup) {
-                selectAnalyzerSavedReferencePoint(
-                  selectedCompetitionReferenceGroup,
-                  point,
-                );
-              }
-            }}
-            onPick={(lat, lon) => {
-              setCompetitionReferenceLat(lat.toFixed(6));
-              setCompetitionReferenceLon(lon.toFixed(6));
-              setCompetitionReferenceGroupId(null);
-            }}
-          />
+          <>
+            <LaneViewMap
+              referenceLat={competitionReferenceLat}
+              referenceLon={competitionReferenceLon}
+              dropPoint={pointA}
+              runHeadingDeg={laneHeadingDeg}
+              dropDistanceNm="0"
+              savedReferencePoints={selectedCompetitionReferencePointsForMap}
+              onSavedReferencePointPick={(point) => {
+                if (selectedCompetitionReferenceGroup) {
+                  selectAnalyzerSavedReferencePoint(selectedCompetitionReferenceGroup, point);
+                }
+              }}
+              onPick={(lat, lon) => {
+                setCompetitionReferenceLat(lat.toFixed(6));
+                setCompetitionReferenceLon(lon.toFixed(6));
+                setCompetitionReferenceGroupId(null);
+              }}
+              trackPoints={laneEvaluationPoints}
+              windowPoints={windowTrackPoints}
+              winds={historicalWinds.length === 0 ? [] : [2500, 2250, 2000, 1750, 1500].map((height) => {
+                const altitudeM = height + windowOffsetM;
+                const altitudes = historicalWinds.map((wind) => wind.altitudeM);
+                return {
+                  altitudeM,
+                  speedKt: String(interpolateNumber(altitudeM, altitudes,
+                    Object.fromEntries(historicalWinds.map((wind) => [String(wind.altitudeM), numberFromInput(wind.speedKt, 0)])))),
+                  directionFromDeg: String(interpolateDirection(altitudeM, altitudes,
+                    Object.fromEntries(historicalWinds.map((wind) => [String(wind.altitudeM), numberFromInput(wind.directionFromDeg, 0)])))),
+                };
+              })}
+            />
+            <p className="subtitle">
+              Click the map to choose your reference point. North is always up.
+              {historicalWinds.length > 0
+                ? " Wind labels follow the track at each height; arrows show where the wind is blowing, using the loaded analyser winds."
+                : " Load winds in the analyser to show wind speeds and directions along the track."}
+            </p>
+          </>
         )}
 
         {pointA && pointB ? (

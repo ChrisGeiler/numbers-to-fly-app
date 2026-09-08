@@ -1114,6 +1114,19 @@ button:disabled {
   font-size: 1.1rem;
 }
 
+.analysis-lane-wind {
+  grid-template-columns: auto 30px;
+  font-size: 12px;
+  gap: 4px;
+  background: rgba(2, 6, 23, 0.5);
+  border: 1px solid rgba(34, 211, 238, 0.7);
+}
+
+.analysis-lane-wind .lane-wind-arrow {
+  width: 30px;
+  font-size: 25px;
+}
+
 .wind-correction-source-control {
   display: flex;
   flex-direction: column;
