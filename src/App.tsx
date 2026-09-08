@@ -11453,6 +11453,7 @@ if (activePage === "lane") {
             referenceLat={competitionReferenceLat}
             referenceLon={competitionReferenceLon}
             userMapLocation={pointA}
+            focusLocation={null}
             dropPoint={pointA}
             runHeadingDeg={laneHeadingDeg}
             trackPoints={laneEvaluationPoints}
