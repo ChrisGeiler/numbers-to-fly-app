@@ -89,8 +89,8 @@ test('FLYSIGHT.TXT selects the private firmware only for the installed feature b
     { version: 'v2024.12.30.10-1-g8ae5110', profile: 'window-audio' },
   );
   assert.deepEqual(
-    detectSimulationFirmware('Firmware_Ver: v2024.12.30.10-2-g16ab9db\n'),
-    { version: 'v2024.12.30.10-2-g16ab9db', profile: 'window-audio' },
+    detectSimulationFirmware('Firmware_Ver: v2024.12.30.10-2-gb35a222\n'),
+    { version: 'v2024.12.30.10-2-gb35a222', profile: 'window-audio' },
   );
   assert.deepEqual(
     detectSimulationFirmware('Firmware_Ver: v2024.12.30.10\n'),
