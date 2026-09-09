@@ -1,0 +1,12 @@
+.simulation-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin: 16px 0; }
+.simulation-controls label { display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 100%; }
+.simulation-controls select { max-width: 100%; }
+.simulation-file-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: end; gap: 14px; margin: 16px 0; }
+.simulation-file-controls label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.simulation-file-controls input[type="file"], .simulation-file-controls select { box-sizing: border-box; width: 100%; max-width: 100%; }
+.simulation-graph { height: 300px; width: 100%; min-width: 0; }
+.simulation-altitude-graph { height: 260px; }
+.simulation-readings { display: flex; flex-wrap: wrap; gap: 24px; padding: 18px 0; }
+.simulation-readings span { display: flex; flex-direction: column; gap: 4px; }
+.simulation-timeline { display: block; width: 100%; margin: 14px 0; }
+@media (max-width: 600px) { .simulation-graph { height: 260px; } .simulation-controls label { width: 100%; } }

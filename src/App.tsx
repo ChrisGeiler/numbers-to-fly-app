@@ -6,6 +6,7 @@ import type {
   WheelEvent as ReactWheelEvent,
 } from "react";
 import { supabase } from "./supabase";
+import ConfigSimulation from "./ConfigSimulation";
 import type { Session } from "@supabase/supabase-js";
 import {
   MapContainer,
@@ -4545,6 +4546,8 @@ function BottomBackButton({
 
 function InteractiveTrackChart({
   points,
+  playbackPosition,
+  recordedTimes,
   windowOffsetM,
   winds,
   graphView,
@@ -4559,6 +4562,8 @@ function InteractiveTrackChart({
   onCancelExitSelection,
 }: {
   points: GpsTrackPoint[];
+  playbackPosition?: number;
+  recordedTimes?: number[];
   windowOffsetM: number;
   winds: WindLayer[];
   graphView: "comp" | "full";
@@ -4649,7 +4654,7 @@ const diveAngleDeg =
 
   return {
     sample: index,
-    timeSeconds: index * GPS_SAMPLE_PERIOD_SECONDS,
+    timeSeconds: recordedTimes?.[index] ?? index * GPS_SAMPLE_PERIOD_SECONDS,
     altitudeM: point.altitudeM,
     horizontalSpeedKmh: metresPerSecondToKmh(
       displayHorizontalSpeedMps),
@@ -5228,6 +5233,9 @@ const diveAngleDeg =
               }}
             />
 
+            {playbackPosition !== undefined && (
+              <ReferenceLine yAxisId="altitude" x={playbackPosition} stroke="#f97316" strokeWidth={2} />
+            )}
             {selectionStart !== null && selectionEnd !== null && (
               <ReferenceArea
                 yAxisId="altitude"
@@ -12807,6 +12815,43 @@ if (activePage === "rules") {
           )}
         </section>
 
+        <ConfigSimulation
+          renderGraph={(points, position) => (
+            <InteractiveTrackChart
+              points={points.map(point => ({ ...point, altitudeM: point.altitudeM - numberFromInput(configDzElevM, 0) }))}
+              recordedTimes={points.map(point => point.seconds)}
+              playbackPosition={position}
+              windowOffsetM={0}
+              winds={[]}
+              graphView="full"
+              onGraphViewChange={() => undefined}
+              scoreMode="raw"
+              onScoreModeChange={() => undefined}
+              showViewControls={false}
+              showScoreModeControl={false}
+            />
+          )}
+          config={generatedConfigText}
+          task={configTask}
+          userId={supabaseSession?.user.id}
+          userEmail={supabaseSession?.user.email}
+          invalid={toneRangeInvalid || toneMinNumber === null || toneMaxNumber === null}
+          onSignIn={() => setShowLogbookLogin(true)}
+        />
+        {showLogbookLogin && (
+          <AuthModal
+            session={supabaseSession}
+            email={authEmail}
+            status={authStatus}
+            busy={authBusy}
+            onEmailChange={setAuthEmail}
+            onGoogleSignIn={handleGoogleSignIn}
+            onGoogleSignInError={handleGoogleSignInError}
+            onEmailLinkSignIn={handleEmailLinkSignIn}
+            onSignOut={handleSignOut}
+            onClose={() => setShowLogbookLogin(false)}
+          />
+        )}
         <section className="card">
           <h2>Generated Config</h2>
 

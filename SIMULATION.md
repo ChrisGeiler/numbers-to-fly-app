@@ -1,0 +1,16 @@
+Simulation audio reference
+==========================
+
+The preview supports settings emitted by the config builder or loaded from a selected FlySight config TXT: horizontal/vertical speed or GR tones, change-in-value rate mode, clamped tone limits, speed or GR speech, file/beep alarms, and silence windows. It plays the available 3353–1500 m AGL section.
+
+Standard FlySight 2 behaviour remains the default. For the authorized `starcruza@hotmail.com` account, the optional private window-audio profile reproduces firmware `v2024.12.30.10-1-g8ae5110`, including sustained-descent flight confirmation, descending window entry, and the post-entry flare-climb latch. Selecting `FLYSIGHT.TXT` automatically chooses this profile when that version is detected; otherwise the authorized user can select it manually. Config files do not contain a firmware version.
+
+Checked against official firmware on 2026-09-09:
+- https://github.com/flysight/flysight-2-firmware/blob/master/FlySight/audio_control.c
+- https://github.com/flysight/flysight/blob/master/src/UBX.c
+
+Speech deadlines continue through silence and alarms. An alarm interrupts speech, but does not start a fresh speech interval. Pending speech waits for the alarm beep/recording to finish. Entering an alarm margin stops ordinary audio. Speed thresholds use absolute vertical speed. Decimal readings are truncated, not rounded. Normal speed and GR readings use digit recordings.
+
+FlySight 2 tone pitch spans 220–1760 Hz linearly. Tones and alarm beeps last 125 ms. Change-in-value tone rate uses two GPS sample intervals and is normalized by the configured tone range, rather than the current reading.
+
+Limits: this is a browser model, not execution of the compiled firmware or a physical-device validation. The current FlySight 2 interfaces do not accept replayed GNSS samples from the app. The preview uses recorded sample times, floating-point calculations and browser scheduling rather than firmware fixed-point arithmetic and its hardware clock. Audio output and volume response differ from the device. FlySight 1's tone implementation differs; the preview currently uses FlySight 2 pitch. Startup/GPS acquisition audio is outside the clipped flight. Imported configurations using navigation, SAS, altitude-step speech, other limit modes or other rate modes are not fully supported. Pause cancels the current utterance; seeking starts a fresh preview at the chosen point.
