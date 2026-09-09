@@ -3,7 +3,7 @@ Simulation audio reference
 
 The preview supports settings emitted by the config builder or loaded from a selected FlySight config TXT: horizontal/vertical speed or GR tones, change-in-value rate mode, clamped tone limits, speed or GR speech, file/beep alarms, and silence windows. It plays the available 3353–1500 m AGL section.
 
-Standard FlySight 2 behaviour remains the default. For the authorized `starcruza@hotmail.com` account, the optional private window-audio profile reproduces the private firmware, including sustained-descent flight confirmation, descending window entry, and the post-entry flare-climb latch. Selecting `FLYSIGHT.TXT` automatically chooses this profile when a supported private version is detected; otherwise the authorized user can select it manually. Config files do not contain a firmware version.
+Standard FlySight 2 behaviour remains the default. For the authorized `starcruza@hotmail.com` account, the optional private window-audio profile reproduces the private firmware, including sustained-descent flight confirmation, descending window entry, and the post-entry flare-climb latch. Selecting `FLYSIGHT.TXT` automatically chooses this profile and its version-specific alarm behaviour when a supported private version is detected; otherwise the authorized user can select the latest behaviour manually. Config files do not contain a firmware version.
 
 Checked against official firmware on 2026-09-09:
 - https://github.com/flysight/flysight-2-firmware/blob/master/FlySight/audio_control.c

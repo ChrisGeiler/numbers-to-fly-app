@@ -8,6 +8,7 @@ export type SimulationFirmwareState =
   | 'post-window-audio';
 
 const WINDOW_AUDIO_FIRMWARE_COMMITS = ['g8ae5110', 'gb35a222'];
+const UNRESTRICTED_SPEECH_FIRMWARE_COMMIT = 'gb35a222';
 const WINDOW_AUDIO_SIMULATOR_EMAIL = 'starcruza@hotmail.com';
 const FLIGHT_DESCENT_MIN_SPEED_MPS = 20;
 const FLIGHT_DESCENT_CONFIRM_SECONDS = 1;
@@ -60,10 +61,12 @@ export function simulationAlarmShouldWait(
   profile: SimulationFirmwareProfile,
   state: SimulationFirmwareState | undefined,
   speechActive: boolean,
+  firmwareVersion?: string | null,
 ) {
   return profile === 'window-audio' &&
     state === 'post-window-audio' &&
-    speechActive;
+    speechActive &&
+    (!firmwareVersion || firmwareVersion.includes(UNRESTRICTED_SPEECH_FIRMWARE_COMMIT));
 }
 
 export function simulationFirmwareTimeline(

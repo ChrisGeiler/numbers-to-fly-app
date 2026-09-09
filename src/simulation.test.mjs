@@ -107,6 +107,8 @@ test('private firmware simulator access is restricted to Chris account', () => {
 
 test('private firmware defers alarms until active post-window speech finishes', () => {
   assert.equal(simulationAlarmShouldWait('window-audio', 'post-window-audio', true), true);
+  assert.equal(simulationAlarmShouldWait('window-audio', 'post-window-audio', true, 'v2024.12.30.10-2-gb35a222'), true);
+  assert.equal(simulationAlarmShouldWait('window-audio', 'post-window-audio', true, 'v2024.12.30.10-1-g8ae5110'), false);
   assert.equal(simulationAlarmShouldWait('window-audio', 'post-window-audio', false), false);
   assert.equal(simulationAlarmShouldWait('window-audio', 'window-entered', true), false);
   assert.equal(simulationAlarmShouldWait('standard', 'post-window-audio', true), false);

@@ -191,7 +191,7 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
       const crossed = alarms.filter(a => a.elevation >= Math.min(previousAltitude, altitude) && a.elevation < Math.max(previousAltitude, altitude));
       if (crossed.length) {
         const alarm = crossed[0];
-        if (simulationAlarmShouldWait(activeFirmwareProfile, firmwareTimeline[sampleIndex]?.state, voices.speaking)) {
+        if (simulationAlarmShouldWait(activeFirmwareProfile, firmwareTimeline[sampleIndex]?.state, voices.speaking, firmwareVersion)) {
           pendingAlarm ??= alarm;
         } else {
           playAlarm(alarm);
@@ -228,7 +228,7 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
     const stopHidden = () => { if (document.hidden) setPlaying(false); };
     document.addEventListener('visibilitychange', stopHidden);
     return () => { clearInterval(timer); voices.stop(); stopTones(); void context.suspend(); document.removeEventListener('visibilitychange', stopHidden); };
-  }, [playing, points, settings, firmwareTimeline, volume, duration]);
+  }, [playing, points, settings, firmwareTimeline, firmwareVersion, volume, duration]);
 
   async function chooseConfigFile(file?: File) {
     if (!file) return;
