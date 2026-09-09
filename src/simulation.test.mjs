@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canUseWindowAudioFirmware, detectSimulationFirmware, readSimulationConfig, simulationFirmwareTimeline, simulationTimeline, simulationValue, simulationWindow, simulationSuppressed, simulationSpeechDue, simulationSpeechNumber, simulationTone } from './simulation.ts';
+import { canUseWindowAudioFirmware, detectSimulationFirmware, readSimulationConfig, simulationAlarmShouldWait, simulationFirmwareTimeline, simulationTimeline, simulationValue, simulationWindow, simulationSuppressed, simulationSpeechDue, simulationSpeechNumber, simulationTone } from './simulation.ts';
 
 test('config parser preserves repeated alarms and ignores commented settings', () => {
   const result = readSimulationConfig(`; Min: 999
@@ -89,6 +89,10 @@ test('FLYSIGHT.TXT selects the private firmware only for the installed feature b
     { version: 'v2024.12.30.10-1-g8ae5110', profile: 'window-audio' },
   );
   assert.deepEqual(
+    detectSimulationFirmware('Firmware_Ver: v2024.12.30.10-2-g16ab9db\n'),
+    { version: 'v2024.12.30.10-2-g16ab9db', profile: 'window-audio' },
+  );
+  assert.deepEqual(
     detectSimulationFirmware('Firmware_Ver: v2024.12.30.10\n'),
     { version: 'v2024.12.30.10', profile: 'standard' },
   );
@@ -99,6 +103,13 @@ test('private firmware simulator access is restricted to Chris account', () => {
   assert.equal(canUseWindowAudioFirmware(' StarCruza@Hotmail.com '), true);
   assert.equal(canUseWindowAudioFirmware('another@example.com'), false);
   assert.equal(canUseWindowAudioFirmware(null), false);
+});
+
+test('private firmware defers alarms until active post-window speech finishes', () => {
+  assert.equal(simulationAlarmShouldWait('window-audio', 'post-window-audio', true), true);
+  assert.equal(simulationAlarmShouldWait('window-audio', 'post-window-audio', false), false);
+  assert.equal(simulationAlarmShouldWait('window-audio', 'window-entered', true), false);
+  assert.equal(simulationAlarmShouldWait('standard', 'post-window-audio', true), false);
 });
 
 test('private firmware stays silent before entry and releases suppression after a confirmed flare climb', () => {

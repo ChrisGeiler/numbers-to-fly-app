@@ -6,6 +6,7 @@ import {
   canUseWindowAudioFirmware,
   detectSimulationFirmware,
   readSimulationConfig,
+  simulationAlarmShouldWait,
   simulationFirmwareTimeline,
   simulationSpeechDue,
   simulationSpeechNumber,
@@ -145,6 +146,7 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
     const startingIndex = Math.max(0, points.findIndex(p => p.seconds >= cursor.current));
     let wasSuppressed = firmwareTimeline[startingIndex]?.suppressed ?? true;
     let toneUntil = 0;
+    let pendingAlarm: (typeof alarms)[number] | null = null;
     const tones = new Set<OscillatorNode>();
     function stopTones() { tones.forEach(tone => { tone.stop(); tone.disconnect(); }); tones.clear(); toneUntil = 0; }
     let previous = points[Math.max(0, points.findIndex(p => p.seconds >= cursor.current))];
@@ -167,6 +169,13 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
       tones.add(oscillator); toneUntil = context.currentTime + length; oscillator.start(); oscillator.stop(context.currentTime + length);
       oscillator.onended = () => { tones.delete(oscillator); oscillator.disconnect(); gain.disconnect(); };
     }
+    function playAlarm(alarm: (typeof alarms)[number]) {
+      stopTones();
+      voices.stop();
+      if (alarm.type === 4) say(alarm.file, true);
+      else if (alarm.type === 1) { beep(1760); setHeard('Altitude alarm · beep'); }
+      nextTone = cursor.current;
+    }
     const timer = window.setInterval(() => {
       const now = performance.now();
       const before = cursor.current;
@@ -181,16 +190,23 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
       const previousAltitude = previous.altitudeM - v.DZ_Elev;
       const crossed = alarms.filter(a => a.elevation >= Math.min(previousAltitude, altitude) && a.elevation < Math.max(previousAltitude, altitude));
       if (crossed.length) {
-        const alarm = crossed[0]; stopTones(); voices.stop();
-        if (alarm.type === 4) say(alarm.file, true);
-        else if (alarm.type === 1) { beep(1760); setHeard('Altitude alarm · beep'); }
-        nextTone = cursor.current;
+        const alarm = crossed[0];
+        if (simulationAlarmShouldWait(activeFirmwareProfile, firmwareTimeline[sampleIndex]?.state, voices.speaking)) {
+          pendingAlarm ??= alarm;
+        } else {
+          playAlarm(alarm);
+        }
+      }
+      if (pendingAlarm && !voices.speaking && context.currentTime >= toneUntil) {
+        const alarm = pendingAlarm;
+        pendingAlarm = null;
+        playAlarm(alarm);
       }
 
       const threshold = Math.abs(current.verticalSpeedMps) * 100 >= v.V_Thresh && current.horizontalSpeedMps * 100 >= v.H_Thresh;
       const value = simulationValue(current, v.Mode);
       if (!silent && threshold) {
-        if (simulationSpeechDue(cursor.current, nextSpeech, v.Sp_Rate, silent, threshold, voices.speaking || context.currentTime < toneUntil)) {
+        if (simulationSpeechDue(cursor.current, nextSpeech, v.Sp_Rate, silent, threshold, pendingAlarm !== null || voices.speaking || context.currentTime < toneUntil)) {
           const spoken = simulationValue(current, v.Sp_Mode);
           if (spoken !== null) say(simulationSpeechNumber(spoken / 100 * (v.Sp_Mode === 2 ? 1 : 3.6), v.Sp_Dec));
           nextSpeech = cursor.current + v.Sp_Rate; speechDeadline.current = nextSpeech;
@@ -204,7 +220,7 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
             nextTone = cursor.current + 1 / rate;
             setHeard(`Tone · ${pitch} Hz`);
           }
-        }      } else if (!crossed.length && !voices.speaking) setHeard(silent ? 'Silence window' : 'Below tone threshold');
+        }      } else if (!crossed.length && !pendingAlarm && !voices.speaking && context.currentTime >= toneUntil) setHeard(silent ? 'Silence window' : 'Below tone threshold');
       previous = current;
       setPosition(cursor.current);
       if (cursor.current >= duration) { setPlaying(false); setHeard('Simulation complete'); }

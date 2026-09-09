@@ -7,7 +7,7 @@ export type SimulationFirmwareState =
   | 'window-entered'
   | 'post-window-audio';
 
-const WINDOW_AUDIO_FIRMWARE_COMMIT = 'g8ae5110';
+const WINDOW_AUDIO_FIRMWARE_COMMITS = ['g8ae5110', 'g16ab9db'];
 const WINDOW_AUDIO_SIMULATOR_EMAIL = 'starcruza@hotmail.com';
 const FLIGHT_DESCENT_MIN_SPEED_MPS = 20;
 const FLIGHT_DESCENT_CONFIRM_SECONDS = 1;
@@ -46,7 +46,7 @@ export function detectSimulationFirmware(flysightText: string) {
   const version = flysightText.match(/^\s*Firmware_Ver:\s*([^;\r\n]+)/mi)?.[1].trim() ?? null;
   return {
     version,
-    profile: version?.includes(WINDOW_AUDIO_FIRMWARE_COMMIT)
+    profile: WINDOW_AUDIO_FIRMWARE_COMMITS.some(commit => version?.includes(commit))
       ? 'window-audio' as const
       : 'standard' as const,
   };
@@ -54,6 +54,16 @@ export function detectSimulationFirmware(flysightText: string) {
 
 export function canUseWindowAudioFirmware(email?: string | null) {
   return email?.trim().toLowerCase() === WINDOW_AUDIO_SIMULATOR_EMAIL;
+}
+
+export function simulationAlarmShouldWait(
+  profile: SimulationFirmwareProfile,
+  state: SimulationFirmwareState | undefined,
+  speechActive: boolean,
+) {
+  return profile === 'window-audio' &&
+    state === 'post-window-audio' &&
+    speechActive;
 }
 
 export function simulationFirmwareTimeline(
