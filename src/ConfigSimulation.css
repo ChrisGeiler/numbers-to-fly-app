@@ -1,6 +1,10 @@
 .simulation-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin: 16px 0; }
 .simulation-controls label { display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 100%; }
 .simulation-controls select { max-width: 100%; }
+.simulation-selector-row { display: grid; grid-template-columns: minmax(90px, .65fr) minmax(0, 2fr) minmax(170px, 1fr); align-items: end; gap: 12px; margin: 16px 0; }
+.simulation-selector-row label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.simulation-selector-row select, .simulation-selector-row input { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; }
+@media (max-width: 480px) { .simulation-selector-row { grid-template-columns: 1fr; } }
 .simulation-file-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: end; gap: 14px; margin: 16px 0; }
 .simulation-file-controls label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .simulation-file-controls input[type="file"], .simulation-file-controls select { box-sizing: border-box; width: 100%; max-width: 100%; }

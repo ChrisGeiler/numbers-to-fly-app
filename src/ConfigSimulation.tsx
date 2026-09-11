@@ -19,8 +19,17 @@ import type { SimulationFirmwareProfile } from './simulation';
 import { FlySightVoice, numberRecordings } from './flysightAudio';
 import './ConfigSimulation.css';
 
-type Track = { id: string; jump_date: string | null; location_name: string | null; task_type: string | null };
+type Track = { id: string; jump_date: string | null; location_name: string | null; task_type: string | null; window_time_s: number | null; window_distance_m: number | null; window_speed_kmh: number | null };
 type Props = { config: string; task: string; userId?: string; userEmail?: string | null; invalid: boolean; onSignIn: () => void; renderGraph: (points: ReturnType<typeof simulationTimeline>, position: number) => ReactNode };
+
+function trackScore(track: Track) {
+  const score = track.task_type === 'time' ? track.window_time_s : track.task_type === 'distance' ? track.window_distance_m : track.task_type === 'speed' ? track.window_speed_kmh : null;
+  if (!['time', 'distance', 'speed'].includes(track.task_type ?? '')) return '';
+  if (score == null || !Number.isFinite(score)) return ' · No score';
+  const decimals = track.task_type === 'time' ? 2 : track.task_type === 'speed' ? 1 : 0;
+  const unit = track.task_type === 'time' ? 's' : track.task_type === 'speed' ? 'km/h' : 'm';
+  return ` · ${score.toFixed(decimals)} ${unit}`;
+}
 
 export default function ConfigSimulation({ config, task, userId, userEmail, invalid, onSignIn, renderGraph }: Props) {
   const [open, setOpen] = useState(false);
@@ -89,7 +98,7 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
     setLoading(true); setStatus(''); setTracks([]); setSelected(''); setPoints([]);
     void (async () => {
       try {
-        let query = supabase.from('jumps').select('id,jump_date,location_name,task_type').eq('user_id', userId);
+        let query = supabase.from('jumps').select('id,jump_date,location_name,task_type,window_time_s,window_distance_m,window_speed_kmh').eq('user_id', userId);
         if (filter !== 'all') query = query.eq('task_type', filter);
         const { data, error } = await query.order('jump_date', { ascending: false });
         if (cancelled) return;
@@ -312,7 +321,15 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
         <h3>Choose a logbook track</h3>
         <button type="button" onClick={() => { setPlaying(false); setOpen(false); }}>Close simulation</button>
       </div>
-      <div className="simulation-file-controls">
+      <div className="simulation-selector-row">
+          <label>Track task<select value={filter} onChange={e => { setPlaying(false); setFilter(e.target.value); }}>
+            <option value="distance">Distance</option><option value="speed">Speed</option><option value="time">Time</option><option value="all">All tasks</option>
+          </select></label>
+          <label>Logbook track<select value={selected} disabled={loading || !userId} onChange={e => { setPlaying(false); setSelected(e.target.value); }}>
+            <option value="">Select a track…</option>
+            {tracks.map(t => <option key={t.id} value={t.id}>{t.jump_date ? new Date(t.jump_date).toLocaleString() : 'Undated flight'} · {t.location_name || 'Unknown location'} · {t.task_type || 'Unassigned'}{trackScore(t)}</option>)}
+          </select></label>
+
         <label>
           Config to play
           <input
@@ -324,6 +341,9 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
             }}
           />
         </label>
+        {selectedConfigText !== null && <button type="button" onClick={useGeneratedConfig}>Use generated config</button>}
+      </div>
+      {privateFirmwareAllowed && <div className="simulation-file-controls">
         <label>
           Firmware behaviour
           <select
@@ -349,24 +369,14 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
             }}
           />
         </label>
-        {selectedConfigText !== null && <button type="button" onClick={useGeneratedConfig}>Use generated config</button>}
-      </div>
+      </div>}
       <p className="subtitle">
-        Config: <strong>{selectedConfigName ?? `Generated ${task} config`}</strong> · Firmware: <strong>{firmwareLabel}</strong>
+        Config: <strong>{selectedConfigName ?? `Generated ${task} config`}</strong> {privateFirmwareAllowed && <>· Firmware: <strong>{firmwareLabel}</strong></>}
         {firmwareVersion ? ` (${firmwareVersion})` : ''}
       </p>
-      <p className="subtitle">A config file contains settings but not the device firmware version. Select FLYSIGHT.TXT to detect it automatically, or choose the firmware behaviour manually.</p>
+      {privateFirmwareAllowed && <p className="subtitle">A config file contains settings but not the device firmware version. Select FLYSIGHT.TXT to detect it automatically, or choose the firmware behaviour manually.</p>}
       {fileStatus && <p role="status">{fileStatus}</p>}
       {!userId ? <><p>Sign in to choose a saved flight.</p><button type="button" onClick={onSignIn}>Sign in to logbook</button></> : <>
-        <div className="simulation-controls">
-          <label>Track task<select value={filter} onChange={e => { setPlaying(false); setFilter(e.target.value); }}>
-            <option value="distance">Distance</option><option value="speed">Speed</option><option value="time">Time</option><option value="all">All tasks</option>
-          </select></label>
-          <label>Logbook track<select value={selected} disabled={loading} onChange={e => { setPlaying(false); setSelected(e.target.value); }}>
-            <option value="">Select a track…</option>
-            {tracks.map(t => <option key={t.id} value={t.id}>{t.jump_date ? new Date(t.jump_date).toLocaleString() : 'Undated flight'} · {t.location_name || 'Unknown location'} · {t.task_type || 'Unassigned'}</option>)}
-          </select></label>
-        </div>
         <p>Previewing <strong>{selectedConfigName ?? `your ${task} config`}</strong>. Track filtering does not change the selected config.</p>
         {loading && <p role="status">Loading tracks…</p>}
         {status && <p role="status">{status}</p>}
