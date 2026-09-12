@@ -11,7 +11,7 @@ Checked against official firmware on 2026-09-09:
 
 Speech deadlines continue through silence and alarms. With standard firmware an alarm interrupts speech, but does not start a fresh speech interval. After the private firmware's flare latch, a crossed alarm waits for the active spoken performance value to finish, then plays normally. Pending speech waits for the alarm beep/recording to finish. Entering an alarm margin stops ordinary audio before the private flare latch. Speed thresholds use absolute vertical speed. Decimal readings are truncated, not rounded. Normal speed and GR readings use digit recordings.
 
-For the latest private firmware, app-generated Time, Distance and Speed configs enable a 50%-volume GR guide from the descending “3” alarm crossing to the window-start beep. Its pitch range is GR 1.0–2.5 for Time and Distance, and GR 0.4–0.8 for Speed. It reuses the configured tone-rate rules and never schedules performance speech. Countdown alarms retain priority.
+For the latest private firmware, app-generated Time, Distance and Speed configs enable a 50%-volume GR guide from the descending “3” alarm crossing to the spoken “zero” at window start. Its pitch range is GR 1.0–2.5 for Time and Distance, and GR 0.4–0.8 for Speed. It reuses the configured tone-rate rules and never schedules performance speech. Countdown alarms retain priority. The authorized account's generated configs play the standard `0.wav` recording at this boundary; other accounts retain the beep.
 
 FlySight 2 tone pitch spans 220–1760 Hz linearly. Tones and alarm beeps last 125 ms. Change-in-value tone rate uses two GPS sample intervals and is normalized by the configured tone range, rather than the current reading.
 

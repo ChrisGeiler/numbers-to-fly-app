@@ -2432,7 +2432,7 @@ Approach_Min:    ${task === "speed" ? 40 : 100} ; Minimum GR * 100 (${task === "
 Approach_Max:    ${task === "speed" ? 80 : 250} ; Maximum GR * 100 (${task === "speed" ? "0.8" : "2.5"})
 Approach_Volume: 4   ; 50% volume (0 to 8)
 Approach_Start:  ${Math.round(numberFromInput(alarm3, 0))} ; Begin after the “3” alarm (m AGL)
-Approach_End:    ${Math.round(numberFromInput(alarmBeep, 0))} ; Stop at the window-start beep (m AGL)
+Approach_End:    ${Math.round(numberFromInput(alarmBeep, 0))} ; Stop at the window-start “zero” (m AGL)
 `
     : "";
   const toneMinQuickReference =
@@ -2608,7 +2608,7 @@ Alarm_Type:    4 ; Alarm type
 Alarm_File:    1 ; File to be played
 
 Alarm_Elev:    ${Math.round(numberFromInput(alarmBeep, 0))} ; Alarm elevation (m above ground level)
-Alarm_Type:    1 ; Alarm type
+Alarm_Type:    ${privateFirmwareFeatures ? 4 : 1} ; Alarm type
 Alarm_File:    0 ; File to be played
 
 Alarm_Elev:    ${Math.round(numberFromInput(alarmFlare, 0))} ; Alarm elevation (m above ground level)
@@ -12773,7 +12773,9 @@ if (activePage === "rules") {
             </label>
 
             <label>
-              Beep
+              {canUseWindowAudioFirmware(supabaseSession?.user.email)
+                ? "Zero / window start"
+                : "Beep"}
               <input
                 type="number"
                 value={configAlarmBeep}
