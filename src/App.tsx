@@ -7,6 +7,7 @@ import type {
 } from "react";
 import { supabase } from "./supabase";
 import ConfigSimulation from "./ConfigSimulation";
+import { canUseWindowAudioFirmware } from "./simulation";
 import type { Session } from "@supabase/supabase-js";
 import {
   MapContainer,
@@ -2374,6 +2375,7 @@ function generateFlySightConfig({
   alarmBeep,
   alarmFlare,
   alarmTask,
+  privateFirmwareFeatures,
 }: {
   task: ConfigTask;
   dzElevM: string;
@@ -2389,6 +2391,7 @@ function generateFlySightConfig({
   alarmBeep: string;
   alarmFlare: string;
   alarmTask: string;
+  privateFirmwareFeatures: boolean;
 }) {
   const taskLabel =
     task === "distance" ? "distance" : task === "speed" ? "speed" : "time";
@@ -2420,6 +2423,18 @@ function generateFlySightConfig({
 
   const finalAlarmType = task === "time" ? 1 : 4;
   const flareAlarmType = task === "speed" ? 1 : 4;
+  const approachToneSettings = privateFirmwareFeatures
+    ? `
+; Approach GR guide tones (private firmware only)
+
+Approach_Enable: ${task === "speed" ? 0 : 1}   ; 1 for Time/Distance, 0 for Speed
+Approach_Min:    100 ; Minimum GR * 100 (1.0)
+Approach_Max:    250 ; Maximum GR * 100 (2.5)
+Approach_Volume: 4   ; 50% volume (0 to 8)
+Approach_Start:  ${Math.round(numberFromInput(alarm3, 0))} ; Begin after the “3” alarm (m AGL)
+Approach_End:    ${Math.round(numberFromInput(alarmBeep, 0))} ; Stop at the window-start beep (m AGL)
+`
+    : "";
   const toneMinQuickReference =
     task === "speed"
       ? " (6666=240kph, 6944=250kph, 7222=260kph, 7500=270kph)"
@@ -2468,6 +2483,7 @@ Limits:    1     ; Behaviour when outside bounds
                  ;   2 = Chirp up/down
                  ;   3 = Chirp down/up
 Volume:    8     ; 0 (min) to 8 (max)
+${approachToneSettings}
 
 ; Rate settings
 
@@ -8216,6 +8232,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
         alarmBeep: configAlarmBeep,
         alarmFlare: configAlarmFlare,
         alarmTask: configAlarmTask,
+        privateFirmwareFeatures: canUseWindowAudioFirmware(supabaseSession?.user.email),
       }),
         [
       configTask,
@@ -8232,6 +8249,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
       configAlarmBeep,
       configAlarmFlare,
       configAlarmTask,
+      supabaseSession?.user.email,
     ]
   );
 

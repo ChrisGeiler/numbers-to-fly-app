@@ -69,8 +69,8 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
   const effectiveInvalid = selectedConfigText === null ? invalid : selectedConfigInvalid;
   const points = useMemo(() => simulationWindow(sourcePoints, groundElevation), [sourcePoints, groundElevation]);
   const firmwareTimeline = useMemo(
-    () => simulationFirmwareTimeline(points, groundElevation, settings, activeFirmwareProfile),
-    [points, groundElevation, settings, activeFirmwareProfile],
+    () => simulationFirmwareTimeline(points, groundElevation, settings, activeFirmwareProfile, firmwareVersion),
+    [points, groundElevation, settings, activeFirmwareProfile, firmwareVersion],
   );
   useEffect(() => { setPlaying(false); cursor.current = 0; speechDeadline.current = 0; setPosition(0); }, [groundElevation]);
   const duration = points.at(-1)?.seconds ?? 0;
@@ -167,12 +167,12 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
     function say(text: string, alarm = false) {
       setHeard(text);
       voices.speak(alarm ? [text] : numberRecordings(text), volume * v.Sp_Volume / 8);
-    }    function beep(frequency: number, length = 0.125) {
+    }    function beep(frequency: number, length = 0.125, settingVolume = v.Volume) {
       const oscillator = context.createOscillator();
       const gain = context.createGain();
       oscillator.frequency.value = frequency;
       gain.gain.setValueAtTime(0, context.currentTime);
-      gain.gain.linearRampToValueAtTime(volume * 0.2 * v.Volume / 8, context.currentTime + 0.008);
+      gain.gain.linearRampToValueAtTime(volume * 0.2 * settingVolume / 8, context.currentTime + 0.008);
       gain.gain.linearRampToValueAtTime(0, context.currentTime + length);
       oscillator.connect(gain); gain.connect(context.destination);
       tones.add(oscillator); toneUntil = context.currentTime + length; oscillator.start(); oscillator.stop(context.currentTime + length);
@@ -193,6 +193,7 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
       const sampleIndex = i === -1 ? points.length - 1 : Math.max(0, i - 1);
       const current = points[sampleIndex];
       const altitude = current.altitudeM - v.DZ_Elev;
+      const approachActive = firmwareTimeline[sampleIndex]?.approachActive ?? false;
       const silent = firmwareTimeline[sampleIndex]?.suppressed ?? true;
       if (silent && !wasSuppressed) { voices.stop(); stopTones(); }
       wasSuppressed = silent;
@@ -213,21 +214,27 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
       }
 
       const threshold = Math.abs(current.verticalSpeedMps) * 100 >= v.V_Thresh && current.horizontalSpeedMps * 100 >= v.H_Thresh;
-      const value = simulationValue(current, v.Mode);
+      const toneMode = approachActive ? 2 : v.Mode;
+      const value = simulationValue(current, toneMode);
       if (!silent && threshold) {
-        if (simulationSpeechDue(cursor.current, nextSpeech, v.Sp_Rate, silent, threshold, pendingAlarm !== null || voices.speaking || context.currentTime < toneUntil)) {
+        if (!approachActive && simulationSpeechDue(cursor.current, nextSpeech, v.Sp_Rate, silent, threshold, pendingAlarm !== null || voices.speaking || context.currentTime < toneUntil)) {
           const spoken = simulationValue(current, v.Sp_Mode);
           if (spoken !== null) say(simulationSpeechNumber(spoken / 100 * (v.Sp_Mode === 2 ? 1 : 3.6), v.Sp_Dec));
           nextSpeech = cursor.current + v.Sp_Rate; speechDeadline.current = nextSpeech;
         }
         if (value !== null && cursor.current >= nextTone && !voices.speaking && context.currentTime >= toneUntil) {
-          const priorSample = points[Math.max(0, sampleIndex - 2)];
-          const oldValue = simulationValue(priorSample, v.Mode);
+          const priorIndex = Math.max(0, sampleIndex - 2);
+          const priorSample = points[priorIndex];
+          const sameTonePhase = (firmwareTimeline[priorIndex]?.approachActive ?? false) === approachActive;
+          const oldValue = sameTonePhase ? simulationValue(priorSample, toneMode) : null;
           if (oldValue !== null) {
-            const { pitch, rate } = simulationTone(value, oldValue, current.seconds - priorSample.seconds, v);
-            beep(pitch);
+            const toneSettings = approachActive
+              ? { ...v, Min: v.Approach_Min, Max: v.Approach_Max }
+              : v;
+            const { pitch, rate } = simulationTone(value, oldValue, current.seconds - priorSample.seconds, toneSettings);
+            beep(pitch, 0.125, approachActive ? v.Approach_Volume : v.Volume);
             nextTone = cursor.current + 1 / rate;
-            setHeard(`Tone · ${pitch} Hz`);
+            setHeard(`${approachActive ? 'Approach GR tone' : 'Tone'} · ${pitch} Hz`);
           }
         }      } else if (!crossed.length && !pendingAlarm && !voices.speaking && context.currentTime >= toneUntil) setHeard(silent ? 'Silence window' : 'Below tone threshold');
       previous = current;
@@ -390,7 +397,7 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
             <span>Horizontal <strong>{(point.horizontalSpeedMps * 3.6).toFixed(0)} km/h</strong></span>
             <span>Vertical <strong>{(point.verticalSpeedMps * 3.6).toFixed(0)} km/h</strong></span>
             <span>Glide ratio <strong>{point.glideRatio?.toFixed(2) ?? '—'}</strong></span>
-            {activeFirmwareProfile === 'window-audio' && <span>Firmware state <strong>{firmwareState ?? 'pre-flight'}</strong></span>}
+            {activeFirmwareProfile === 'window-audio' && <span>Firmware state <strong>{firmwareState ?? 'pre-flight'}</strong>{firmwareTimeline[index]?.approachActive ? ' · approach GR guide' : ''}</span>}
           </div>
           <label>Flight timeline · {position.toFixed(1)} / {duration.toFixed(1)} s
             <input className="simulation-timeline" aria-label="Flight position" type="range" min="0" max={duration} step="0.1" value={position} onChange={e => seek(Number(e.target.value))} />

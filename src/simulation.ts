@@ -7,8 +7,9 @@ export type SimulationFirmwareState =
   | 'window-entered'
   | 'post-window-audio';
 
-const WINDOW_AUDIO_FIRMWARE_COMMITS = ['g8ae5110', 'gb35a222'];
-const UNRESTRICTED_SPEECH_FIRMWARE_COMMIT = 'gb35a222';
+const WINDOW_AUDIO_FIRMWARE_COMMITS = ['g8ae5110', 'gb35a222', 'g70a62f6'];
+const UNRESTRICTED_SPEECH_FIRMWARE_COMMITS = ['gb35a222', 'g70a62f6'];
+const APPROACH_GUIDE_FIRMWARE_COMMIT = 'g70a62f6';
 const WINDOW_AUDIO_SIMULATOR_EMAIL = 'starcruza@hotmail.com';
 const FLIGHT_DESCENT_MIN_SPEED_MPS = 20;
 const FLIGHT_DESCENT_CONFIRM_SECONDS = 1;
@@ -66,7 +67,15 @@ export function simulationAlarmShouldWait(
   return profile === 'window-audio' &&
     state === 'post-window-audio' &&
     speechActive &&
-    (!firmwareVersion || firmwareVersion.includes(UNRESTRICTED_SPEECH_FIRMWARE_COMMIT));
+    (!firmwareVersion || UNRESTRICTED_SPEECH_FIRMWARE_COMMITS.some(commit => firmwareVersion.includes(commit)));
+}
+
+export function simulationSupportsApproachGuide(
+  profile: SimulationFirmwareProfile,
+  firmwareVersion?: string | null,
+) {
+  return profile === 'window-audio' &&
+    (!firmwareVersion || firmwareVersion.includes(APPROACH_GUIDE_FIRMWARE_COMMIT));
 }
 
 export function simulationFirmwareTimeline(
@@ -74,6 +83,7 @@ export function simulationFirmwareTimeline(
   groundElevation: number,
   config: ReturnType<typeof readSimulationConfig>,
   profile: SimulationFirmwareProfile,
+  firmwareVersion?: string | null,
 ) {
   let state: SimulationFirmwareState = 'pre-flight';
   let descentSeconds = 0;
@@ -82,6 +92,13 @@ export function simulationFirmwareTimeline(
   let hasPreviousFix = false;
   let windowEntryAltitude = 0;
   let windowMinimumAltitude = Number.POSITIVE_INFINITY;
+  const approachConfigured = simulationSupportsApproachGuide(profile, firmwareVersion) &&
+    config.values.Approach_Enable === 1 &&
+    config.values.Approach_Min < config.values.Approach_Max &&
+    config.values.Approach_Start > config.values.Approach_End;
+  let approachState: 'disabled' | 'waiting' | 'active' | 'complete' = approachConfigured
+    ? 'waiting'
+    : 'disabled';
   const configuredIntervalSeconds = Number.isFinite(config.values.Rate)
     ? Math.max(0, config.values.Rate) / 1000
     : 0;
@@ -136,6 +153,29 @@ export function simulationFirmwareTimeline(
             state = 'post-window-audio';
           }
         }
+
+        if (approachState !== 'disabled') {
+          if (state === 'window-entered' || state === 'post-window-audio') {
+            approachState = 'complete';
+          } else if (state !== 'pre-flight' && point.verticalSpeedMps > 0) {
+            const startAltitude = config.values.Approach_Start + groundElevation;
+            const endAltitude = config.values.Approach_End + groundElevation;
+            if (
+              approachState === 'waiting' &&
+              startAltitude >= point.altitudeM &&
+              startAltitude < previousAltitude
+            ) {
+              approachState = 'active';
+            }
+            if (
+              approachState === 'active' &&
+              endAltitude >= point.altitudeM &&
+              endAltitude < previousAltitude
+            ) {
+              approachState = 'complete';
+            }
+          }
+        }
       }
     }
 
@@ -145,7 +185,8 @@ export function simulationFirmwareTimeline(
 
     return {
       rawSuppression,
-      suppressed: profile === 'window-audio' && state === 'post-window-audio'
+      approachActive: approachState === 'active',
+      suppressed: (profile === 'window-audio' && state === 'post-window-audio') || approachState === 'active'
         ? false
         : rawSuppression,
       state,

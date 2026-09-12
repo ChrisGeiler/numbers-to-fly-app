@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canUseWindowAudioFirmware, detectSimulationFirmware, readSimulationConfig, simulationAlarmShouldWait, simulationFirmwareTimeline, simulationTimeline, simulationValue, simulationWindow, simulationSuppressed, simulationSpeechDue, simulationSpeechNumber, simulationTone } from './simulation.ts';
+import { canUseWindowAudioFirmware, detectSimulationFirmware, readSimulationConfig, simulationAlarmShouldWait, simulationFirmwareTimeline, simulationSupportsApproachGuide, simulationTimeline, simulationValue, simulationWindow, simulationSuppressed, simulationSpeechDue, simulationSpeechNumber, simulationTone } from './simulation.ts';
 
 test('config parser preserves repeated alarms and ignores commented settings', () => {
   const result = readSimulationConfig(`; Min: 999
@@ -93,6 +93,10 @@ test('FLYSIGHT.TXT selects the private firmware only for the installed feature b
     { version: 'v2024.12.30.10-2-gb35a222', profile: 'window-audio' },
   );
   assert.deepEqual(
+    detectSimulationFirmware('Firmware_Ver: v2024.12.30.10-3-g70a62f6\n'),
+    { version: 'v2024.12.30.10-3-g70a62f6', profile: 'window-audio' },
+  );
+  assert.deepEqual(
     detectSimulationFirmware('Firmware_Ver: v2024.12.30.10\n'),
     { version: 'v2024.12.30.10', profile: 'standard' },
   );
@@ -108,10 +112,49 @@ test('private firmware simulator access is restricted to Chris account', () => {
 test('private firmware defers alarms until active post-window speech finishes', () => {
   assert.equal(simulationAlarmShouldWait('window-audio', 'post-window-audio', true), true);
   assert.equal(simulationAlarmShouldWait('window-audio', 'post-window-audio', true, 'v2024.12.30.10-2-gb35a222'), true);
+  assert.equal(simulationAlarmShouldWait('window-audio', 'post-window-audio', true, 'v2024.12.30.10-3-g70a62f6'), true);
   assert.equal(simulationAlarmShouldWait('window-audio', 'post-window-audio', true, 'v2024.12.30.10-1-g8ae5110'), false);
   assert.equal(simulationAlarmShouldWait('window-audio', 'post-window-audio', false), false);
   assert.equal(simulationAlarmShouldWait('window-audio', 'window-entered', true), false);
   assert.equal(simulationAlarmShouldWait('standard', 'post-window-audio', true), false);
+});
+
+test('approach GR guide is limited to the configured private-firmware interval', () => {
+  assert.equal(simulationSupportsApproachGuide('window-audio'), true);
+  assert.equal(simulationSupportsApproachGuide('window-audio', 'v2024.12.30.10-3-g70a62f6'), true);
+  assert.equal(simulationSupportsApproachGuide('window-audio', 'v2024.12.30.10-2-gb35a222'), false);
+  assert.equal(simulationSupportsApproachGuide('standard'), false);
+
+  const config = readSimulationConfig(`Rate: 200
+Win_Top: 4300
+Win_Bottom: 2500
+Win_Above: 50
+Win_Below: 0
+Approach_Enable: 1
+Approach_Min: 100
+Approach_Max: 250
+Approach_Volume: 4
+Approach_Start: 2900
+Approach_End: 2500`);
+  const samples = [3300, 3260, 3220, 3180, 3140, 3000, 2890, 2700, 2510, 2490].map((altitudeM, index) => ({
+    time: '', timestampMs: index * 200, seconds: index * 0.2,
+    altitudeM, verticalSpeedMps: 22, vAccM: 5,
+    lat: 0, lon: 0, velNMps: 50, velEMps: 0,
+    horizontalSpeedMps: 50, totalSpeedMps: 55, glideRatio: 2.5,
+  }));
+
+  const latest = simulationFirmwareTimeline(samples, 0, config, 'window-audio');
+  const previous = simulationFirmwareTimeline(samples, 0, config, 'window-audio', 'v2024.12.30.10-2-gb35a222');
+  const standard = simulationFirmwareTimeline(samples, 0, config, 'standard');
+
+  assert.equal(latest[5].approachActive, false);
+  assert.equal(latest[6].approachActive, true);
+  assert.equal(latest[6].suppressed, false);
+  assert.equal(latest[8].approachActive, true);
+  assert.equal(latest[9].approachActive, false);
+  assert.equal(previous[6].approachActive, false);
+  assert.equal(previous[6].suppressed, true);
+  assert.equal(standard[6].approachActive, false);
 });
 
 test('private firmware stays silent before entry and releases suppression after a confirmed flare climb', () => {
