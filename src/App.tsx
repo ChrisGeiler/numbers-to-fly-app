@@ -2427,9 +2427,9 @@ function generateFlySightConfig({
     ? `
 ; Approach GR guide tones (private firmware only)
 
-Approach_Enable: ${task === "speed" ? 0 : 1}   ; 1 for Time/Distance, 0 for Speed
-Approach_Min:    100 ; Minimum GR * 100 (1.0)
-Approach_Max:    250 ; Maximum GR * 100 (2.5)
+Approach_Enable: 1   ; Enable the pre-window GR guide
+Approach_Min:    ${task === "speed" ? 40 : 100} ; Minimum GR * 100 (${task === "speed" ? "0.4" : "1.0"})
+Approach_Max:    ${task === "speed" ? 80 : 250} ; Maximum GR * 100 (${task === "speed" ? "0.8" : "2.5"})
 Approach_Volume: 4   ; 50% volume (0 to 8)
 Approach_Start:  ${Math.round(numberFromInput(alarm3, 0))} ; Begin after the “3” alarm (m AGL)
 Approach_End:    ${Math.round(numberFromInput(alarmBeep, 0))} ; Stop at the window-start beep (m AGL)
