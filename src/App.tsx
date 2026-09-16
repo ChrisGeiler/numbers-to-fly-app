@@ -1300,6 +1300,12 @@ type SavedFindNumbers = {
   timeSpeedKph: string;
   speedStartGR: string;
   speedEndGR: string;
+  speedMinKph?: string;
+  speedMaxKph?: string;
+  distanceMinGR?: string;
+  distanceMaxGR?: string;
+  verticalMinKph?: string;
+  verticalMaxKph?: string;
 };
 
 function areFindNumbersValid(numbers: SavedFindNumbers): boolean {
@@ -1316,7 +1322,10 @@ function areFindNumbersValid(numbers: SavedFindNumbers): boolean {
     Number.isFinite(speedStartGR) &&
     speedStartGR > 0 &&
     Number.isFinite(speedEndGR) &&
-    speedEndGR > speedStartGR
+    speedEndGR > speedStartGR &&
+    [[numbers.speedMinKph, numbers.speedMaxKph], [numbers.distanceMinGR, numbers.distanceMaxGR], [numbers.verticalMinKph, numbers.verticalMaxKph]].every(([min, max]) =>
+      (min === undefined && max === undefined) ||
+      (typeof min === "string" && typeof max === "string" && Number.isFinite(Number(min)) && Number(min) > 0 && Number.isFinite(Number(max)) && Number(max) > Number(min)))
   );
 }
 
@@ -1360,6 +1369,13 @@ function getSavedFindNumbers(value: unknown): SavedFindNumbers | null {
     timeSpeedKph: numbers.timeSpeedKph,
     speedStartGR: numbers.speedStartGR,
     speedEndGR: numbers.speedEndGR,
+    ...(numbers.speedMinKph === undefined ? {} : { speedMinKph: typeof numbers.speedMinKph === "string" ? numbers.speedMinKph : "" }),
+    ...(numbers.speedMaxKph === undefined ? {} : { speedMaxKph: typeof numbers.speedMaxKph === "string" ? numbers.speedMaxKph : "" }),
+    ...(numbers.distanceMinGR === undefined ? {} : { distanceMinGR: typeof numbers.distanceMinGR === "string" ? numbers.distanceMinGR : "" }),
+    ...(numbers.distanceMaxGR === undefined ? {} : { distanceMaxGR: typeof numbers.distanceMaxGR === "string" ? numbers.distanceMaxGR : "" }),
+    ...(numbers.verticalMinKph === undefined ? {} : { verticalMinKph: typeof numbers.verticalMinKph === "string" ? numbers.verticalMinKph : "" }),
+    ...(numbers.verticalMaxKph === undefined ? {} : { verticalMaxKph: typeof numbers.verticalMaxKph === "string" ? numbers.verticalMaxKph : "" }),
+
   };
 
   return areFindNumbersValid(savedNumbers) ? savedNumbers : null;
@@ -7132,12 +7148,6 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     setIsSettingManualExit(true);
     setGraphView("full");
     setSaveJumpStatus("Tap the graph where the competition dive starts.");
-    window.setTimeout(() => {
-      document.querySelector(".exit-selection-container")?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    }, 100);
   }
 
   function cancelManualExitSelection() {
@@ -7472,12 +7482,6 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     setSaveJumpStatus(
       "Editing saved jump. Change Track Info, then choose the appropriate save type below."
     );
-    window.setTimeout(() => {
-      document.querySelector(".save-jump-card")?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 150);
   }
 
     async function openSavedJump(
@@ -7525,12 +7529,6 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
 
       setSaveJumpStatus("");
       setLogbookStatus("Saved jump loaded into Analyzer.");
-      window.setTimeout(() => {
-        logbookSectionRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 100);
 
       await loadWindCorrectionForTrack(
         workingTrackPoints,
@@ -7621,21 +7619,6 @@ useEffect(() => {
   }
 }, [activePage]);
 
-useEffect(() => {
-  if (activePage !== "lane") {
-    return;
-  }
-
-  const timer = window.setTimeout(() => {
-    saveLaneButtonRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "end",
-    });
-  }, 500);
-
-  return () => window.clearTimeout(timer);
-}, [activePage]);
-
 const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [activeFindHelp, setActiveFindHelp] = useState<
     "speed" | "time" | "distance" | null
@@ -7654,7 +7637,6 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [showCompareSelector, setShowCompareSelector] = useState(false);
   const [compareOptions, setCompareOptions] = useState<CompareTrackOption[]>([]);
   const [selectedCompareTrackIds, setSelectedCompareTrackIds] = useState<string[]>([]);
-  const [compareScrollRequested, setCompareScrollRequested] = useState(false);
   const [compareStatus, setCompareStatus] = useState("");
   const [historicalWinds, setHistoricalWinds] = useState<WindLayer[]>([]);
   const [historicalWindStatus, setHistoricalWindStatus] = useState("");
@@ -7677,13 +7659,6 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [runHeadingDeg, setRunHeadingDeg] = useState("");
   const [, setShowTemporaryFlightLine] = useState(false);
   const [dropDistanceNm, setDropDistanceNm] = useState("");
-  const dropDistanceInputRef = useRef<HTMLInputElement | null>(null);
-  const referenceButtonRef = useRef<HTMLButtonElement | null>(null);
-  const mapPickerSectionRef = useRef<HTMLDivElement | null>(null);
-  const flyMyLaneButtonRef = useRef<HTMLButtonElement | null>(null);
-  const saveLaneButtonRef = useRef<HTMLButtonElement | null>(null);
-  const logbookSectionRef = useRef<HTMLElement | null>(null);
-  const compareChartSectionRef = useRef<HTMLDivElement | null>(null);
   const windCorrectionRequestIdRef = useRef(0);
 
   const visibleSavedJumps = useMemo(() => {
@@ -7755,20 +7730,6 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const selectedCompareTracks = compareOptions.filter((option) =>
     selectedCompareTrackIds.includes(option.id)
   );
-
-  useEffect(() => {
-    if (!compareScrollRequested || selectedCompareTracks.length === 0) {
-      return;
-    }
-
-    window.setTimeout(() => {
-      compareChartSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 50);
-    setCompareScrollRequested(false);
-  }, [compareScrollRequested, selectedCompareTracks.length]);
 
   function getSavedJumpCompareOption(jump: SavedJump): CompareTrackOption | null {
     if (!jump.raw_csv) {
@@ -8112,26 +8073,6 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     }
   }, [savedReferencePointStore]);
 
-  useEffect(() => {
-  if (!showMapPicker) {
-    return;
-  }
-
-  const timer = window.setTimeout(() => {
-    const elementTop =
-      mapPickerSectionRef.current?.getBoundingClientRect().top ?? 0;
-
-    const targetScrollY = window.scrollY + elementTop + 80;
-
-    window.scrollTo({
-      top: targetScrollY,
-      behavior: "smooth",
-    });
-  }, 150);
-
-  return () => window.clearTimeout(timer);
-}, [showMapPicker]);
-
   const [showRawWinds, setShowRawWinds] = useState(false);
   const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
 
@@ -8199,13 +8140,28 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     ]
   );
 
+  const personalConfigSuit = mapSuitSetupToConfigSuit(findSuitSetup);
+  const personalBodyAdjustment = getPilotBodyAdjustmentKph({
+    weight: findWeight, unitSystem: findUnitSystem, heightCm: findHeightCm,
+    heightFeet: findHeightFeet, heightInches: findHeightInches,
+  });
+  const personalEstimate = (task: ConfigTask) => getConfigTonePreset({
+    task, configSuit: personalConfigSuit, bodyAdjustmentKph: personalBodyAdjustment,
+  });
   const calculatedFindNumbers: SavedFindNumbers = {
+    speedMinKph: String(personalEstimate("speed").toneMin),
+    speedMaxKph: String(personalEstimate("speed").toneMax),
+    distanceMinGR: String(personalEstimate("distance").toneMin),
+    distanceMaxGR: String(personalEstimate("distance").toneMax),
+    verticalMinKph: String(personalEstimate("time").toneMin),
+    verticalMaxKph: String(personalEstimate("time").toneMax),
+
     distanceSpeedKph: String(foundNumbers.distanceSpeedKph),
     timeSpeedKph: String(foundNumbers.timeSpeedKph),
     speedStartGR: foundNumbers.speedStartGR.toFixed(2),
     speedEndGR: foundNumbers.speedEndGR.toFixed(2),
   };
-  const editableFindNumbers = findNumbersOverride ?? calculatedFindNumbers;
+  const editableFindNumbers = { ...calculatedFindNumbers, ...findNumbersOverride };
   const findNumbersAreValid = areFindNumbersValid(editableFindNumbers);
 
   const hasFindInputs =
@@ -8335,17 +8291,10 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     }
   }
 
-  function openReferenceMapAndScroll() {
+  function openReferenceMap() {
     setMapFocusLocation(null);
     setShowLatLonEntry(false);
     setShowMapPicker(true);
-
-    window.setTimeout(() => {
-      mapPickerSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 200);
   }
 
   function toggleLatLonEntry() {
@@ -8380,13 +8329,6 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     setLocationStatus(
       `Map centred on ${dropzone.name}${locationLabel ? `, ${locationLabel}` : ""}. Tap the exact competition reference point.`,
     );
-
-    window.setTimeout(() => {
-      mapPickerSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 200);
   }
 
   function selectSportDropzone(dropzone: SportDropzone) {
@@ -8438,7 +8380,8 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     value: string,
   ) {
     setFindNumbersOverride((currentNumbers) => ({
-      ...(currentNumbers ?? calculatedFindNumbers),
+      ...calculatedFindNumbers,
+      ...currentNumbers,
       [field]: value,
     }));
     setFindDetailsStatus("");
@@ -8615,6 +8558,15 @@ function calculateConfigTonePresetForTask(
     bodyAdjustmentKph,
   });
 
+  if (hasFindInputs && findNumbersAreValid && nextSuit === personalConfigSuit) {
+    const range = nextTask === "distance"
+      ? [editableFindNumbers.distanceMinGR, editableFindNumbers.distanceMaxGR]
+      : nextTask === "speed"
+        ? [editableFindNumbers.speedMinKph, editableFindNumbers.speedMaxKph]
+        : [editableFindNumbers.verticalMinKph, editableFindNumbers.verticalMaxKph];
+    tonePreset.toneMin = Number(range[0]);
+    tonePreset.toneMax = Number(range[1]);
+  }
   const windSummary = getConfigWindSummary(results);
 
   if (nextTask === "distance") {
@@ -8766,17 +8718,17 @@ function updateConfigSuit(nextSuit: ConfigSuit) {
 function pushFlyNumbersToConfig() {
   const distanceTonePreset = calculateConfigTonePresetForTask(
     "distance",
-    configSuit
+    hasFindInputs ? personalConfigSuit : configSuit
   );
 
   const speedTonePreset = calculateConfigTonePresetForTask(
     "speed",
-    configSuit
+    hasFindInputs ? personalConfigSuit : configSuit
   );
 
   const timeTonePreset = calculateConfigTonePresetForTask(
     "time",
-    configSuit
+    hasFindInputs ? personalConfigSuit : configSuit
   );
 
   storeConfigTonePreset(
@@ -8797,6 +8749,7 @@ function pushFlyNumbersToConfig() {
     timeTonePreset.toneMax
   );
 
+  if (hasFindInputs) setConfigSuit(personalConfigSuit);
   setConfigTask(taskMode);
   setConfigToneMin(
     taskMode === "distance"
@@ -8815,13 +8768,9 @@ function pushFlyNumbersToConfig() {
 
   setCopyStatus("Fly numbers pushed to Config the Numbers.");
   setActivePage("config");
-
-window.setTimeout(() => {
-  window.scrollTo({
-    top: 0,
-    behavior: "smooth",
-  });
-}, 0);
+  window.setTimeout(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, 0);
 }
 
 function storeConfigTonePreset(
@@ -9085,7 +9034,7 @@ function downloadGeneratedConfig() {
     setSavedReferencePointStatus("");
 
     if (nextGroupId) {
-      openReferenceMapAndScroll();
+      openReferenceMap();
     }
   }
 
@@ -9174,7 +9123,7 @@ function downloadGeneratedConfig() {
     point: SavedReferencePoint,
   ) {
     setSavedReferencePointStatus(`Loading ${point.name}...`);
-    openReferenceMapAndScroll();
+    openReferenceMap();
     await setReferencePoint(point.lat, point.lon, `${group.name} / ${point.name}`);
     setSavedReferencePointStatus(`Loaded ${point.name} from ${group.name}.`);
   }
@@ -9187,15 +9136,6 @@ function downloadGeneratedConfig() {
     setCompetitionReferenceLat(point.lat.toFixed(6));
     setCompetitionReferenceLon(point.lon.toFixed(6));
     setShowCompetitionReferencePicker(true);
-
-    window.setTimeout(() => {
-      document
-        .querySelector(".competition-lane-card .map-picker")
-        ?.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
-    }, 150);
   }
 
   function deleteSavedReferencePoint(
@@ -9367,7 +9307,6 @@ if (activePage === "lane") {
       
       <section className="card">
         <button
-          ref={saveLaneButtonRef}
           type="button"
           className={
             savedLaneAvailable
@@ -9568,7 +9507,7 @@ if (activePage === "lane") {
             </section>
             
 {supabaseSession ? (
-  <section ref={logbookSectionRef} className="card logbook-card">
+  <section className="card logbook-card">
     <h2>My Logbook</h2>
 
     {logbookStatus && (
@@ -11699,7 +11638,7 @@ if (activePage === "lane") {
 
 
       {selectedCompareTracks.length > 0 && (
-        <div ref={compareChartSectionRef} className="compare-chart-anchor">
+        <div className="compare-chart-anchor">
           <TrackComparisonChart
             tracks={selectedCompareTracks}
             windowOffsetM={windowOffsetM}
@@ -11849,7 +11788,12 @@ if (activePage === "rules") {
               Fly the window
             </button>
 
-            <button type="button" onClick={() => setActivePage("config")}>
+            <button type="button" onClick={() => {
+              const suit = hasFindInputs ? personalConfigSuit : configSuit;
+              setConfigSuit(suit);
+              applyConfigTonePreset(configTask, suit);
+              setActivePage("config");
+            }}>
               Config your Flysight
             </button>
 
@@ -11863,7 +11807,6 @@ if (activePage === "rules") {
 
             {savedLaneAvailable && (
               <button
-                ref={flyMyLaneButtonRef}
                 type="button"
                 className="primary-action-button"
                 onClick={() => setActivePage("lane")}
@@ -12068,6 +12011,33 @@ if (activePage === "rules") {
                   />
                 </label>
               </div>
+
+              <h3>Your achievable performance ranges</h3>
+              <p className="subtitle">
+                Enter your zero-wind ranges from training. Speed and distance GR
+                are adjusted for the loaded flight-path wind in the config builder.
+                Vertical speed stays at your personal range.
+              </p>
+              <div className="numbers-grid editable-find-numbers-grid">
+                {([
+                  ["speedMinKph", "Speed task: minimum speed, km/h", "1"],
+                  ["speedMaxKph", "Speed task: maximum speed, km/h", "1"],
+                  ["distanceMinGR", "Distance task: minimum GR", "0.05"],
+                  ["distanceMaxGR", "Distance task: maximum GR", "0.05"],
+                  ["verticalMinKph", "Time task: minimum vertical speed, km/h", "1"],
+                  ["verticalMaxKph", "Time task: maximum vertical speed, km/h", "1"],
+                ] as const).map(([field, label, step]) => (
+                  <label className="number-tile" key={field}>
+                    <span>{label}</span>
+                    <input type="number" min={step} step={step}
+                      value={editableFindNumbers[field] ?? ""}
+                      onChange={(event) => updateFindNumber(field, event.target.value)} />
+                  </label>
+                ))}
+              </div>
+              {!findNumbersAreValid && (
+                <p role="alert">Enter positive numbers, with each maximum greater than its minimum and Speed end GR greater than Speed start GR.</p>
+              )}
 
               <div className="find-number-actions">
                 <button
@@ -12376,7 +12346,7 @@ if (activePage === "rules") {
                   setConfigAlarmProfileStatus("");
                 }
 
-                if (storedPreset) {
+                if (storedPreset && !(hasFindInputs && findNumbersAreValid && configSuit === personalConfigSuit)) {
                   setConfigToneMin(storedPreset.toneMin);
                   setConfigToneMax(storedPreset.toneMax);
                   return;
@@ -12992,32 +12962,11 @@ if (activePage === "rules") {
         <label>
           Drop distance from reference point, NM
           <input
-            ref={dropDistanceInputRef}
             type="number"
             step="0.1"
             value={dropDistanceNm}
             placeholder="Example 3.0"
             onChange={(event) => setDropDistanceNm(event.target.value)}
-            onBlur={() => {
-              if (Number(dropDistanceNm) <= 0) {
-                return;
-              }
-
-              const inputTop =
-                dropDistanceInputRef.current?.getBoundingClientRect().top;
-
-              const buttonTop =
-                referenceButtonRef.current?.getBoundingClientRect().top;
-
-              if (inputTop === undefined || buttonTop === undefined) {
-                return;
-              }
-
-              window.scrollBy({
-                top: buttonTop - inputTop,
-                behavior: "smooth",
-              });
-            }}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.currentTarget.blur();
@@ -13169,7 +13118,6 @@ if (activePage === "rules") {
 
         <div className="reference-method-actions">
           <button
-            ref={referenceButtonRef}
             type="button"
             className="primary-action-button"
             onClick={toggleMapPicker}
@@ -13199,7 +13147,7 @@ if (activePage === "rules") {
               setSavedReferencePointStatus("");
 
               if (openingSavedPoints && selectedReferencePointGroup) {
-                openReferenceMapAndScroll();
+                openReferenceMap();
               }
             }}
           >
@@ -13376,7 +13324,7 @@ if (activePage === "rules") {
         )}
 
         {showMapPicker && (
-          <div ref={mapPickerSectionRef}>
+          <div>
             {showLatLonEntry && (
               <form
                 className="reference-coordinate-form"
@@ -13460,13 +13408,6 @@ if (activePage === "rules") {
           onInteractionStart={() => setShowTemporaryFlightLine(true)}
           onInteractionEnd={() => {
             setShowTemporaryFlightLine(false);
-
-            window.setTimeout(() => {
-              flyMyLaneButtonRef.current?.scrollIntoView({
-                behavior: "smooth",
-                block: "center",
-              });
-            }, 100);
           }}
           onChange={updateHeadingFromSlider}
         />
@@ -13620,7 +13561,6 @@ if (activePage === "rules") {
 
 
         <button
-              ref={flyMyLaneButtonRef}
               type="button"
               className="primary-action-button fly-lane-next-button"
               onClick={() => setActivePage("lane")}
