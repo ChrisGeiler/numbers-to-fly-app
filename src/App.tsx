@@ -13628,6 +13628,11 @@ if (activePage === "rules") {
     inputs, and flight path wind calculation.
   </p>
 </section>
+
+      <BottomBackButton
+        label="Back to Home"
+        onClick={() => setActivePage("landing")}
+      />
     </main>
   );
 }
