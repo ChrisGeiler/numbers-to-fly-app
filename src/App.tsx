@@ -5,6 +5,7 @@ import type {
   PointerEvent as ReactPointerEvent,
   WheelEvent as ReactWheelEvent,
 } from "react";
+import { canUseEnergyManagement, energyAirspeedKph, energyGroundSpeedKph } from "./energyManagement";
 import { supabase } from "./supabase";
 import ConfigSimulation from "./ConfigSimulation";
 import { canUseWindowAudioFirmware } from "./simulation";
@@ -1556,6 +1557,7 @@ type ResultRow = {
   crosswindKt: number;
   effectiveWindAheadKt?: number;
   targetSpeedKph?: number;
+  targetAirspeedKph?: number;
   targetGR?: number;
 };
 
@@ -4271,7 +4273,7 @@ function TargetGraph({
   results: ResultRow[];
 }) {
   const values = results.map((row) =>
-    taskMode === "speed" ? row.targetGR ?? 0 : row.targetSpeedKph ?? 0
+    taskMode === "speed" ? row.targetGR ?? 0 : row.targetAirspeedKph ?? row.targetSpeedKph ?? 0
   );
 
   const minValue = Math.min(...values);
@@ -4323,7 +4325,7 @@ function TargetGraph({
 
   const points = results.map((row) => {
     const value =
-      taskMode === "speed" ? row.targetGR ?? 0 : row.targetSpeedKph ?? 0;
+      taskMode === "speed" ? row.targetGR ?? 0 : row.targetAirspeedKph ?? row.targetSpeedKph ?? 0;
 
     return {
       x: xFromAltitude(row.altitudeM),
@@ -4333,7 +4335,7 @@ function TargetGraph({
     };
   });
 
-  const valueLabel = taskMode === "speed" ? "Target GR" : "Target speed km/h";
+  const valueLabel = taskMode === "speed" ? "Target GR" : results.some(row => row.targetAirspeedKph !== undefined) ? "Horizontal airspeed km/h" : "Target speed km/h";
 
   const yTicks =
     taskMode === "speed"
@@ -7643,6 +7645,13 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [windCorrectionSource, setWindCorrectionSource] =
     useState<WindCorrectionSource>("open-meteo");
   const [taskMode, setTaskMode] = useState<TaskMode>("distance");
+  const [energyManagementEnabled, setEnergyManagementEnabled] = useState(false);
+  const [energyFinishKph, setEnergyFinishKph] = useState(120);
+  const energyManagementAllowed = canUseEnergyManagement(supabaseSession?.user.email);
+  const energyManagementActive = energyManagementAllowed && energyManagementEnabled && taskMode === "time";
+  useEffect(() => {
+    setEnergyManagementEnabled(false);
+  }, [supabaseSession?.user.id]);
 
   const [windSource, setWindSource] =
     useState<WindSource>("open-meteo");
@@ -9230,16 +9239,34 @@ async function handleWindSourceChange(source: WindSource) {
   }
 
   const results = useMemo(
-    () =>
-      calculateTargets(
+    () => {
+      if (energyManagementActive) {
+        return winds.map((wind): ResultRow => {
+          const air = energyAirspeedKph(wind.altitudeM, energyFinishKph);
+          const heading = numberFromInput(runHeadingDeg, 0);
+          const direction = numberFromInput(wind.directionFromDeg, 0);
+          const speed = numberFromInput(wind.speedKt, 0);
+          const components = windComponents(heading, direction, speed);
+          const ground = energyGroundSpeedKph(air, heading, direction, speed);
+          return {
+            altitudeM: wind.altitudeM,
+            tailwindKt: Math.round(components.tailwindKt),
+            crosswindKt: Math.round(components.crosswindKt),
+            targetAirspeedKph: Math.round(air),
+            targetSpeedKph: ground === null ? undefined : Math.round(ground),
+          };
+        });
+      }
+      return calculateTargets(
         taskMode,
         numberFromInput(zeroWindSpeedKph, 0),
         numberFromInput(startGR, 0),
         numberFromInput(endGR, 0),
         numberFromInput(runHeadingDeg, 0),
         winds
-      ),
-    [taskMode, zeroWindSpeedKph, startGR, endGR, runHeadingDeg, winds]
+      );
+    },
+    [taskMode, zeroWindSpeedKph, startGR, endGR, runHeadingDeg, winds, energyManagementActive, energyFinishKph]
   );
 
 if (activePage === "lane") {
@@ -13579,7 +13606,31 @@ if (activePage === "rules") {
       </section>
 
       <section className="card">
-        <h2>Numbers to Fly</h2>
+        <div className="numbers-title-row">
+          <h2>Numbers to Fly</h2>
+          {energyManagementAllowed && (
+            <label className="energy-mode-switch">
+              <input type="checkbox" role="switch" checked={energyManagementEnabled}
+                disabled={taskMode !== "time"}
+                onChange={(event) => setEnergyManagementEnabled(event.target.checked)} />
+              Advanced energy management
+            </label>
+          )}
+        </div>
+        {energyManagementAllowed && taskMode !== "time" && (
+          <p className="subtitle">Select Time to use advanced energy management.</p>
+        )}
+        {energyManagementActive && (
+          <div className="energy-mode-details">
+            <p>Personal trial profile: gently reduce horizontal airspeed from 140 to 130 km/h by 1750 m AGL, then progressively bleed toward your finish target. Fly by feel within the profile; it is not a validated optimum or minimum-speed limit.</p>
+            <label>Finish horizontal airspeed
+              <select value={energyFinishKph} onChange={(event) => setEnergyFinishKph(Number(event.target.value))}>
+                {[130, 125, 120, 115, 110, 105, 100, 95, 90].map((speed) => <option key={speed} value={speed}>{speed} km/h</option>)}
+              </select>
+            </label>
+            <p className="subtitle">Airspeed is relative to the air, excluding descent. GPS speed includes the selected winds while holding your ground track. This personal profile replaces the standard suit/body speed calculation while enabled. The graph shows airspeed; Config my Numbers retains its existing vertical-speed tones.</p>
+          </div>
+        )}
 
         <table>
           <thead>
@@ -13588,7 +13639,8 @@ if (activePage === "rules") {
               <th>T/H</th>
               <th>Xwind</th>
               {taskMode === "speed" && <th>Eff</th>}
-              <th>{taskMode === "speed" ? "GR" : "Speed"}</th>
+              {energyManagementActive && <th>Airspeed</th>}
+              <th>{taskMode === "speed" ? "GR" : energyManagementActive ? "GPS speed" : "Speed"}</th>
             </tr>
           </thead>
 
@@ -13599,10 +13651,11 @@ if (activePage === "rules") {
                 <td>{row.tailwindKt} kt</td>
                 <td>{row.crosswindKt} kt</td>
                 {taskMode === "speed" && <td>{row.effectiveWindAheadKt} kt</td>}
+                {energyManagementActive && <td>{row.targetAirspeedKph} km/h</td>}
                 <td>
                   {taskMode === "speed"
                     ? row.targetGR?.toFixed(2)
-                    : `${row.targetSpeedKph} km/h`}
+                    : row.targetSpeedKph === undefined ? "Track not achievable" : `${row.targetSpeedKph} km/h`}
                 </td>
               </tr>
             ))}

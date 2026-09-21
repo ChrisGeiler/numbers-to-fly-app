@@ -3818,3 +3818,16 @@ button {
   justify-items: center;
   text-align: center;
 }
+
+.numbers-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.numbers-title-row h2 { margin: 0; }
+.energy-mode-switch { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.energy-mode-switch input { width: 36px; height: 22px; accent-color: #168b78; }
+.energy-mode-details { margin: 16px 0; }
+.energy-mode-details select { margin-left: 12px; padding: 8px; }
