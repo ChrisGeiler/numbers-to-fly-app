@@ -1,5 +1,27 @@
 # React + TypeScript + Vite
 
+## Saved reference points
+
+Signed-in users sync reference locations and points through the private
+`public.reference_point_stores` Supabase table. Apply the corresponding migration
+before deploying the frontend. RLS restricts reads and writes to the owning,
+approved account. Updates compare revisions and merge local point changes into
+the latest cloud copy, preserving independent edits and remote deletions.
+
+The app refreshes on window focus, reconnection, and every 30 seconds while
+visible. Account-specific browser caches retain failed uploads for retry. Sync
+errors are shown in the saved-reference panel, with a manual retry button.
+
+To recover points saved by earlier versions, sign in on the original browser,
+open **Fly your Numbers → Saved reference points**, and select **Import browser
+points to my account**. Wait for **Reference points synced to your account**.
+Then open or refresh the app on other devices using the same account. Import
+merges with account points and leaves the original browser data intact. It is
+explicit because the old browser data did not record which account owned it.
+
+Run `npm run test:reference-points` for synchronization, import, offline recovery,
+concurrent update, deletion, and account-isolation regression tests.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

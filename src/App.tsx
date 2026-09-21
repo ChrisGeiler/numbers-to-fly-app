@@ -13065,7 +13065,8 @@ if (activePage === "rules") {
             {browserReferencePointCount > 0 && (
               <div className="saved-reference-help">
                 <p>
-                  This browser has {browserReferencePointCount} previously saved points.
+                  This browser has {browserReferencePointCount} previously saved
+                  {browserReferencePointCount === 1 ? " point." : " points."}
                   If they are yours, import them into {supabaseSession?.user.email}.
                   The original browser copy will be kept.
                 </p>
