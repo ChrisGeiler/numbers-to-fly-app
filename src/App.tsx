@@ -7,6 +7,8 @@ import type {
 } from "react";
 import { canUseEnergyManagement, energyAirspeedKph, energyGroundSpeedKph } from "./energyManagement";
 import { supabase } from "./supabase";
+import { useReferencePoints } from "./useReferencePoints";
+import type { SavedReferencePoint, SavedReferencePointGroup } from "./referencePoints";
 import ConfigSimulation from "./ConfigSimulation";
 import { canUseWindowAudioFirmware } from "./simulation";
 import type { Session } from "@supabase/supabase-js";
@@ -179,8 +181,6 @@ type AppPage =
   | "rules"
   | "gps";
 const APP_PAGE_STORAGE_KEY = "numbers-to-fly:active-page";
-const REFERENCE_POINT_GROUPS_STORAGE_KEY =
-  "numbers-to-fly:reference-point-groups";
 const MAX_REFERENCE_POINTS_PER_GROUP = 12;
 const ANALYZER_REFERENCE_GROUP_MATCH_RADIUS_M = 5 * 1852;
 const DESIGNATED_LANE_HALF_WIDTH_M = 300;
@@ -205,25 +205,6 @@ function getSavedAppPage(): AppPage {
   }
 }
 
-type SavedReferencePoint = {
-  id: string;
-  name: string;
-  lat: number;
-  lon: number;
-};
-
-type SavedReferencePointGroup = {
-  id: string;
-  name: string;
-  points: SavedReferencePoint[];
-};
-
-type SavedReferencePointStore = {
-  version: 1;
-  activeGroupId: string | null;
-  groups: SavedReferencePointGroup[];
-};
-
 const NO_SAVED_REFERENCE_POINTS: SavedReferencePoint[] = [];
 const NO_TRACK_POINTS: GpsTrackPoint[] = [];
 
@@ -233,115 +214,6 @@ function createReferencePointId() {
   }
 
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function parseSavedReferencePoint(value: unknown): SavedReferencePoint | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const point = value as Record<string, unknown>;
-
-  if (
-    typeof point.id !== "string" ||
-    typeof point.name !== "string" ||
-    !point.name.trim() ||
-    typeof point.lat !== "number" ||
-    !Number.isFinite(point.lat) ||
-    point.lat < -90 ||
-    point.lat > 90 ||
-    typeof point.lon !== "number" ||
-    !Number.isFinite(point.lon) ||
-    point.lon < -180 ||
-    point.lon > 180
-  ) {
-    return null;
-  }
-
-  return {
-    id: point.id,
-    name: point.name.trim(),
-    lat: point.lat,
-    lon: point.lon,
-  };
-}
-
-function getSavedReferencePointStore(): SavedReferencePointStore {
-  const emptyStore: SavedReferencePointStore = {
-    version: 1,
-    activeGroupId: null,
-    groups: [],
-  };
-
-  try {
-    const rawStore = window.localStorage.getItem(
-      REFERENCE_POINT_GROUPS_STORAGE_KEY,
-    );
-
-    if (!rawStore) {
-      return emptyStore;
-    }
-
-    const parsedStore = JSON.parse(rawStore) as unknown;
-
-    if (!parsedStore || typeof parsedStore !== "object") {
-      return emptyStore;
-    }
-
-    const candidate = parsedStore as Record<string, unknown>;
-
-    if (candidate.version !== 1 || !Array.isArray(candidate.groups)) {
-      return emptyStore;
-    }
-
-    const groups = candidate.groups.flatMap((value) => {
-      if (!value || typeof value !== "object") {
-        return [];
-      }
-
-      const group = value as Record<string, unknown>;
-
-      if (
-        typeof group.id !== "string" ||
-        typeof group.name !== "string" ||
-        !group.name.trim() ||
-        !Array.isArray(group.points)
-      ) {
-        return [];
-      }
-
-      const points = group.points
-        .map(parseSavedReferencePoint)
-        .filter((point): point is SavedReferencePoint => point !== null)
-        .slice(0, MAX_REFERENCE_POINTS_PER_GROUP);
-
-      return [
-        {
-          id: group.id,
-          name: group.name.trim(),
-          points,
-        },
-      ];
-    });
-
-    const requestedActiveGroupId =
-      typeof candidate.activeGroupId === "string"
-        ? candidate.activeGroupId
-        : null;
-    const activeGroupId = groups.some(
-      (group) => group.id === requestedActiveGroupId,
-    )
-      ? requestedActiveGroupId
-      : groups[0]?.id ?? null;
-
-    return {
-      version: 1,
-      activeGroupId,
-      groups,
-    };
-  } catch {
-    return emptyStore;
-  }
 }
 
 type LanePenaltyEstimate = {
@@ -7949,8 +7821,15 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [latLonEntryError, setLatLonEntryError] = useState("");
   const [showSavedReferencePoints, setShowSavedReferencePoints] =
     useState(false);
-  const [savedReferencePointStore, setSavedReferencePointStore] =
-    useState<SavedReferencePointStore>(getSavedReferencePointStore);
+  const {
+    store: savedReferencePointStore,
+    setStore: setSavedReferencePointStore,
+    syncStatus: referenceSyncStatus,
+    syncError: referenceSyncError,
+    retrySync: retryReferenceSync,
+    importCount: browserReferencePointCount,
+    importBrowserPoints,
+  } = useReferencePoints(supabaseSession?.user.id);
   const [newReferenceGroupName, setNewReferenceGroupName] = useState("");
   const [savedReferencePointName, setSavedReferencePointName] = useState("");
   const [savedReferencePointStatus, setSavedReferencePointStatus] =
@@ -8068,19 +7947,6 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
 
     return selectedPoint ? [selectedPoint] : NO_SAVED_REFERENCE_POINTS;
   }, [referenceLat, referenceLon, selectedReferencePointGroup]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        REFERENCE_POINT_GROUPS_STORAGE_KEY,
-        JSON.stringify(savedReferencePointStore),
-      );
-    } catch {
-      setSavedReferencePointStatus(
-        "Reference points could not be saved by this browser.",
-      );
-    }
-  }, [savedReferencePointStore]);
 
   const [showRawWinds, setShowRawWinds] = useState(false);
   const [winds, setWinds] = useState<WindLayer[]>(defaultWinds);
@@ -13188,10 +13054,31 @@ if (activePage === "rules") {
           <div className="saved-reference-panel">
             <h3>Competition reference points</h3>
 
+            <p className="saved-reference-status" role="status">
+              {referenceSyncStatus}
+            </p>
+            {referenceSyncError && supabaseSession && (
+              <button type="button" onClick={() => void retryReferenceSync()}>
+                Retry sync
+              </button>
+            )}
+            {browserReferencePointCount > 0 && (
+              <div className="saved-reference-help">
+                <p>
+                  This browser has {browserReferencePointCount} previously saved points.
+                  If they are yours, import them into {supabaseSession?.user.email}.
+                  The original browser copy will be kept.
+                </p>
+                <button type="button" onClick={importBrowserPoints}>
+                  Import browser points to my account
+                </button>
+              </div>
+            )}
+
             <p className="saved-reference-help">
               Store up to {MAX_REFERENCE_POINTS_PER_GROUP} points for each
-              location. They will remain available on this device for future
-              competitions.
+              location. Sign in to keep them available across your computers
+              and phone.
             </p>
 
             <label>
