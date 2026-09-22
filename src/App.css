@@ -520,6 +520,10 @@ tr:last-child td {
   margin-bottom: 10px;
 }
 
+.heading-drop-distance {
+  margin-bottom: 14px;
+}
+
 .heading-slider-readout strong {
   color: #67e8f9;
   font-size: 1.25rem;

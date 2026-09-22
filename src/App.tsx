@@ -3134,6 +3134,8 @@ function calculateTargets(
 }
 
 function HeadingSlider({
+  dropDistanceNm,
+  onDropDistanceChange,
   runHeadingDeg,
   windAdvantage,
   windSourceUnavailable,
@@ -3141,6 +3143,8 @@ function HeadingSlider({
   onInteractionEnd,
   onChange,
 }: {
+  dropDistanceNm: string;
+  onDropDistanceChange: (value: string) => void;
   runHeadingDeg: string;
   windAdvantage: WindAdvantageSummary;
   windSourceUnavailable: boolean;
@@ -3155,6 +3159,22 @@ function HeadingSlider({
 
   return (
     <div className="heading-slider-panel">
+        <label className="heading-drop-distance">
+          Drop distance from reference point, NM
+          <input
+            type="number"
+            step="0.1"
+            value={dropDistanceNm}
+            placeholder="Example 3.0"
+            onChange={(event) => onDropDistanceChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              }
+            }}
+          />
+        </label>
+
       <div className="heading-slider-readout">
         Flight heading:{" "}
         <strong>{runHeadingDeg.trim() === "" ? "---" : `${heading}°`}</strong>
@@ -3196,7 +3216,7 @@ function HeadingSlider({
         )}
       </p>
       <p className="subtitle">
-        Enter your <strong>drop distance</strong> in Setup above to see the
+        Enter your <strong>drop distance</strong> above to see the
         flight lane on the map.
       </p>
     </div>
@@ -12854,21 +12874,6 @@ if (activePage === "rules") {
           </label>
         )}
 
-        <label>
-          Drop distance from reference point, NM
-          <input
-            type="number"
-            step="0.1"
-            value={dropDistanceNm}
-            placeholder="Example 3.0"
-            onChange={(event) => setDropDistanceNm(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.currentTarget.blur();
-              }
-            }}
-          />
-        </label>
 
         <h2>Reference Point</h2>
 
@@ -13319,6 +13324,8 @@ if (activePage === "rules") {
 
       <div className="compact-heading-card">
         <HeadingSlider
+          dropDistanceNm={dropDistanceNm}
+          onDropDistanceChange={setDropDistanceNm}
           runHeadingDeg={runHeadingDeg}
           windAdvantage={windAdvantage}
           windSourceUnavailable={fetchStatus.includes("Could not fetch")}
