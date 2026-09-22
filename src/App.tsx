@@ -3195,6 +3195,10 @@ function HeadingSlider({
           </>
         )}
       </p>
+      <p className="subtitle">
+        Enter your <strong>drop distance</strong> in Setup above to see the
+        flight lane on the map.
+      </p>
     </div>
   );
 }
