@@ -9326,7 +9326,6 @@ if (activePage === "lane") {
                       setShowCompetitionReferencePicker(false);
                       setTrackInfoEditJumpId(null);
                       setJumpLocationName("");
-                      setJumpSuitName("");
                       setJumpNotes("");
                       setSaveJumpStatus("");
                       setHistoricalWinds([]);
@@ -9342,7 +9341,6 @@ if (activePage === "lane") {
                     setCompetitionReferenceGroupId(null);
                     setShowCompetitionReferencePicker(false);
                     setJumpLocationName("");
-                    setJumpSuitName("");
                     setJumpNotes("");
                     setSaveJumpStatus("");
 
