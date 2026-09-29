@@ -6668,7 +6668,14 @@ function App() {
   const [saveJumpBusy, setSaveJumpBusy] = useState(false);
   const [trackInfoEditJumpId, setTrackInfoEditJumpId] = useState<string | null>(null);
   const [jumpLocationName, setJumpLocationName] = useState("");
-  const [jumpSuitName, setJumpSuitName] = useState("");
+  const [lastImportSuitName, setLastImportSuitName] = useState(() => {
+    try {
+      return window.localStorage.getItem("numbers-to-fly.last-import-suit") ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [jumpSuitName, setJumpSuitName] = useState(lastImportSuitName);
   const [jumpNotes, setJumpNotes] = useState("");
   type SavedJump = {
   raw_csv: string | null;
@@ -9326,6 +9333,7 @@ if (activePage === "lane") {
                       setShowCompetitionReferencePicker(false);
                       setTrackInfoEditJumpId(null);
                       setJumpLocationName("");
+                      setJumpSuitName(lastImportSuitName);
                       setJumpNotes("");
                       setSaveJumpStatus("");
                       setHistoricalWinds([]);
@@ -9341,6 +9349,7 @@ if (activePage === "lane") {
                     setCompetitionReferenceGroupId(null);
                     setShowCompetitionReferencePicker(false);
                     setJumpLocationName("");
+                    setJumpSuitName(lastImportSuitName);
                     setJumpNotes("");
                     setSaveJumpStatus("");
 
@@ -9785,7 +9794,16 @@ if (activePage === "lane") {
       type="text"
       value={jumpSuitName}
       placeholder="Wingsuit model"
-      onChange={(event) => setJumpSuitName(event.target.value)}
+      onChange={(event) => {
+        const suitName = event.target.value;
+        setJumpSuitName(suitName);
+        setLastImportSuitName(suitName);
+        try {
+          window.localStorage.setItem("numbers-to-fly.last-import-suit", suitName);
+        } catch {
+          // Keep the selection for this session when browser storage is unavailable.
+        }
+      }}
     />
   </label>
 
