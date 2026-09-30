@@ -1209,12 +1209,32 @@ export function getTop100mFlareResult(
     (point) => point.altitudeM <= FLARE_TRIGGER_DEADLINE_M
   );
 
+  // Slowing the descent can cross GR 3 before entry without starting the
+  // climb. If the climb starts inside the window, measure from window entry.
+  const windowEndIndex = points.findIndex(
+    (point, index) => index > windowStartIndex && point.altitudeM <= 1500
+  );
+  const useWindowEntryForEarlyTrigger =
+    windowStartIndex !== -1 &&
+    glideRatioFlareStartIndex !== -1 &&
+    glideRatioFlareStartIndex < windowStartIndex &&
+    points.some(
+      (point, index) =>
+        index >= windowStartIndex &&
+        (windowEndIndex === -1 || index < windowEndIndex) &&
+        point.altitudeM <= COMPETITION_WINDOW_TOP_M &&
+        point.verticalSpeedMps < 0 &&
+        points[index - 1].verticalSpeedMps >= 0
+    );
+
   const flareStartIndex =
-    glideRatioFlareStartIndex !== -1
-      ? glideRatioFlareStartIndex
-      : hasReachedFlareTriggerDeadline
-        ? windowStartIndex
-        : -1;
+    useWindowEntryForEarlyTrigger
+      ? windowStartIndex
+      : glideRatioFlareStartIndex !== -1
+        ? glideRatioFlareStartIndex
+        : hasReachedFlareTriggerDeadline
+          ? windowStartIndex
+          : -1;
 
   if (flareStartIndex === -1) {
     return null;
