@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { measureChartRange } from "./chartMeasurement";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   FormEvent,
   MutableRefObject,
@@ -4621,6 +4622,9 @@ const diveAngleDeg =
   const [visibleDomain, setVisibleDomain] = useState<[number, number] | null>(null);
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
   const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
+  const [dragMode, setDragMode] = useState<"measure" | "zoom">("measure");
+  const [measuredRange, setMeasuredRange] = useState<[number, number] | null>(null);
+  const measurement = measuredRange ? measureChartRange(chartData, ...measuredRange) : null;
   const [isPinching, setIsPinching] = useState(false);
   const touchPointsRef = useRef<Map<number, TouchPoint>>(new Map());
   const pinchStartDistanceRef = useRef<number | null>(null);
@@ -4634,6 +4638,7 @@ const diveAngleDeg =
 
   useEffect(() => {
     setVisibleDomain(null);
+    setMeasuredRange(null);
     setSelectionStart(null);
     setSelectionEnd(null);
     setIsPinching(false);
@@ -4736,12 +4741,13 @@ const diveAngleDeg =
   }
 
   function getNumericLabel(state: ChartMouseState | undefined) {
-    const value = Number(state?.activeLabel);
+    if (state?.activeLabel === undefined || state.activeLabel === "") return null;
+    const value = Number(state.activeLabel);
     return Number.isFinite(value) ? value : null;
   }
 
   function handleChartMouseDown(state: ChartMouseState | undefined) {
-    if (exitSelectionMode) {
+    if (exitSelectionMode || isPinching) {
       return;
     }
 
@@ -4756,7 +4762,7 @@ const diveAngleDeg =
   }
 
   function handleChartMouseMove(state: ChartMouseState | undefined) {
-    if (exitSelectionMode || selectionStart === null) {
+    if (exitSelectionMode || isPinching || selectionStart === null) {
       return;
     }
 
@@ -4768,6 +4774,7 @@ const diveAngleDeg =
   }
 
   function finishChartSelection() {
+    if (isPinching) return;
     if (exitSelectionMode) {
       setSelectionStart(null);
       setSelectionEnd(null);
@@ -4783,7 +4790,9 @@ const diveAngleDeg =
     const nextStart = Math.min(selectionStart, selectionEnd);
     const nextEnd = Math.max(selectionStart, selectionEnd);
 
-    if (nextEnd - nextStart >= minimumZoomSpan) {
+    if (dragMode === "measure") {
+      if (nextEnd > nextStart) setMeasuredRange([nextStart, nextEnd]);
+    } else if (nextEnd - nextStart >= minimumZoomSpan) {
       setVisibleDomain(clampDomain(nextStart, nextEnd));
     }
 
@@ -4963,7 +4972,9 @@ const diveAngleDeg =
           <p className="subtitle">
             {exitSelectionMode
               ? "Tap or click the point where you start the competition dive."
-              : "Pinch to zoom, or drag across the graph on desktop to zoom into a range."}
+              : dragMode === "measure"
+                ? "Click and drag across the graph to measure a section. Pinch to zoom."
+                : "Drag across the graph to zoom into a range. Pinch to zoom."}
           </p>
 
           <p className="chart-rotate-hint">
@@ -5031,6 +5042,18 @@ const diveAngleDeg =
           </div>
         )}
 
+        {!exitSelectionMode && (
+          <div className="chart-measure-controls" role="group" aria-label="Graph drag action">
+            {(["measure", "zoom"] as const).map(mode => (
+              <button key={mode} type="button" className="chart-reset-button" aria-pressed={dragMode === mode}
+                onClick={() => { setDragMode(mode); setSelectionStart(null); setSelectionEnd(null); }}>
+                {mode === "measure" ? "Measure range" : "Zoom range"}
+              </button>
+            ))}
+            {measuredRange && <button type="button" className="chart-reset-button" onClick={() => setMeasuredRange(null)}>Clear measurement</button>}
+          </div>
+        )}
+
         {isZoomed && (
           <button
             type="button"
@@ -5041,6 +5064,25 @@ const diveAngleDeg =
           </button>
         )}
       </div>
+
+      {measurement && !exitSelectionMode && (
+        <div className="chart-measurement" role="status">
+          <strong>Selected section: {measurement.start.toFixed(1)}–{measurement.end.toFixed(1)} s ({(measurement.end - measurement.start).toFixed(1)} s)</strong>
+          <p>Time-weighted averages · {scoreMode === "corrected" && winds.length > 0 ? "Corrected" : "Raw"} graph values</p>
+          <dl>
+            {measurement.averages.map(metric => (
+              <Fragment key={metric.key}>
+              <div>
+                <dt>Average {metric.label}</dt>
+                <dd>{metric.key === "calculatedAirspeedKmh" && winds.length === 0 ? "Load winds" : metric.value === null ? "—" : metric.value.toFixed(metric.digits) + metric.unit}</dd>
+              </div>
+              {metric.key === "diveAngleDeg" && <div><dt>Altitude change</dt><dd>{measurement.altitudeChangeM > 0 ? "+" : ""}{measurement.altitudeChangeM.toFixed(1)} m</dd></div>}
+              </Fragment>
+            ))}
+          </dl>
+          <p>Altitude change is end minus start; negative means descent. Corrected speed is calculated horizontal airspeed.</p>
+        </div>
+      )}
 
       {exitSelectionMode && (
         <div className="exit-selection-banner" role="status">
@@ -5165,6 +5207,10 @@ const diveAngleDeg =
 
             {playbackPosition !== undefined && (
               <ReferenceLine yAxisId="altitude" x={playbackPosition} stroke="#f97316" strokeWidth={2} />
+            )}
+            {measuredRange && !exitSelectionMode && (
+              <ReferenceArea yAxisId="altitude" x1={measuredRange[0]} x2={measuredRange[1]}
+                stroke="#22d3ee" fill="#22d3ee" fillOpacity={0.16} />
             )}
             {selectionStart !== null && selectionEnd !== null && (
               <ReferenceArea

@@ -3835,3 +3835,25 @@ button {
 .energy-mode-switch input { width: 36px; height: 22px; accent-color: #168b78; }
 .energy-mode-details { margin: 16px 0; }
 .energy-mode-details select { margin-left: 12px; padding: 8px; }
+
+.chart-measure-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.chart-measure-controls button[aria-pressed="true"] {
+  outline: 2px solid #22d3ee;
+  outline-offset: 2px;
+}
+.chart-measurement {
+  padding: 14px;
+  margin-bottom: 12px;
+  border: 1px solid #22d3ee;
+  border-radius: 12px;
+  background: rgba(34, 211, 238, 0.06);
+}
+.chart-measurement p { margin: 6px 0; font-size: 0.82rem; }
+.chart-measurement dl { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 12px 0; }
+.chart-measurement dt { font-size: 0.82rem; }
+.chart-measurement dd { margin: 4px 0 0; font-weight: 700; }
