@@ -12840,9 +12840,9 @@ if (activePage === "rules") {
         </section>
 
         <ConfigSimulation
-          renderGraph={(points, position) => (
+          renderGraph={(points, position, groundElevation) => (
             <InteractiveTrackChart
-              points={points.map(point => ({ ...point, altitudeM: point.altitudeM - numberFromInput(configDzElevM, 0) }))}
+              points={points.map(point => ({ ...point, altitudeM: point.altitudeM - groundElevation }))}
               recordedTimes={points.map(point => point.seconds)}
               playbackPosition={position}
               windowOffsetM={0}

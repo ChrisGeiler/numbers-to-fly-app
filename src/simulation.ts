@@ -224,7 +224,7 @@ export function simulationTimeline(points: GpsTrackPoint[]) {
 
 export function simulationWindow(points: GpsTrackPoint[], groundElevation: number) {
   const top = groundElevation + 3353;
-  const bottom = groundElevation + 1500;
+  const bottom = groundElevation + 1200;
   function crossing(a: GpsTrackPoint, b: GpsTrackPoint, altitude: number): GpsTrackPoint {
     const fraction = (altitude - a.altitudeM) / (b.altitudeM - a.altitudeM);
     const result = { ...b, altitudeM: altitude };

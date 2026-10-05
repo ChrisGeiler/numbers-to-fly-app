@@ -20,7 +20,7 @@ import { FlySightVoice, numberRecordings } from './flysightAudio';
 import './ConfigSimulation.css';
 
 type Track = { id: string; jump_date: string | null; location_name: string | null; task_type: string | null; window_time_s: number | null; window_distance_m: number | null; window_speed_kmh: number | null };
-type Props = { config: string; task: string; userId?: string; userEmail?: string | null; invalid: boolean; onSignIn: () => void; renderGraph: (points: ReturnType<typeof simulationTimeline>, position: number) => ReactNode };
+type Props = { config: string; task: string; userId?: string; userEmail?: string | null; invalid: boolean; onSignIn: () => void; renderGraph: (points: ReturnType<typeof simulationTimeline>, position: number, groundElevation: number) => ReactNode };
 
 function trackScore(track: Track) {
   const score = track.task_type === 'time' ? track.window_time_s : track.task_type === 'distance' ? track.window_distance_m : track.task_type === 'speed' ? track.window_speed_kmh : null;
@@ -388,10 +388,10 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
         {loading && <p role="status">Loading tracks…</p>}
         {status && <p role="status">{status}</p>}
         {missingVerticalAccuracy && <p role="status">This track has no vertical-accuracy data, so it cannot reproduce the private firmware’s flight-confirmation check. Choose a FlySight 2 track containing vAcc data.</p>}
-        {sourcePoints.length > 0 && points.length < 2 && <p role="status">This track has no playable section between 3353 m and 1500 m above ground. Check your config’s ground elevation or choose another track.</p>}
+        {sourcePoints.length > 0 && points.length < 2 && <p role="status">This track has no playable section between 3353 m and 1200 m above ground. Check your config’s ground elevation or choose another track.</p>}
         {point && points.length >= 2 && <>
-          <p>Playing from 3353 m to the bottom of the competition window at 1500 m AGL, using the available track within this section.</p>
-          {renderGraph(points, position)}
+          <p>Playing from 3353 m to 1200 m AGL, using the available track within this section.</p>
+          {renderGraph(points, position, groundElevation)}
           <div className="simulation-readings">
             <span>Altitude <strong>{Math.round(point.altitudeM - settings.values.DZ_Elev)} m AGL</strong></span>
             <span>Horizontal <strong>{(point.horizontalSpeedMps * 3.6).toFixed(0)} km/h</strong></span>

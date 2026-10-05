@@ -39,7 +39,7 @@ test('task measurements use config units without inventing missing glide ratios'
 });
 
 test('simulation clips to AGL boundaries, interpolates crossings and resets time', () => {
-  const points = [3600, 3400, 2600, 1700, 1500, 1800].map((altitudeM, i) => ({
+  const points = [3600, 3400, 2600, 1700, 1500, 1100, 1800].map((altitudeM, i) => ({
     altitudeM, timestampMs: 1000 + i * 1000, lat: 0, lon: 0, velNMps: 50,
     velEMps: 0, horizontalSpeedMps: 50, verticalSpeedMps: 20,
     totalSpeedMps: 54, glideRatio: 2.5,
@@ -47,9 +47,12 @@ test('simulation clips to AGL boundaries, interpolates crossings and resets time
   const result = simulationWindow(points, 100);
   assert.equal(result[0].altitudeM, 3453);
   assert.equal(result[0].seconds, 0);
-  assert.equal(result.at(-1).altitudeM, 1600);
-  assert.equal(result.at(-1).timestampMs, 4500);
-  assert.ok(result.every(p => p.altitudeM >= 1600 && p.altitudeM <= 3453));
+  assert.equal(result.at(-1).altitudeM, 1300);
+  assert.equal(result.at(-1).timestampMs, 5500);
+  assert.ok(result.every(p => p.altitudeM >= 1300 && p.altitudeM <= 3453));
+  assert.ok(result.some(p => p.altitudeM === 1500));
+  assert.equal(simulationWindow(points.slice(0, 5), 100).at(-1).altitudeM, 1500);
+  assert.equal(simulationWindow(points, 300).at(-1).altitudeM, 1500);
   assert.deepEqual(simulationWindow(points, 4000), []);
 });
 
@@ -194,4 +197,24 @@ Win_Below: 0`);
   assert.equal(privateTimeline[11].rawSuppression, true);
   assert.equal(privateTimeline[11].suppressed, false);
   assert.equal(standardTimeline[11].suppressed, true);
+});
+
+
+test('switching config elevations and firmware preserves playback to 1200 m AGL', () => {
+  const source = [3700, 3400, 2600, 1800, 1500, 1200, 900].map((altitudeM, i) => ({
+    altitudeM, timestampMs: i * 1000, lat: 0, lon: 0, velNMps: 50,
+    velEMps: 0, horizontalSpeedMps: 50, verticalSpeedMps: 20,
+    totalSpeedMps: 54, glideRatio: 2.5, vAccM: 1,
+  }));
+  for (const elevation of [0, 300, 100, 0]) {
+    const config = readSimulationConfig(`DZ_Elev: ${elevation}\nWin_Top: 2500\nWin_Bottom: 1500`);
+    for (const profile of ['standard', 'window-audio']) {
+      const points = simulationWindow(source, config.values.DZ_Elev);
+      const timeline = simulationFirmwareTimeline(points, elevation, config, profile, 'g70a62f6');
+      assert.equal(points.at(-1).altitudeM - elevation, 1200);
+      assert.equal(timeline.length, points.length);
+      assert.ok(points.some(p => p.altitudeM - elevation < config.values.Win_Bottom));
+    }
+  }
+  assert.equal(source.at(-1).altitudeM, 900);
 });
