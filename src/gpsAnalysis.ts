@@ -1257,14 +1257,27 @@ export function getTop100mFlareResult(
   const flareTimeSeconds =
     (flarePoints.length - 1) * GPS_SAMPLE_PERIOD_SECONDS;
   const flareDistanceM = getTrackDistanceM(flarePoints);
-  const peakFlareAltitudeM = Math.max(
-    ...flarePoints.map((point) => point.altitudeM)
+  // Vertical speed is positive downwards. Measure the first complete climb
+  // in this flare from its first negative sample to its first positive sample.
+  // Zero-speed samples belong to the same climb, not a new interval.
+  const climbStartIndex = flarePoints.findIndex(
+    (point, index) =>
+      point.verticalSpeedMps < 0 &&
+      (points[flareStartIndex + index - 1]?.verticalSpeedMps ?? -1) >= 0,
   );
-
-  const altitudeGainM = Math.max(
-    0,
-    peakFlareAltitudeM - flareStartPoint.altitudeM
-  );
+  const climbEndIndex = climbStartIndex === -1
+    ? -1
+    : flarePoints.findIndex(
+        (point, index) => index > climbStartIndex && point.verticalSpeedMps > 0,
+      );
+  const altitudeGainM = climbStartIndex === -1
+    ? 0
+    : climbEndIndex === -1
+      ? null
+      : Math.max(
+          0,
+          flarePoints[climbEndIndex].altitudeM - flarePoints[climbStartIndex].altitudeM,
+        );
 
   return {
     startIndex: flareStartIndex,
