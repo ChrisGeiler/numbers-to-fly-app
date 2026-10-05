@@ -5641,6 +5641,30 @@ function TrackComparisonChart({
         const windowDistanceM = useCorrected
           ? getWindCorrectedWindowDistanceM(windowTrackPoints, winds)
           : scoringWindowResult.distanceM;
+        const top100mFlare = getTop100mFlareResult(
+          jumpTrackPoints,
+          scoringWindowResult.timeSeconds,
+        );
+        const top100mDistanceM = top100mFlare === null
+          ? null
+          : useCorrected
+            ? getWindCorrectedWindowDistanceM(
+                jumpTrackPoints.slice(top100mFlare.startIndex, top100mFlare.endIndex + 1),
+                winds,
+              )
+            : top100mFlare.distanceM;
+        const bottom800mPoints = getLast800mWindowPoints(jumpTrackPoints);
+        const bottom800mTimeSeconds = bottom800mPoints.length > 1
+          ? (bottom800mPoints.length - 1) * GPS_SAMPLE_PERIOD_SECONDS
+          : null;
+        const bottom800mDistanceM = bottom800mTimeSeconds === null
+          ? null
+          : useCorrected
+            ? getWindCorrectedWindowDistanceM(bottom800mPoints, winds)
+            : getTrackDistanceM(bottom800mPoints);
+        const bottom800mAltitudeLossM = bottom800mPoints.length > 1
+          ? bottom800mPoints[0].altitudeM - bottom800mPoints[bottom800mPoints.length - 1].altitudeM
+          : 0;
         const distanceFromEntryByIndex = jumpTrackPoints.map(() => 0);
 
         const getSegmentDistanceM = (
@@ -5699,6 +5723,19 @@ function TrackComparisonChart({
         return {
           ...track,
           winds,
+          top100mFlare,
+          top100mDistanceM,
+          bottom800mTimeSeconds,
+          bottom800mDistanceM,
+          bottom800mHorizontalSpeedKmh: bottom800mTimeSeconds && bottom800mDistanceM !== null
+            ? metresPerSecondToKmh(bottom800mDistanceM / bottom800mTimeSeconds)
+            : null,
+          bottom800mVerticalSpeedKmh: bottom800mTimeSeconds
+            ? metresPerSecondToKmh(bottom800mAltitudeLossM / bottom800mTimeSeconds)
+            : null,
+          bottom800mGlideRatio: bottom800mAltitudeLossM > 0 && bottom800mDistanceM !== null
+            ? bottom800mDistanceM / bottom800mAltitudeLossM
+            : null,
           windowDurationSeconds: scoringWindowResult.timeSeconds,
           windowDistanceM,
           windowSpeedKmh:
@@ -6473,6 +6510,26 @@ function TrackComparisonChart({
                       <span>Peak total speed</span>
                       <strong>{formatNumber(track.peakTotalSpeedKmh, 1)} km/h</strong>
                     </div>
+                  </div>
+                </div>
+                <div className="compare-track-metrics" aria-label={`Top 100 m flare metrics for ${track.label}`}>
+                  <h4>Top 100 m Flare</h4>
+                  <div className="compare-track-metric-grid">
+                    <div><span>Time</span><strong>{formatNumber(track.top100mFlare?.timeSeconds, 1)} sec</strong></div>
+                    <div><span>{effectiveScoreMode === "corrected" ? "Corrected distance" : "Distance"}</span><strong>{formatNumber(track.top100mDistanceM, 0)} m</strong></div>
+                    <div><span>Flare start</span><strong>{formatNumber(track.top100mFlare?.startAltitudeM, 0)} m AGL</strong></div>
+                    <div><span>Flare height (altitude gain)</span><strong>{formatNumber(track.top100mFlare?.altitudeGainM, 0)} m</strong></div>
+                  </div>
+                  {!track.top100mFlare && <p className="subtitle">No qualifying top 100 m flare detected.</p>}
+                </div>
+                <div className="compare-track-metrics" aria-label={`Bottom 800 m metrics for ${track.label}`}>
+                  <h4>Bottom 800 m</h4>
+                  <div className="compare-track-metric-grid">
+                    <div><span>{effectiveScoreMode === "corrected" ? "Corrected distance" : "Distance"}</span><strong>{formatNumber(track.bottom800mDistanceM, 0)} m</strong></div>
+                    <div><span>Time</span><strong>{formatNumber(track.bottom800mTimeSeconds, 1)} sec</strong></div>
+                    <div><span>{effectiveScoreMode === "corrected" ? "Corrected avg. horizontal speed" : "Avg. horizontal speed"}</span><strong>{formatNumber(track.bottom800mHorizontalSpeedKmh, 1)} km/h</strong></div>
+                    <div><span>Avg. vertical speed</span><strong>{formatNumber(track.bottom800mVerticalSpeedKmh, 1)} km/h</strong></div>
+                    <div><span>{effectiveScoreMode === "corrected" ? "Corrected avg. glide ratio" : "Avg. glide ratio"}</span><strong>{formatNumber(track.bottom800mGlideRatio, 2)}</strong></div>
                   </div>
                 </div>
               </article>
