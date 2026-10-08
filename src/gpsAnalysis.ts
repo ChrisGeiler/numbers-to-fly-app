@@ -516,7 +516,14 @@ function hasContinuousTiming(points: GpsTrackPoint[], maxGapSeconds = 1) {
 }
 
 function isReliableExitWindow(points: GpsTrackPoint[]) {
-  return points.every(isReliableGpsPoint) && hasContinuousTiming(points);
+  // Exit detection must not treat GPS acquisition drift as a jump. The
+  // general track-quality limits are too permissive for this transition.
+  return points.every(point =>
+    isReliableGpsPoint(point) &&
+    (point.hAccM == null || point.hAccM <= 20) &&
+    (point.vAccM == null || point.vAccM <= 30) &&
+    (point.speedAccuracyMps == null || point.speedAccuracyMps <= 3)
+  ) && hasContinuousTiming(points);
 }
 
 function findDetectedExitIndex(points: GpsTrackPoint[]) {
