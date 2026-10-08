@@ -5499,16 +5499,15 @@ function TrackComparisonChart({
               return null;
             }
 
-            const comparisonStartIndex = jumpTrackPoints.findIndex(
-              (point) => point.altitudeM <= compareGraphTopM
+            const aircraftExitIndex = parsedPoints.indexOf(
+              validatedJump.aircraftExitPoint ?? validatedJump.exitPoint!,
             );
-
-            if (comparisonStartIndex === -1) {
-              return null;
-            }
-
-            const firstIndex = comparisonStartIndex;
-            const lastIndex = scoringWindowResult.endIndex;
+            const scoringExitIndex = parsedPoints.indexOf(validatedJump.jumpPoints[0]);
+            const prefixPoints = parsedPoints
+              .slice(Math.max(0, aircraftExitIndex), scoringExitIndex)
+              .map(point => ({ ...point, altitudeM: point.altitudeM - track.dzElevationM }));
+            const firstIndex = 0;
+            const lastIndex = scoringWindowResult.endIndex + prefixPoints.length;
 
             return {
               id: track.id,
@@ -5518,8 +5517,12 @@ function TrackComparisonChart({
               taskType: track.taskType,
               dzElevationM: track.dzElevationM,
               exitPoint: validatedJump.exitPoint,
-              jumpTrackPoints,
-              scoringWindowResult,
+              jumpTrackPoints: [...prefixPoints, ...jumpTrackPoints],
+              scoringWindowResult: {
+                ...scoringWindowResult,
+                startIndex: scoringWindowResult.startIndex + prefixPoints.length,
+                endIndex: scoringWindowResult.endIndex + prefixPoints.length,
+              },
               firstIndex,
               lastIndex,
             };
@@ -5857,13 +5860,15 @@ function TrackComparisonChart({
       : 2500;
   const windowTopM = 2500 + windowOffsetM;
   const windowBottomM = 1500 + windowOffsetM;
+  const comparisonTopM = Math.max(compareGraphTopM,
+    ...comparisonPoints.map(point => Math.ceil(point.altitudeM / 250) * 250));
   const altitudeTicks = Array.from(
-    { length: Math.floor((compareGraphTopM - windowBottomM) / 250) + 1 },
+    { length: Math.floor((comparisonTopM - windowBottomM) / 250) + 1 },
     (_, index) => windowBottomM + index * 250
   );
 
-  if (altitudeTicks.at(-1) !== compareGraphTopM) {
-    altitudeTicks.push(compareGraphTopM);
+  if (altitudeTicks.at(-1) !== comparisonTopM) {
+    altitudeTicks.push(comparisonTopM);
   }
   const xAxisKey = useTimeAxis ? "relativeTimeSeconds" : "distanceFromEntryM";
   const fullXAxisDomain: [number, number] = useTimeAxis
@@ -6301,7 +6306,7 @@ function TrackComparisonChart({
                 <YAxis
                   dataKey="altitudeM"
                   type="number"
-                  domain={[windowBottomM, compareGraphTopM]}
+                  domain={[windowBottomM, comparisonTopM]}
                   ticks={altitudeTicks}
                   tickFormatter={(value) =>
                     String(Number(value).toFixed(0)) + " m"
@@ -10505,23 +10510,19 @@ if (activePage === "lane") {
         ? scoringWindowResult.endIndex
         : scoringWindowResult.endIndex + compGraphEndOffset;
 
-    const maximumExitAltitudeIndex = fullJumpPoints.reduce(
-      (highestIndex, point, index, array) =>
-        point.altitudeM > array[highestIndex].altitudeM
-          ? index
-          : highestIndex,
-      0
+    const aircraftExitIndex = gpsTrackPoints.indexOf(
+      validatedJump.aircraftExitPoint ?? validatedJump.exitPoint!,
     );
-
-    const competitionRunPoints = fullJumpPoints.slice(
-      maximumExitAltitudeIndex,
-      compGraphEndIndex + 1
-    );
-
-    const displayedGraphPoints =
-      graphView === "comp"
-        ? competitionRunPoints
-        : fullJumpPoints;
+    const scoringExitIndex = gpsTrackPoints.indexOf(validatedJump.jumpPoints[0]);
+    const exitPrefixPoints = gpsTrackPoints
+      .slice(Math.max(0, aircraftExitIndex), scoringExitIndex)
+      .map(point => ({ ...point, altitudeM: point.altitudeM - dzElevationNumber }));
+    const displayedGraphPoints = [
+      ...exitPrefixPoints,
+      ...(graphView === "comp"
+        ? fullJumpPoints.slice(0, compGraphEndIndex + 1)
+        : fullJumpPoints),
+    ];
 
     const validationStartIndex = getValidationStartIndex(
       jumpTrackPoints,
