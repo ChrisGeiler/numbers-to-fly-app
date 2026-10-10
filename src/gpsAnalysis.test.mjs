@@ -39,3 +39,24 @@ test('exit detection rejects poor acquisition fixes before a reliable jump', asy
   assert.ok(result.aircraftExitPoint.timestampMs >= good[0].timestampMs);
   assert.equal(getValidatedJumpTrack(poor, 0).isValidJump, false);
 });
+
+test('good reported accuracy cannot turn a descent followed by aircraft climb into exit', async () => {
+  const { getValidatedJumpTrack } = await import('./gpsAnalysis.ts');
+  const points = [];
+  let altitudeM = 600;
+  function add(seconds, verticalSpeedMps) {
+    for (let i = 0; i < seconds * 5; i++) {
+      altitudeM -= verticalSpeedMps * 0.2;
+      points.push({ time: String(points.length), timestampMs: points.length * 200,
+        lat: 0, lon: 0, altitudeM, velNMps: 50, velEMps: 0,
+        horizontalSpeedMps: 50, verticalSpeedMps, totalSpeedMps: Math.hypot(50, verticalSpeedMps),
+        glideRatio: verticalSpeedMps > 0 ? 50 / verticalSpeedMps : null,
+        hAccM: 2, vAccM: 3, speedAccuracyMps: 0.5, numSV: 17 });
+    }
+  }
+  add(10, 0); add(20, 15); add(180, -5); add(10, 0);
+  const realExitTime = points.length * 200;
+  add(40, 25);
+  const result = getValidatedJumpTrack(points, 0);
+  assert.ok(result.aircraftExitPoint.timestampMs >= realExitTime - 5000);
+});

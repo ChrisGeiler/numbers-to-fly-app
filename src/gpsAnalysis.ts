@@ -664,7 +664,26 @@ function findDetectedExitIndex(points: GpsTrackPoint[]) {
       descendingPointRatio >= 0.5;
 
     if (accelerationExitDetected || aerodynamicExitDetected) {
-      return index;
+      // GPS drift can resemble a descent despite good reported accuracy.
+      // A sustained aircraft climb well above this candidate disproves exit.
+      // Short wingsuit flares do not satisfy this 30-second climb check.
+      const climbSamples = Math.round(30 / GPS_SAMPLE_PERIOD_SECONDS);
+      const lookAheadSamples = Math.round(300 / GPS_SAMPLE_PERIOD_SECONDS);
+      let aircraftClimbResumes = false;
+      for (let start = index + confirmationSamples;
+        start + climbSamples < Math.min(points.length, index + lookAheadSamples);
+        start += Math.round(5 / GPS_SAMPLE_PERIOD_SECONDS)) {
+        const climb = points.slice(start, start + climbSamples + 1);
+        const last = climb[climb.length - 1];
+        if (last.altitudeM > exitCandidate.altitudeM + 150 &&
+          last.altitudeM - climb[0].altitudeM >= 100 &&
+          climb.filter(point => point.verticalSpeedMps < -1).length / climb.length >= 0.9 &&
+          isReliableExitWindow(climb)) {
+          aircraftClimbResumes = true;
+          break;
+        }
+      }
+      if (!aircraftClimbResumes) return index;
     }
   }
 
