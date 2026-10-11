@@ -21,7 +21,7 @@ import './ConfigSimulation.css';
 
 type Track = { id: string; jump_date: string | null; location_name: string | null; task_type: string | null; window_time_s: number | null; window_distance_m: number | null; window_speed_kmh: number | null };
 type WindSource = "open-meteo" | "mark-schulze" | "meteomatics";
-type Props = { loadCorrectedTrack: (points: ReturnType<typeof simulationTimeline>, ground: number, source: WindSource) => Promise<ReturnType<typeof simulationTimeline>>; renderWindSource: (source: WindSource, onChange: (source: WindSource) => void) => ReactNode;  config: string; task: string; userId?: string; userEmail?: string | null; invalid: boolean; onSignIn: () => void; renderGraph: (points: ReturnType<typeof simulationTimeline>, position: number, groundElevation: number) => ReactNode };
+type Props = { loadCorrectedTrack: (points: ReturnType<typeof simulationTimeline>, ground: number, source: WindSource) => Promise<ReturnType<typeof simulationTimeline>>; renderWindControls: (source: WindSource, onChange: (source: WindSource) => void, corrected: boolean, onCorrectedChange: (corrected: boolean) => void) => ReactNode;  config: string; task: string; userId?: string; userEmail?: string | null; invalid: boolean; onSignIn: () => void; renderGraph: (points: ReturnType<typeof simulationTimeline>, position: number, groundElevation: number) => ReactNode };
 
 function trackScore(track: Track) {
   const score = track.task_type === 'time' ? track.window_time_s : track.task_type === 'distance' ? track.window_distance_m : track.task_type === 'speed' ? track.window_speed_kmh : null;
@@ -32,7 +32,7 @@ function trackScore(track: Track) {
   return ` · ${score.toFixed(decimals)} ${unit}`;
 }
 
-export default function ConfigSimulation({ config, task, userId, userEmail, invalid, onSignIn, renderGraph, loadCorrectedTrack, renderWindSource }: Props) {
+export default function ConfigSimulation({ config, task, userId, userEmail, invalid, onSignIn, renderGraph, loadCorrectedTrack, renderWindControls }: Props) {
   const [open, setOpen] = useState(false);
   const [windCorrection, setWindCorrection] = useState(false);
   const [windSource, setWindSource] = useState<WindSource>('open-meteo');
@@ -405,13 +405,7 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
         {firmwareVersion ? ` (${firmwareVersion})` : ''}
       </p>
       {privateFirmwareAllowed && <p className="subtitle">A config file contains settings but not the device firmware version. Select FLYSIGHT.TXT to detect it automatically, or choose the firmware behaviour manually.</p>}
-      {renderWindSource(windSource, setWindSource)}
-      <label className="score-mode-switch">
-        <span className={!windCorrection ? 'active' : ''}>Raw</span>
-        <input type="checkbox" checked={windCorrection} onChange={event => setWindCorrection(event.target.checked)} />
-        <span className="score-mode-track"><span className="score-mode-knob" /></span>
-        <span className={windCorrection ? 'active' : ''}>Corrected</span>
-      </label>
+      {renderWindControls(windSource, setWindSource, windCorrection, setWindCorrection)}
       {windStatus && <p role="status">{windStatus}</p>}
       {windCorrection && <p className="subtitle">Uses the selected source’s altitude-dependent winds for this track’s location and time. Corrected audio is an air-relative preview and can differ from FlySight GPS-based audio.</p>}
       {fileStatus && <p role="status">{fileStatus}</p>}

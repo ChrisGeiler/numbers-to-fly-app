@@ -3857,3 +3857,17 @@ button {
 .chart-measurement dl { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 12px 0; }
 .chart-measurement dt { font-size: 0.82rem; }
 .chart-measurement dd { margin: 4px 0 0; font-weight: 700; }
+
+.wind-correction-controls {
+  width: 100%;
+  margin: 20px auto;
+  font-size: 1rem;
+}
+.wind-correction-controls .score-mode-switch {
+  flex-direction: row;
+  width: 100%;
+}
+.wind-correction-controls .score-mode-track {
+  display: block;
+  flex: 0 0 72px;
+}

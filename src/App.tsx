@@ -4473,6 +4473,24 @@ function WindCorrectionSourceControl({
   );
 }
 
+function WindCorrectionControls({ source, onSourceChange, corrected, onCorrectedChange, disabled = false }: {
+  source: WindCorrectionSource;
+  onSourceChange: (source: WindCorrectionSource) => void;
+  corrected: boolean;
+  onCorrectedChange: (corrected: boolean) => void;
+  disabled?: boolean;
+}) {
+  return <div className="wind-correction-controls">
+    <WindCorrectionSourceControl source={source} onChange={onSourceChange} />
+    <label className="score-mode-switch">
+      <span className={!corrected ? "active" : ""}>Raw</span>
+      <input type="checkbox" checked={corrected} onChange={event => onCorrectedChange(event.target.checked)} disabled={disabled} aria-label="Use wind-corrected values" />
+      <span className="score-mode-track"><span className="score-mode-knob" /></span>
+      <span className={corrected ? "active" : ""}>Corrected</span>
+    </label>
+  </div>;
+}
+
 function BottomBackButton({
   label,
   onClick,
@@ -11009,33 +11027,13 @@ if (activePage === "lane") {
         <div className="metric-section">
           <h3>Main Scores</h3>
 
-          <WindCorrectionSourceControl
+          <WindCorrectionControls
             source={windCorrectionSource}
-            onChange={(source) =>
-              void handleWindCorrectionSourceChange(source)
-            }
+            onSourceChange={source => void handleWindCorrectionSourceChange(source)}
+            corrected={jumpScoreMode === "corrected"}
+            onCorrectedChange={corrected => setJumpScoreMode(corrected ? "corrected" : "raw")}
+            disabled={historicalWinds.length === 0}
           />
-
-          <label className="score-mode-switch">
-            <span className={jumpScoreMode === "raw" ? "active" : ""}>Raw</span>
-
-            <input
-              type="checkbox"
-              checked={jumpScoreMode === "corrected"}
-              onChange={(event) =>
-                setJumpScoreMode(event.target.checked ? "corrected" : "raw")
-              }
-              disabled={historicalWinds.length === 0}
-            />
-
-            <span className="score-mode-track">
-              <span className="score-mode-knob" />
-            </span>
-
-            <span className={jumpScoreMode === "corrected" ? "active" : ""}>
-              Corrected
-            </span>
-          </label>
 
           {jumpScoreMode === "corrected" && historicalWinds.length === 0 && (
             <p className="subtitle">
@@ -12856,7 +12854,7 @@ if (activePage === "rules") {
 
         <ConfigSimulation
           loadCorrectedTrack={loadSimulationWindProfile}
-          renderWindSource={(source, onChange) => <WindCorrectionSourceControl source={source} onChange={onChange} />}
+          renderWindControls={(source, onSourceChange, corrected, onCorrectedChange) => <WindCorrectionControls source={source} onSourceChange={onSourceChange} corrected={corrected} onCorrectedChange={onCorrectedChange} />}
           renderGraph={(points, position, groundElevation) => (
             <InteractiveTrackChart
               points={points.map(point => ({ ...point, altitudeM: point.altitudeM - groundElevation }))}
