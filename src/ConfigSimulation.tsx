@@ -4,7 +4,6 @@ import { supabase } from './supabase';
 import { getDetectedJumpTrack, parseFlySightCsv, trimTrackAfterLanding } from './gpsAnalysis';
 import {
   canUseWindowAudioFirmware,
-  correctSimulationWind,
   detectSimulationFirmware,
   readSimulationConfig,
   simulationAlarmShouldWait,
@@ -21,7 +20,8 @@ import { FlySightVoice, numberRecordings } from './flysightAudio';
 import './ConfigSimulation.css';
 
 type Track = { id: string; jump_date: string | null; location_name: string | null; task_type: string | null; window_time_s: number | null; window_distance_m: number | null; window_speed_kmh: number | null };
-type Props = { config: string; task: string; userId?: string; userEmail?: string | null; invalid: boolean; onSignIn: () => void; renderGraph: (points: ReturnType<typeof simulationTimeline>, position: number, groundElevation: number) => ReactNode };
+type WindSource = "open-meteo" | "mark-schulze" | "meteomatics";
+type Props = { loadCorrectedTrack: (points: ReturnType<typeof simulationTimeline>, ground: number, source: WindSource) => Promise<ReturnType<typeof simulationTimeline>>; renderWindSource: (source: WindSource, onChange: (source: WindSource) => void) => ReactNode;  config: string; task: string; userId?: string; userEmail?: string | null; invalid: boolean; onSignIn: () => void; renderGraph: (points: ReturnType<typeof simulationTimeline>, position: number, groundElevation: number) => ReactNode };
 
 function trackScore(track: Track) {
   const score = track.task_type === 'time' ? track.window_time_s : track.task_type === 'distance' ? track.window_distance_m : track.task_type === 'speed' ? track.window_speed_kmh : null;
@@ -32,14 +32,12 @@ function trackScore(track: Track) {
   return ` · ${score.toFixed(decimals)} ${unit}`;
 }
 
-export default function ConfigSimulation({ config, task, userId, userEmail, invalid, onSignIn, renderGraph }: Props) {
+export default function ConfigSimulation({ config, task, userId, userEmail, invalid, onSignIn, renderGraph, loadCorrectedTrack, renderWindSource }: Props) {
   const [open, setOpen] = useState(false);
   const [windCorrection, setWindCorrection] = useState(false);
-  const [windSpeedKt, setWindSpeedKt] = useState('0');
-  const [windDirectionDeg, setWindDirectionDeg] = useState('0');
-  const validWind = windSpeedKt.trim() !== '' && windDirectionDeg.trim() !== '' &&
-    Number.isFinite(Number(windSpeedKt)) && Number(windSpeedKt) >= 0 &&
-    Number.isFinite(Number(windDirectionDeg)) && Number(windDirectionDeg) >= 0 && Number(windDirectionDeg) <= 360;
+  const [windSource, setWindSource] = useState<WindSource>('open-meteo');
+  const [correctedTrack, setCorrectedTrack] = useState<ReturnType<typeof simulationTimeline> | null>(null);
+  const [windStatus, setWindStatus] = useState('');
 
   const [filter, setFilter] = useState(task);
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -74,18 +72,30 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
     !requiredConfigValues.every(key => Number.isFinite(settings.values[key])) ||
     settings.values.Max <= settings.values.Min
   );
-  const effectiveInvalid = (selectedConfigText === null ? invalid : selectedConfigInvalid) || (windCorrection && !validWind);
-  const points = useMemo(() => {
-    const windowPoints = simulationWindow(sourcePoints, groundElevation);
-    return windCorrection && validWind
-      ? correctSimulationWind(windowPoints, Number(windSpeedKt), Number(windDirectionDeg))
-      : windowPoints;
-  }, [sourcePoints, groundElevation, windCorrection, validWind, windSpeedKt, windDirectionDeg]);
+  const effectiveInvalid = (selectedConfigText === null ? invalid : selectedConfigInvalid) || (windCorrection && correctedTrack === null);
+  useEffect(() => {
+    let cancelled = false;
+    setCorrectedTrack(null);
+    setPlaying(false);
+    playRequest.current += 1;
+    setAudioLoading(false);
+    if (!windCorrection || sourcePoints.length < 2) { setWindStatus(''); return; }
+    setWindStatus('Loading wind profile…');
+    void loadCorrectedTrack(sourcePoints, groundElevation, windSource).then(result => {
+      if (!cancelled) { setCorrectedTrack(result); setWindStatus('Wind profile loaded. Corrected graph, readings and audio are ready.'); }
+    }).catch(error => {
+      if (!cancelled) setWindStatus(`Wind correction unavailable: ${error instanceof Error ? error.message : 'Could not load winds'}. Choose another source or switch to Raw.`);
+    });
+    return () => { cancelled = true; };
+  }, [sourcePoints, groundElevation, windCorrection, windSource, loadCorrectedTrack]);
+  const points = useMemo(() => simulationWindow(
+    windCorrection ? correctedTrack ?? [] : sourcePoints, groundElevation),
+    [sourcePoints, correctedTrack, groundElevation, windCorrection]);
   const firmwareTimeline = useMemo(
     () => simulationFirmwareTimeline(points, groundElevation, settings, activeFirmwareProfile, firmwareVersion),
     [points, groundElevation, settings, activeFirmwareProfile, firmwareVersion],
   );
-  useEffect(() => { setPlaying(false); cursor.current = 0; speechDeadline.current = 0; setPosition(0); }, [groundElevation, windCorrection, windSpeedKt, windDirectionDeg]);
+  useEffect(() => { setPlaying(false); cursor.current = 0; speechDeadline.current = 0; setPosition(0); }, [groundElevation, windCorrection, windSource]);
   const duration = points.at(-1)?.seconds ?? 0;
   let index = points.findIndex(p => p.seconds > position);
   index = index === -1 ? points.length - 1 : Math.max(0, index - 1);
@@ -395,22 +405,22 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
         {firmwareVersion ? ` (${firmwareVersion})` : ''}
       </p>
       {privateFirmwareAllowed && <p className="subtitle">A config file contains settings but not the device firmware version. Select FLYSIGHT.TXT to detect it automatically, or choose the firmware behaviour manually.</p>}
-      <div className="simulation-file-controls">
-        <label><input type="checkbox" checked={windCorrection} onChange={event => setWindCorrection(event.target.checked)} /> Wind correction</label>
-        {windCorrection && <>
-          <label>Wind speed (kt)<input type="number" min="0" step="0.1" value={windSpeedKt} onChange={event => setWindSpeedKt(event.target.value)} /></label>
-          <label>Wind from (° true)<input type="number" min="0" max="360" step="1" value={windDirectionDeg} onChange={event => setWindDirectionDeg(event.target.value)} /></label>
-        </>}
-      </div>
-      {windCorrection && <p className="subtitle">Constant-wind preview: graph, readings and audio use air-relative horizontal speed, total speed and glide ratio. Altitude and vertical speed stay unchanged. This can differ from the FlySight’s GPS-based audio.</p>}
-      {windCorrection && !validWind && <p role="alert">Enter a non-negative wind speed and a direction from 0 to 360°.</p>}
+      {renderWindSource(windSource, setWindSource)}
+      <label className="score-mode-switch">
+        <span className={!windCorrection ? 'active' : ''}>Raw</span>
+        <input type="checkbox" checked={windCorrection} onChange={event => setWindCorrection(event.target.checked)} />
+        <span className="score-mode-track"><span className="score-mode-knob" /></span>
+        <span className={windCorrection ? 'active' : ''}>Corrected</span>
+      </label>
+      {windStatus && <p role="status">{windStatus}</p>}
+      {windCorrection && <p className="subtitle">Uses the selected source’s altitude-dependent winds for this track’s location and time. Corrected audio is an air-relative preview and can differ from FlySight GPS-based audio.</p>}
       {fileStatus && <p role="status">{fileStatus}</p>}
       {!userId ? <><p>Sign in to choose a saved flight.</p><button type="button" onClick={onSignIn}>Sign in to logbook</button></> : <>
         <p>Previewing <strong>{selectedConfigName ?? `your ${task} config`}</strong>. Track filtering does not change the selected config.</p>
         {loading && <p role="status">Loading tracks…</p>}
         {status && <p role="status">{status}</p>}
         {missingVerticalAccuracy && <p role="status">This track has no vertical-accuracy data, so it cannot reproduce the private firmware’s flight-confirmation check. Choose a FlySight 2 track containing vAcc data.</p>}
-        {sourcePoints.length > 0 && points.length < 2 && <p role="status">This track has no playable section between 3353 m and 1200 m above ground. Check your config’s ground elevation or choose another track.</p>}
+        {sourcePoints.length > 0 && (!windCorrection || correctedTrack !== null) && points.length < 2 && <p role="status">This track has no playable section between 3353 m and 1200 m above ground. Check your config’s ground elevation or choose another track.</p>}
         {point && points.length >= 2 && <>
           <p>Playing from 3353 m to 1200 m AGL, using the available track within this section.</p>
           {renderGraph(points, position, groundElevation)}

@@ -1,3 +1,4 @@
+import { correctSimulationWind } from "./simulation";
 import { measureChartRange } from "./chartMeasurement";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -4433,6 +4434,19 @@ function ruleMatchesSearchWords(
       haystack.includes(softStem)
     );
   });
+}
+
+async function loadSimulationWindProfile<T extends GpsTrackPoint>(points: T[], ground: number, source: WindCorrectionSource): Promise<T[]> {
+  const exit = points[0];
+  if (!exit || exit.timestampMs === null) throw new Error("Track location and time are required");
+  const { winds } = await fetchWindCorrectionProfile({ source, latitude: exit.lat, longitude: exit.lon, timestampMs: exit.timestampMs, dzElevationM: ground });
+  if (!winds.length) throw new Error("No wind layers returned");
+  const heights = winds.map(w => w.altitudeM);
+  const speeds = Object.fromEntries(winds.map(w => [String(w.altitudeM), Number(w.speedKt)]));
+  const directions = Object.fromEntries(winds.map(w => [String(w.altitudeM), Number(w.directionFromDeg)]));
+  return points.map(point => correctSimulationWind([point],
+    interpolateNumber(point.altitudeM - ground, heights, speeds),
+    interpolateDirection(point.altitudeM - ground, heights, directions))[0]);
 }
 
 function WindCorrectionSourceControl({
@@ -12841,6 +12855,8 @@ if (activePage === "rules") {
         </section>
 
         <ConfigSimulation
+          loadCorrectedTrack={loadSimulationWindProfile}
+          renderWindSource={(source, onChange) => <WindCorrectionSourceControl source={source} onChange={onChange} />}
           renderGraph={(points, position, groundElevation) => (
             <InteractiveTrackChart
               points={points.map(point => ({ ...point, altitudeM: point.altitudeM - groundElevation }))}
