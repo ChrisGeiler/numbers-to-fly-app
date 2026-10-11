@@ -249,3 +249,18 @@ export function simulationWindow(points: GpsTrackPoint[], groundElevation: numbe
   }
   return simulationTimeline(clipped);
 }
+
+/** Remove a constant horizontal wind vector; direction is where wind comes from. */
+export function correctSimulationWind<T extends GpsTrackPoint>(points: T[], speedKt: number, directionFromDeg: number): T[] {
+  if (!Number.isFinite(speedKt) || speedKt < 0 || !Number.isFinite(directionFromDeg)) return points;
+  const radians = directionFromDeg * Math.PI / 180;
+  const speedMps = speedKt * 0.514444;
+  return points.map(point => {
+    const velNMps = point.velNMps + Math.cos(radians) * speedMps;
+    const velEMps = point.velEMps + Math.sin(radians) * speedMps;
+    const horizontalSpeedMps = Math.hypot(velNMps, velEMps);
+    return { ...point, velNMps, velEMps, horizontalSpeedMps,
+      totalSpeedMps: Math.hypot(horizontalSpeedMps, point.verticalSpeedMps),
+      glideRatio: point.verticalSpeedMps === 0 ? null : horizontalSpeedMps / point.verticalSpeedMps };
+  });
+}

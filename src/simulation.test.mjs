@@ -218,3 +218,19 @@ test('switching config elevations and firmware preserves playback to 1200 m AGL'
   }
   assert.equal(source.at(-1).altitudeM, 900);
 });
+
+test('wind correction removes tailwind, adds headwind, and preserves track timing', async () => {
+  const { correctSimulationWind } = await import('./simulation.ts');
+  const p = { velNMps: 40, velEMps: 0, horizontalSpeedMps: 40, verticalSpeedMps: 10, totalSpeedMps: Math.hypot(40, 10), glideRatio: 4, altitudeM: 2500, seconds: 12 };
+  const head = correctSimulationWind([p], 10, 0)[0];
+  const tail = correctSimulationWind([p], 10, 180)[0];
+  assert.ok(Math.abs(head.horizontalSpeedMps - 45.14444) < 1e-6);
+  assert.ok(Math.abs(tail.horizontalSpeedMps - 34.85556) < 1e-6);
+  assert.equal(head.seconds, 12);
+  assert.equal(head.altitudeM, 2500);
+  assert.equal(head.verticalSpeedMps, 10);
+  assert.equal(head.glideRatio, head.horizontalSpeedMps / 10);
+  assert.equal(p.horizontalSpeedMps, 40);
+  const cross = correctSimulationWind([p], 10, 90)[0];
+  assert.ok(Math.abs(cross.horizontalSpeedMps - Math.hypot(40, 5.14444)) < 1e-6);
+});

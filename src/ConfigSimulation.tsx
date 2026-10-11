@@ -4,6 +4,7 @@ import { supabase } from './supabase';
 import { getDetectedJumpTrack, parseFlySightCsv, trimTrackAfterLanding } from './gpsAnalysis';
 import {
   canUseWindowAudioFirmware,
+  correctSimulationWind,
   detectSimulationFirmware,
   readSimulationConfig,
   simulationAlarmShouldWait,
@@ -33,6 +34,13 @@ function trackScore(track: Track) {
 
 export default function ConfigSimulation({ config, task, userId, userEmail, invalid, onSignIn, renderGraph }: Props) {
   const [open, setOpen] = useState(false);
+  const [windCorrection, setWindCorrection] = useState(false);
+  const [windSpeedKt, setWindSpeedKt] = useState('0');
+  const [windDirectionDeg, setWindDirectionDeg] = useState('0');
+  const validWind = windSpeedKt.trim() !== '' && windDirectionDeg.trim() !== '' &&
+    Number.isFinite(Number(windSpeedKt)) && Number(windSpeedKt) >= 0 &&
+    Number.isFinite(Number(windDirectionDeg)) && Number(windDirectionDeg) >= 0 && Number(windDirectionDeg) <= 360;
+
   const [filter, setFilter] = useState(task);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [selected, setSelected] = useState('');
@@ -66,13 +74,18 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
     !requiredConfigValues.every(key => Number.isFinite(settings.values[key])) ||
     settings.values.Max <= settings.values.Min
   );
-  const effectiveInvalid = selectedConfigText === null ? invalid : selectedConfigInvalid;
-  const points = useMemo(() => simulationWindow(sourcePoints, groundElevation), [sourcePoints, groundElevation]);
+  const effectiveInvalid = (selectedConfigText === null ? invalid : selectedConfigInvalid) || (windCorrection && !validWind);
+  const points = useMemo(() => {
+    const windowPoints = simulationWindow(sourcePoints, groundElevation);
+    return windCorrection && validWind
+      ? correctSimulationWind(windowPoints, Number(windSpeedKt), Number(windDirectionDeg))
+      : windowPoints;
+  }, [sourcePoints, groundElevation, windCorrection, validWind, windSpeedKt, windDirectionDeg]);
   const firmwareTimeline = useMemo(
     () => simulationFirmwareTimeline(points, groundElevation, settings, activeFirmwareProfile, firmwareVersion),
     [points, groundElevation, settings, activeFirmwareProfile, firmwareVersion],
   );
-  useEffect(() => { setPlaying(false); cursor.current = 0; speechDeadline.current = 0; setPosition(0); }, [groundElevation]);
+  useEffect(() => { setPlaying(false); cursor.current = 0; speechDeadline.current = 0; setPosition(0); }, [groundElevation, windCorrection, windSpeedKt, windDirectionDeg]);
   const duration = points.at(-1)?.seconds ?? 0;
   let index = points.findIndex(p => p.seconds > position);
   index = index === -1 ? points.length - 1 : Math.max(0, index - 1);
@@ -382,6 +395,15 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
         {firmwareVersion ? ` (${firmwareVersion})` : ''}
       </p>
       {privateFirmwareAllowed && <p className="subtitle">A config file contains settings but not the device firmware version. Select FLYSIGHT.TXT to detect it automatically, or choose the firmware behaviour manually.</p>}
+      <div className="simulation-file-controls">
+        <label><input type="checkbox" checked={windCorrection} onChange={event => setWindCorrection(event.target.checked)} /> Wind correction</label>
+        {windCorrection && <>
+          <label>Wind speed (kt)<input type="number" min="0" step="0.1" value={windSpeedKt} onChange={event => setWindSpeedKt(event.target.value)} /></label>
+          <label>Wind from (° true)<input type="number" min="0" max="360" step="1" value={windDirectionDeg} onChange={event => setWindDirectionDeg(event.target.value)} /></label>
+        </>}
+      </div>
+      {windCorrection && <p className="subtitle">Constant-wind preview: graph, readings and audio use air-relative horizontal speed, total speed and glide ratio. Altitude and vertical speed stay unchanged. This can differ from the FlySight’s GPS-based audio.</p>}
+      {windCorrection && !validWind && <p role="alert">Enter a non-negative wind speed and a direction from 0 to 360°.</p>}
       {fileStatus && <p role="status">{fileStatus}</p>}
       {!userId ? <><p>Sign in to choose a saved flight.</p><button type="button" onClick={onSignIn}>Sign in to logbook</button></> : <>
         <p>Previewing <strong>{selectedConfigName ?? `your ${task} config`}</strong>. Track filtering does not change the selected config.</p>
