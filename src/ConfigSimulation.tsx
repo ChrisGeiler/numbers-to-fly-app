@@ -6,6 +6,7 @@ import {
   canUseWindowAudioFirmware,
   detectSimulationFirmware,
   readSimulationConfig,
+  simulationConfigForElevation,
   simulationAlarmShouldWait,
   simulationFirmwareTimeline,
   simulationSpeechDue,
@@ -64,7 +65,9 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
   const activeFirmwareProfile: SimulationFirmwareProfile = privateFirmwareAllowed
     ? firmwareProfile
     : 'standard';
-  const effectiveConfig = selectedConfigText ?? config;
+  const [trackElevation, setTrackElevation] = useState<number | null>(null);
+  const effectiveConfig = useMemo(() => simulationConfigForElevation(
+    selectedConfigText ?? config, trackElevation), [selectedConfigText, config, trackElevation]);
   const settings = useMemo(() => readSimulationConfig(effectiveConfig), [effectiveConfig]);
   const groundElevation = Number.isFinite(settings.values.DZ_Elev) ? settings.values.DZ_Elev : 0;
   const requiredConfigValues = ['Mode', 'Min', 'Max', 'DZ_Elev', 'Win_Top', 'Win_Bottom', 'Win_Above', 'Win_Below', 'V_Thresh', 'H_Thresh', 'Sp_Rate', 'Sp_Mode', 'Sp_Dec', 'Sp_Volume', 'Volume', 'Min_Val_2', 'Max_Val_2', 'Min_Rate', 'Max_Rate'];
@@ -136,12 +139,13 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
 
   useEffect(() => {
     setPlaying(false); setPosition(0); cursor.current = 0; setHeard('Ready');
+    setTrackElevation(null);
     if (!selected || !userId || !open) { setPoints([]); return; }
     let cancelled = false;
     setPoints([]); setLoading(true); setStatus('');
     void (async () => {
       try {
-        const { data, error } = await supabase.from('jumps').select('raw_csv').eq('id', selected).eq('user_id', userId).single();
+        const { data, error } = await supabase.from('jumps').select('raw_csv,dz_elevation_m').eq('id', selected).eq('user_id', userId).single();
         if (cancelled) return;
         if (error) throw error;
         if (!data?.raw_csv) throw new Error('This track has no original GPS data. Choose another track.');
@@ -152,6 +156,8 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
         const flight = Number.isFinite(exit) ? parsed.filter(p => (p.timestampMs ?? 0) >= exit) : detected.jumpPoints;
         const timeline = simulationTimeline(trimTrackAfterLanding(flight.length ? flight : parsed));
         if (timeline.length < 2) throw new Error('This track has insufficient timed GPS data. Choose another track.');
+        setTrackElevation(typeof data.dz_elevation_m === 'number' && Number.isFinite(data.dz_elevation_m)
+          ? data.dz_elevation_m : null);
         setPoints(timeline);
       } catch (error) { if (!cancelled) setStatus(error instanceof Error ? error.message : 'Could not load this track. Choose another track or try again.'); }
       finally { if (!cancelled) setLoading(false); }
@@ -405,6 +411,11 @@ export default function ConfigSimulation({ config, task, userId, userEmail, inva
         {firmwareVersion ? ` (${firmwareVersion})` : ''}
       </p>
       {privateFirmwareAllowed && <p className="subtitle">A config file contains settings but not the device firmware version. Select FLYSIGHT.TXT to detect it automatically, or choose the firmware behaviour manually.</p>}
+      {sourcePoints.length > 0 && <p role="status" className="subtitle">
+        {trackElevation !== null
+          ? `Simulator DZ elevation automatically set to ${trackElevation} m for this track. The source config is unchanged.`
+          : 'This track has no saved DZ elevation. The simulator is using the config’s DZ elevation.'}
+      </p>}
       {renderWindControls(windSource, setWindSource, windCorrection, setWindCorrection)}
       {windStatus && <p role="status">{windStatus}</p>}
       {windCorrection && <p className="subtitle">Uses the selected source’s altitude-dependent winds for this track’s location and time. Corrected audio is an air-relative preview and can differ from FlySight GPS-based audio.</p>}

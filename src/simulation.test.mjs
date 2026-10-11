@@ -234,3 +234,17 @@ test('wind correction removes tailwind, adds headwind, and preserves track timin
   const cross = correctSimulationWind([p], 10, 90)[0];
   assert.ok(Math.abs(cross.horizontalSpeedMps - Math.hypot(40, 5.14444)) < 1e-6);
 });
+
+test('simulator elevation override is local, handles zero, and preserves other settings', async () => {
+  const { simulationConfigForElevation } = await import('./simulation.ts');
+  const original = '; DZ_Elev: 999\r\nDZ_Elev: 100 ; old\r\nWin_Top: 2500\r\nAlarm_Elev: 1500';
+  const adjusted = readSimulationConfig(simulationConfigForElevation(original, 386));
+  assert.equal(adjusted.values.DZ_Elev, 386);
+  assert.equal(adjusted.values.Win_Top, 2500);
+  assert.equal(adjusted.alarms[0].elevation, 1500);
+  assert.equal(readSimulationConfig(original).values.DZ_Elev, 100);
+  assert.equal(readSimulationConfig(simulationConfigForElevation(original, 0)).values.DZ_Elev, 0);
+  assert.equal(simulationConfigForElevation(original, null), original);
+  assert.equal(simulationConfigForElevation(original, NaN), original);
+  assert.equal(readSimulationConfig(simulationConfigForElevation('Mode: 2', 386)).values.DZ_Elev, 386);
+});

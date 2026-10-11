@@ -264,3 +264,11 @@ export function correctSimulationWind<T extends GpsTrackPoint>(points: T[], spee
       glideRatio: point.verticalSpeedMps === 0 ? null : horizontalSpeedMps / point.verticalSpeedMps };
   });
 }
+
+/** Change only the simulator's in-memory config, never the source text or file. */
+export function simulationConfigForElevation(text: string, elevationM: number | null): string {
+  if (elevationM === null || !Number.isFinite(elevationM)) return text;
+  const line = `DZ_Elev: ${elevationM}`;
+  const setting = /^[ \t]*DZ_Elev:[^\r\n]*/gm;
+  return setting.test(text) ? text.replace(setting, line) : `${text}\n${line}\n`;
+}
