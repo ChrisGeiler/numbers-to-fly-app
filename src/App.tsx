@@ -1,3 +1,5 @@
+import { forecastUrl, mapForecast, forecastModelLabels } from "./windForecast";
+import type { ForecastModel, ForecastResponse } from "./windForecast";
 import { correctSimulationWind } from "./simulation";
 import { measureChartRange } from "./chartMeasurement";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1150,12 +1152,7 @@ function buildTrackAssessment({
   };
 }
 
-type WindSource =
-  | "manual"
-  | "mark-schulze"
-  | "open-meteo"
-  | "meteomatics"
-  | "windy";
+type WindSource = "manual" | ForecastModel;
 type WindCorrectionSource = "open-meteo" | "mark-schulze" | "meteomatics";
 
 const WIND_CORRECTION_SOURCE_LABELS: Record<WindCorrectionSource, string> = {
@@ -1446,20 +1443,6 @@ type MeteomaticsProxyResponse = MarkSchulzeResponse & {
   winds?: WindLayer[];
 };
 
-type OpenMeteoResponse = {
-  hourly?: {
-    time?: string[];
-    wind_speed_1000hPa?: number[];
-    wind_direction_1000hPa?: number[];
-    wind_speed_925hPa?: number[];
-    wind_direction_925hPa?: number[];
-    wind_speed_850hPa?: number[];
-    wind_direction_850hPa?: number[];
-    wind_speed_700hPa?: number[];
-    wind_direction_700hPa?: number[];
-    };
-};
-
   type HistoricalForecastResponse = {
     hourly?: {
       time?: string[];
@@ -1504,6 +1487,10 @@ type OpenMeteoResponse = {
   dzElevationM: number;
 }): Promise<WindLayer[]> {
   const jumpDate = new Date(timestampMs).toISOString().slice(0, 10);
+  if (jumpDate < "2022-01-01") {
+    throw new Error(`This track is dated ${jumpDate}. Open-Meteo historical forecasts start in 2022. Wind correction needs the actual jump date; check the track timestamp or use Raw mode.`);
+  }
+
 
   const hourlyVariables = [
     "wind_speed_925hPa",
@@ -1541,8 +1528,13 @@ type OpenMeteoResponse = {
   );
 
   if (!response.ok) {
+    let reason = "";
+    try {
+      const error = await response.json() as { reason?: string };
+      if (typeof error.reason === "string") reason = error.reason;
+    } catch { /* Some upstream errors have no JSON body. */ }
     throw new Error(
-      `Historical wind request failed with status ${response.status}.`
+      `Open-Meteo wind request for ${jumpDate} failed (HTTP ${response.status})${reason ? `: ${reason}` : "."}`
     );
   }
 
@@ -2903,99 +2895,6 @@ function interpolateDirection(
   return normalizeDeg(lowerDirection + shortestDifference * progress);
 }
 
-const openMeteoPressureAltitudeM: Record<string, number> = {
-  "1000": 110,
-  "925": 760,
-  "850": 1450,
-  "700": 3000,
-};
-
-function getOpenMeteoHourlyIndex(
-  data: OpenMeteoResponse,
-  forecastHourOffset: number
-): number {
-  const times = data.hourly?.time;
-
-  if (!times || times.length === 0) {
-    return 0;
-  }
-
-  const targetTimeMs =
-    Date.now() + forecastHourOffset * 60 * 60 * 1000;
-
-  let closestIndex = 0;
-  let closestDifferenceMs = Infinity;
-
-  times.forEach((time, index) => {
-    const forecastTimeMs = new Date(time).getTime();
-    const differenceMs = Math.abs(forecastTimeMs - targetTimeMs);
-
-    if (differenceMs < closestDifferenceMs) {
-      closestDifferenceMs = differenceMs;
-      closestIndex = index;
-    }
-  });
-
-  return closestIndex;
-}
-
-function mapOpenMeteoToWindLayers(
-  data: OpenMeteoResponse,
-  forecastHourOffset: number
-): WindLayer[] {
-  const hourly = data.hourly;
-
-  if (!hourly) {
-    throw new Error("Open-Meteo response did not include hourly data.");
-  }
-
-  const index = getOpenMeteoHourlyIndex(data, forecastHourOffset);
-
-  const altitudeLevels = Object.values(openMeteoPressureAltitudeM);
-
-  const directionsByAltitude: Record<string, number> = {
-    [String(openMeteoPressureAltitudeM["1000"])]:
-      hourly.wind_direction_1000hPa?.[index] ?? 0,
-    [String(openMeteoPressureAltitudeM["925"])]:
-      hourly.wind_direction_925hPa?.[index] ?? 0,
-    [String(openMeteoPressureAltitudeM["850"])]:
-      hourly.wind_direction_850hPa?.[index] ?? 0,
-    [String(openMeteoPressureAltitudeM["700"])]:
-      hourly.wind_direction_700hPa?.[index] ?? 0,
-  };
-
-  const speedsByAltitude: Record<string, number> = {
-    [String(openMeteoPressureAltitudeM["1000"])]:
-      hourly.wind_speed_1000hPa?.[index] ?? 0,
-    [String(openMeteoPressureAltitudeM["925"])]:
-      hourly.wind_speed_925hPa?.[index] ?? 0,
-    [String(openMeteoPressureAltitudeM["850"])]:
-      hourly.wind_speed_850hPa?.[index] ?? 0,
-    [String(openMeteoPressureAltitudeM["700"])]:
-      hourly.wind_speed_700hPa?.[index] ?? 0,
-  };
-
-  return altitudes.map((altitudeM) => {
-    const directionFromDeg = interpolateDirection(
-      altitudeM,
-      altitudeLevels,
-      directionsByAltitude
-    );
-
-    const speedKt = interpolateNumber(
-      altitudeM,
-      altitudeLevels,
-      speedsByAltitude
-    );
-
-    return {
-      altitudeM,
-      directionFromDeg: String(Math.round(directionFromDeg)),
-      speedKt: String(Math.round(speedKt)),
-    };
-  });
-}
-
 function mapMarkSchulzeToWindLayers(data: MarkSchulzeResponse): WindLayer[] {
   if (!data.altSI || !data.directionSI || !data.speedSI) {
     throw new Error(
@@ -3207,7 +3106,7 @@ function HeadingSlider({
 
       <p className="subtitle">
         {windSourceUnavailable ? (
-          "Current wind source unavailable, please choose new wind source."
+          "Forecast winds are not ready. Check the forecast status below before using these results."
         ) : (
           <>
             Wind advantage: {averageTailwind >= 0 ? "+" : ""}
@@ -7697,7 +7596,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   }, [supabaseSession?.user.id]);
 
   const [windSource, setWindSource] =
-    useState<WindSource>("open-meteo");
+    useState<WindSource>("best_match");
 
   const [forecastHourOffset, setForecastHourOffset] = useState(0);
 
@@ -7944,32 +7843,34 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [competitionReferenceGroupId, setCompetitionReferenceGroupId] =
     useState<string | null>(null);
 
-      useEffect(() => {
-      if (windSource !== "open-meteo" && windSource !== "meteomatics") {
-        return;
+  useEffect(() => {
+    if (windSource === "manual") return;
+    const lat = optionalNumberFromInput(referenceLat);
+    const lon = optionalNumberFromInput(referenceLon);
+    if (lat === null || lon === null) {
+      setFetchStatus("Choose a reference point to load forecast winds.");
+      return;
+    }
+    const controller = new AbortController();
+    const model = windSource;
+    const targetMs = Date.now() + forecastHourOffset * 3600000;
+    setFetchStatus(`Fetching ${forecastModelLabels[model]} winds… Previous winds remain until loaded.`);
+    void (async () => {
+      try {
+        const response = await fetch(forecastUrl(lat, lon, model, targetMs), { signal: controller.signal });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.reason || `HTTP ${response.status}`);
+        const result = mapForecast(data as ForecastResponse, targetMs, altitudes);
+        if (controller.signal.aborted) return;
+        setWinds(result.winds);
+        setFetchStatus(`Loaded ${forecastModelLabels[model]} via Open-Meteo. Valid ${new Date(result.validTimeMs).toLocaleString()}. Available profile: ${result.minAltitudeAgl}–${result.maxAltitudeAgl} m AGL; ground elevation ${Math.round(result.groundElevationM)} m MSL.`);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setFetchStatus(`Could not fetch ${forecastModelLabels[model]} winds: ${error instanceof Error ? error.message : "Request failed"}. Previous winds retained; no substitute model loaded.`);
       }
-
-      const lat = optionalNumberFromInput(referenceLat);
-      const lon = optionalNumberFromInput(referenceLon);
-
-      if (lat === null || lon === null) {
-        return;
-      }
-
-      if (windSource === "open-meteo") {
-        void fetchOpenMeteoWithMeteomaticsFallback(lat, lon);
-      }
-
-      if (windSource === "meteomatics") {
-        void fetchMeteomaticsWindsForLocationWithStatus(lat, lon);
-      }
-    }, [
-      windSource,
-      referenceLat,
-      referenceLon,
-      forecastHourOffset,
-    ]);
-
+    })();
+    return () => controller.abort();
+  }, [windSource, referenceLat, referenceLon, forecastHourOffset]);
 
   const [userMapLocation, setUserMapLocation] = useState<LatLon | null>(null);
   const [locationStatus, setLocationStatus] = useState("");
@@ -8880,142 +8781,6 @@ function downloadGeneratedConfig() {
     setRunHeadingDeg(value);
   }
 
-  async function fetchMarkSchulzeWindsForLocation(lat: number, lon: number) {
-    setFetchStatus("Fetching Mark Schulze winds...");
-
-    const url = `${windProxyUrl}/?lat=${encodeURIComponent(
-      lat
-    )}&lon=${encodeURIComponent(lon)}&hourOffset=0`;
-
-    try {
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
-
-      const data = (await response.json()) as MarkSchulzeResponse;
-      const importedWinds = mapMarkSchulzeToWindLayers(data);
-
-      setWinds(importedWinds);
-      setFetchStatus(`Loaded ${data.model ?? "forecast"} winds.`);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unknown error while fetching winds.";
-
-      setFetchStatus(`Could not fetch Mark Schulze winds, switch to Open Meteo. ${message}.`);
-    }
-  }
-
-  async function fetchMeteomaticsWindsForLocation(
-    lat: number,
-    lon: number,
-    statusPrefix = "Fetching Meteomatics winds..."
-  ) {
-    setFetchStatus(statusPrefix);
-
-    const url = `${windProxyUrl}/meteomatics?lat=${encodeURIComponent(
-      lat
-    )}&lon=${encodeURIComponent(lon)}&hourOffset=${encodeURIComponent(
-      forecastHourOffset
-    )}`;
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(`Meteomatics request failed with status ${response.status}`);
-    }
-
-    const data = (await response.json()) as MeteomaticsProxyResponse;
-    const importedWinds = mapMeteomaticsToWindLayers(data);
-
-    setWinds(importedWinds);
-    setFetchStatus(`Loaded ${data.model ?? "Meteomatics"} forecast winds.`);
-  }
-
-
-  async function fetchOpenMeteoWindsForLocation(lat: number, lon: number) {
-  setFetchStatus("Fetching Open-Meteo winds...");
-
-  const hourlyFields = [
-    "wind_speed_1000hPa",
-    "wind_direction_1000hPa",
-    "wind_speed_925hPa",
-    "wind_direction_925hPa",
-    "wind_speed_850hPa",
-    "wind_direction_850hPa",
-    "wind_speed_700hPa",
-    "wind_direction_700hPa",
-  ].join(",");
-
-  const url =
-    `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(
-      lat
-    )}&longitude=${encodeURIComponent(
-      lon
-    )}&hourly=${encodeURIComponent(hourlyFields)}&wind_speed_unit=kn`;
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}`);
-    }
-
-    const data = (await response.json()) as OpenMeteoResponse;
-    const importedWinds = mapOpenMeteoToWindLayers(data, forecastHourOffset);
-
-    setWinds(importedWinds);
-    setFetchStatus("Loaded Open-Meteo forecast winds.");
-}
-
-  async function fetchOpenMeteoWithMeteomaticsFallback(lat: number, lon: number) {
-  try {
-    await fetchOpenMeteoWindsForLocation(lat, lon);
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unknown error while fetching winds.";
-
-    try {
-      await fetchMeteomaticsWindsForLocation(
-        lat,
-        lon,
-        `Open-Meteo unavailable (${message}). Fetching Meteomatics fallback...`
-      );
-      setWindSource("meteomatics");
-    } catch (fallbackError) {
-      const fallbackMessage =
-        fallbackError instanceof Error
-          ? fallbackError.message
-          : "Unknown error while fetching Meteomatics winds.";
-
-      setFetchStatus(
-        `Could not fetch Open-Meteo winds (${message}) or Meteomatics fallback (${fallbackMessage}). Use raw winds or try again later.`
-      );
-    }
-  }
-}
-
-  async function fetchMeteomaticsWindsForLocationWithStatus(
-    lat: number,
-    lon: number
-  ) {
-    try {
-      await fetchMeteomaticsWindsForLocation(lat, lon);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unknown error while fetching Meteomatics winds.";
-
-      setFetchStatus(
-        `Could not fetch Meteomatics winds. ${message}. Use raw winds or try again later.`
-    );
-  }
-}
   async function setReferencePoint(lat: number, lon: number, sourceLabel: string) {
     const nextLat = lat.toFixed(6);
     const nextLon = lon.toFixed(6);
@@ -9026,17 +8791,6 @@ function downloadGeneratedConfig() {
       `Reference point set from ${sourceLabel}: ${nextLat}, ${nextLon}.`
     );
 
-    if (windSource === "mark-schulze") {
-      await fetchMarkSchulzeWindsForLocation(lat, lon);
-    }
-
-    if (windSource === "open-meteo") {
-      await fetchOpenMeteoWithMeteomaticsFallback(lat, lon);
-    }
-
-    if (windSource === "meteomatics") {
-      await fetchMeteomaticsWindsForLocationWithStatus(lat, lon);
-    }
   }
 
   async function pickReferenceFromMap(lat: number, lon: number) {
@@ -9233,35 +8987,10 @@ function downloadGeneratedConfig() {
     setSavedReferencePointStatus(`Deleted the ${group.name} location group.`);
   }
 
-async function handleWindSourceChange(source: WindSource) {
+function handleWindSourceChange(source: WindSource) {
   setWindSource(source);
   setFetchStatus("");
-
-  if (source === "manual") {
-    setShowRawWinds(true);
-    return;
-  }
-
-  setShowRawWinds(false);
-
-  const lat = optionalNumberFromInput(referenceLat);
-  const lon = optionalNumberFromInput(referenceLon);
-
-  if (lat === null || lon === null) {
-    return;
-  }
-
-  if (source === "mark-schulze") {
-    await fetchMarkSchulzeWindsForLocation(lat, lon);
-  }
-
-  if (source === "open-meteo") {
-    await fetchOpenMeteoWithMeteomaticsFallback(lat, lon);
-  }
-
-  if (source === "meteomatics") {
-    await fetchMeteomaticsWindsForLocationWithStatus(lat, lon);
-  }
+  setShowRawWinds(source === "manual");
 }
   function openWindyVisualCheck() {
     const lat = optionalNumberFromInput(referenceLat);
@@ -13462,7 +13191,7 @@ if (activePage === "rules") {
           onDropDistanceChange={setDropDistanceNm}
           runHeadingDeg={runHeadingDeg}
           windAdvantage={windAdvantage}
-          windSourceUnavailable={fetchStatus.includes("Could not fetch")}
+          windSourceUnavailable={windSource !== "manual" && !fetchStatus.startsWith("Loaded ")}
           onInteractionStart={() => setShowTemporaryFlightLine(true)}
           onInteractionEnd={() => {
             setShowTemporaryFlightLine(false);
@@ -13475,15 +13204,15 @@ if (activePage === "rules") {
                 <h2>Wind Forecasts</h2>
 
                 <label>
+                  Weather model
                   <select
                     value={windSource}
                     onChange={(e) => handleWindSourceChange(e.target.value as WindSource)}
                   >
-                    <option value="open-meteo">Open-Meteo</option>
-                    <option value="mark-schulze">Mark Schulze</option>
-                    <option value="meteomatics">Meteomatics</option>
-                    <option value="manual">Manual</option>
-                    <option value="windy">Windy visual check</option>
+                    {Object.entries(forecastModelLabels).map(([model, label]) => (
+                      <option key={model} value={model}>{label}</option>
+                    ))}
+                    <option value="manual">Manual winds</option>
                   </select>
                   <div className="window-adjust-controls">
                     <button
@@ -13522,11 +13251,11 @@ if (activePage === "rules") {
                   </p>
                 </label>
 
-                {windSource === "windy" && (
-                  <button type="button" onClick={openWindyVisualCheck}>
-                    Open Windy visual check
-                  </button>
-                )}
+                <p className="subtitle">Forecast winds are interpolated at 1,500–2,500 m above the selected location. Automatic may combine models; named options explicitly request that model. Availability depends on location and forecast hour.</p>
+                <p className="subtitle">Europe: compare ICON-EU with ECMWF IFS. Australia and South America: compare ECMWF IFS, ICON Global, and GFS. Regional models only cover their named area.</p>
+                <button type="button" onClick={openWindyVisualCheck}>
+                  Open Windy visual check
+                </button>
 
                 {fetchStatus && <p className="subtitle">{fetchStatus}</p>}
 
@@ -13573,7 +13302,7 @@ if (activePage === "rules") {
                     <table>
                       <thead>
                         <tr>
-                          <th>Altitude</th>
+                          <th>Altitude AGL</th>
                           <th>Wind from</th>
                           <th>Speed</th>
                         </tr>
