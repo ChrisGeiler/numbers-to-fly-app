@@ -1,3 +1,4 @@
+import type { ForecastModel } from "./windForecast";
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { supabase } from './supabase';
@@ -21,7 +22,7 @@ import { FlySightVoice, numberRecordings } from './flysightAudio';
 import './ConfigSimulation.css';
 
 type Track = { id: string; jump_date: string | null; location_name: string | null; task_type: string | null; window_time_s: number | null; window_distance_m: number | null; window_speed_kmh: number | null };
-type WindSource = "open-meteo" | "mark-schulze" | "meteomatics";
+type WindSource = ForecastModel;
 type Props = { loadCorrectedTrack: (points: ReturnType<typeof simulationTimeline>, ground: number, source: WindSource) => Promise<ReturnType<typeof simulationTimeline>>; renderWindControls: (source: WindSource, onChange: (source: WindSource) => void, corrected: boolean, onCorrectedChange: (corrected: boolean) => void) => ReactNode;  config: string; task: string; userId?: string; userEmail?: string | null; invalid: boolean; onSignIn: () => void; renderGraph: (points: ReturnType<typeof simulationTimeline>, position: number, groundElevation: number) => ReactNode };
 
 function trackScore(track: Track) {
@@ -36,7 +37,7 @@ function trackScore(track: Track) {
 export default function ConfigSimulation({ config, task, userId, userEmail, invalid, onSignIn, renderGraph, loadCorrectedTrack, renderWindControls }: Props) {
   const [open, setOpen] = useState(false);
   const [windCorrection, setWindCorrection] = useState(false);
-  const [windSource, setWindSource] = useState<WindSource>('open-meteo');
+  const [windSource, setWindSource] = useState<WindSource>('best_match');
   const [correctedTrack, setCorrectedTrack] = useState<ReturnType<typeof simulationTimeline> | null>(null);
   const [windStatus, setWindStatus] = useState('');
 

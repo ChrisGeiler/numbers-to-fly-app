@@ -1153,13 +1153,8 @@ function buildTrackAssessment({
 }
 
 type WindSource = "manual" | ForecastModel;
-type WindCorrectionSource = "open-meteo" | "mark-schulze" | "meteomatics";
-
-const WIND_CORRECTION_SOURCE_LABELS: Record<WindCorrectionSource, string> = {
-  "open-meteo": "Open-Meteo historical",
-  "mark-schulze": "Mark Schulze forecast service",
-  meteomatics: "Meteomatics forecast service",
-};
+type WindCorrectionSource = ForecastModel;
+const WIND_CORRECTION_SOURCE_LABELS = forecastModelLabels;
 type SuitSetup =
   | ""
   | "crplus-no-wingtips"
@@ -1432,17 +1427,6 @@ type ResultRow = {
   targetGR?: number;
 };
 
-type MarkSchulzeResponse = {
-  altSI?: number[];
-  directionSI?: Record<string, number>;
-  speedSI?: Record<string, number>;
-  model?: string;
-};
-
-type MeteomaticsProxyResponse = MarkSchulzeResponse & {
-  winds?: WindLayer[];
-};
-
   type HistoricalForecastResponse = {
     hourly?: {
       time?: string[];
@@ -1476,6 +1460,7 @@ type MeteomaticsProxyResponse = MarkSchulzeResponse & {
   };
 
   async function fetchHistoricalWindProfile({
+  source,
   latitude,
   longitude,
   timestampMs,
@@ -1485,6 +1470,7 @@ type MeteomaticsProxyResponse = MarkSchulzeResponse & {
   longitude: number;
   timestampMs: number;
   dzElevationM: number;
+  source: ForecastModel;
 }): Promise<WindLayer[]> {
   const jumpDate = new Date(timestampMs).toISOString().slice(0, 10);
   if (jumpDate < "2022-01-01") {
@@ -1516,6 +1502,7 @@ type MeteomaticsProxyResponse = MarkSchulzeResponse & {
   const params = new URLSearchParams({
     latitude: String(latitude),
     longitude: String(longitude),
+    models: source,
     start_date: jumpDate,
     end_date: jumpDate,
     hourly: hourlyVariables.join(","),
@@ -1560,6 +1547,10 @@ type MeteomaticsProxyResponse = MarkSchulzeResponse & {
       nearestHourIndex = index;
     }
   });
+
+  if (nearestTimeDifferenceMs > 60 * 60 * 1000) {
+    throw new Error("No archived winds are available near this track's time. Use Raw mode or select another model.");
+  }
 
   const pressureLevels = [925, 900, 850, 800, 700, 600] as const;
 
@@ -1633,46 +1624,12 @@ async function fetchWindCorrectionProfile({
   timestampMs: number;
   dzElevationM: number;
 }): Promise<WindCorrectionProfile> {
-  if (source === "open-meteo") {
-    const winds = await fetchHistoricalWindProfile({
-      latitude,
-      longitude,
-      timestampMs,
-      dzElevationM,
-    });
-
-    return {
-      winds,
-      sourceLabel: WIND_CORRECTION_SOURCE_LABELS[source],
-    };
-  }
-
-  const hourOffset = Math.round(
-    (timestampMs - Date.now()) / (60 * 60 * 1000),
-  );
-  const endpoint = source === "meteomatics" ? "/meteomatics" : "/";
-  const url = `${windProxyUrl}${endpoint}?lat=${encodeURIComponent(
-    latitude,
-  )}&lon=${encodeURIComponent(longitude)}&hourOffset=${encodeURIComponent(
-    hourOffset,
-  )}`;
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(
-      `${WIND_CORRECTION_SOURCE_LABELS[source]} request failed with status ${response.status}.`,
-    );
-  }
-
-  const data = (await response.json()) as MeteomaticsProxyResponse;
-  const winds =
-    source === "meteomatics"
-      ? mapMeteomaticsToWindLayers(data)
-      : mapMarkSchulzeToWindLayers(data);
-
+  const winds = await fetchHistoricalWindProfile({
+    source, latitude, longitude, timestampMs, dzElevationM,
+  });
   return {
     winds,
-    sourceLabel: data.model?.trim() || WIND_CORRECTION_SOURCE_LABELS[source],
+    sourceLabel: `${WIND_CORRECTION_SOURCE_LABELS[source]} (archived forecast)`,
   };
 }
 
@@ -1800,8 +1757,7 @@ const defaultWinds: WindLayer[] = altitudes.map((altitudeM) => ({
 }));
 
 const tailHeadDeadbandKt = 2;
-const windProxyUrl =
-  "https://numbers-to-fly-winds.flywithcruza.workers.dev";
+
 
 const referencePointIcon = L.divIcon({
   className: "reference-point-marker",
@@ -2893,46 +2849,6 @@ function interpolateDirection(
   const shortestDifference = signedAngleDeg(lowerDirection, upperDirection);
 
   return normalizeDeg(lowerDirection + shortestDifference * progress);
-}
-
-function mapMarkSchulzeToWindLayers(data: MarkSchulzeResponse): WindLayer[] {
-  if (!data.altSI || !data.directionSI || !data.speedSI) {
-    throw new Error(
-      "Mark Schulze response did not include altSI, directionSI, and speedSI."
-    );
-  }
-
-  return altitudes.map((altitudeM) => {
-    const directionFromDeg = interpolateDirection(
-      altitudeM,
-      data.altSI ?? [],
-      data.directionSI ?? {}
-    );
-
-    const speedKmh = interpolateNumber(
-      altitudeM,
-      data.altSI ?? [],
-      data.speedSI ?? {}
-    );
-
-    return {
-      altitudeM,
-      directionFromDeg: String(Math.round(directionFromDeg)),
-      speedKt: String(Math.round(kmhToKt(speedKmh))),
-    };
-  });
-}
-
-function mapMeteomaticsToWindLayers(data: MeteomaticsProxyResponse): WindLayer[] {
-  if (Array.isArray(data.winds) && data.winds.length > 0) {
-    return data.winds.map((wind) => ({
-      altitudeM: wind.altitudeM,
-      directionFromDeg: String(Math.round(numberFromInput(wind.directionFromDeg, 0))),
-      speedKt: String(Math.round(numberFromInput(wind.speedKt, 0))),
-    }));
-  }
-
-  return mapMarkSchulzeToWindLayers(data);
 }
 
 function buildWindyUrl(lat: number, lon: number): string {
@@ -4357,16 +4273,16 @@ function WindCorrectionSourceControl({
 }) {
   return (
     <label className="wind-correction-source-control">
-      <span>Wind correction source</span>
+      <span>Wind correction model</span>
       <select
         value={source}
         onChange={(event) =>
           onChange(event.target.value as WindCorrectionSource)
         }
       >
-        <option value="open-meteo">Open-Meteo historical</option>
-        <option value="mark-schulze">Mark Schulze</option>
-        <option value="meteomatics">Meteomatics</option>
+        {Object.entries(forecastModelLabels).map(([model, label]) => (
+          <option key={model} value={model}>{label}</option>
+        ))}
       </select>
     </label>
   );
@@ -7585,7 +7501,7 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
   const [historicalWinds, setHistoricalWinds] = useState<WindLayer[]>([]);
   const [historicalWindStatus, setHistoricalWindStatus] = useState("");
   const [windCorrectionSource, setWindCorrectionSource] =
-    useState<WindCorrectionSource>("open-meteo");
+    useState<WindCorrectionSource>("best_match");
   const [taskMode, setTaskMode] = useState<TaskMode>("distance");
   const [energyManagementEnabled, setEnergyManagementEnabled] = useState(false);
   const [energyFinishKph, setEnergyFinishKph] = useState(120);
