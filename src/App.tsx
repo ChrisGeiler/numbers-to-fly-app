@@ -6633,7 +6633,7 @@ function App() {
   const [jumpSuitName, setJumpSuitName] = useState(lastImportSuitName);
   const [jumpNotes, setJumpNotes] = useState("");
   type SavedJump = {
-  raw_csv: string | null;
+  raw_csv?: string | null;
   exit_latitude: number | null;
   exit_longitude: number | null;
   landing_latitude: number | null;
@@ -7214,10 +7214,10 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     ).toISOString();
 
     const selectWithTaskType =
-      "id, jump_date, task_type, location_name, suit_name, notes, window_time_s, window_distance_m, window_speed_kmh, exit_latitude, exit_longitude, landing_latitude, landing_longitude, dz_elevation_m, raw_csv";
+      "id, jump_date, task_type, location_name, suit_name, notes, window_time_s, window_distance_m, window_speed_kmh, exit_latitude, exit_longitude, landing_latitude, landing_longitude, dz_elevation_m";
 
     const selectWithoutTaskType =
-      "id, jump_date, location_name, suit_name, notes, window_time_s, window_distance_m, window_speed_kmh, exit_latitude, exit_longitude, landing_latitude, landing_longitude, dz_elevation_m, raw_csv";
+      "id, jump_date, location_name, suit_name, notes, window_time_s, window_distance_m, window_speed_kmh, exit_latitude, exit_longitude, landing_latitude, landing_longitude, dz_elevation_m";
 
     let query = supabase
       .from("jumps")
@@ -7334,9 +7334,20 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
     );
   }
 
+  async function loadSavedJumpCsv(jumpId: string): Promise<string> {
+    if (!supabaseSession) throw new Error("Sign in to load this GPS track.");
+    const { data, error } = await supabase.from("jumps")
+      .select("raw_csv")
+      .eq("id", jumpId)
+      .eq("user_id", supabaseSession.user.id)
+      .single();
+    if (error) throw new Error(`Could not load GPS track: ${error.message}`);
+    if (!data?.raw_csv) throw new Error("This saved jump does not contain the original CSV.");
+    return data.raw_csv;
+  }
+
     async function editSavedJumpInTrackInfo(jump: SavedJump) {
-    setTrackInfoEditJumpId(jump.id);
-    await openSavedJump(jump, { preserveTrackInfoEdit: true });
+    if (!await openSavedJump(jump, { preserveTrackInfoEdit: true })) return;
     setTrackInfoEditJumpId(jump.id);
     setEditingJumpId(null);
     setSaveJumpStatus(
@@ -7348,15 +7359,16 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
       jump: SavedJump,
       options: { preserveTrackInfoEdit?: boolean } = {}
     ) {
-      if (!jump.raw_csv) {
-        setLogbookStatus(
-          "This saved jump does not contain the original CSV."
-        );
-        return;
+      setLogbookStatus("Loading GPS track...");
+      let rawCsv: string;
+      try {
+        rawCsv = await loadSavedJumpCsv(jump.id);
+      } catch (error) {
+        setLogbookStatus(error instanceof Error ? error.message : "Could not load GPS track.");
+        return false;
       }
-
-      const savedManualExitTimestampMs = getManualExitTimestampMs(jump.raw_csv);
-      const originalCsv = stripManualExitMetadata(jump.raw_csv);
+      const savedManualExitTimestampMs = getManualExitTimestampMs(rawCsv);
+      const originalCsv = stripManualExitMetadata(rawCsv);
       const parsedPoints = parseFlySightCsv(originalCsv);
       const workingTrackPoints = trimTrackForAnalysis(parsedPoints);
       const dzElevationNumber = jump.dz_elevation_m ?? 0;
@@ -7396,6 +7408,7 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
         savedManualExitTimestampMs,
         windCorrectionSource,
       );
+      return true;
     }
 
     async function saveEditedJump() {
@@ -7656,17 +7669,35 @@ const [rulesSearchQuery, setRulesSearchQuery] = useState("");
     });
   }
 
-  function toggleSavedJumpCompare(jump: SavedJump) {
-    const compareOption = getSavedJumpCompareOption(jump);
+  const savedCompareLoadingRef = useRef(false);
+  const [savedCompareLoading, setSavedCompareLoading] = useState(false);
 
-    if (!compareOption) {
-      setCompareStatus("This saved jump does not contain the original CSV.");
+  async function toggleSavedJumpCompare(jump: SavedJump) {
+    const optionId = "saved-" + jump.id;
+    if (selectedCompareTrackIds.includes(optionId)) {
+      setCompareOptions((current) => current.filter((option) => option.id !== optionId));
+      setSelectedCompareTrackIds((current) => current.filter((id) => id !== optionId));
       return;
     }
-
-    toggleCompareTrack(compareOption);
+    if (savedCompareLoadingRef.current) return;
+    if (selectedCompareTrackIds.length >= 6) {
+      setCompareStatus("Maximum 6 tracks can be compared.");
+      return;
+    }
+    savedCompareLoadingRef.current = true;
+    setSavedCompareLoading(true);
+    setCompareStatus("Loading GPS track for comparison...");
+    try {
+      const rawCsv = await loadSavedJumpCsv(jump.id);
+      const compareOption = getSavedJumpCompareOption({ ...jump, raw_csv: rawCsv });
+      if (compareOption) toggleCompareTrack(compareOption);
+    } catch (error) {
+      setCompareStatus(error instanceof Error ? error.message : "Could not load GPS track.");
+    } finally {
+      savedCompareLoadingRef.current = false;
+      setSavedCompareLoading(false);
+    }
   }
-  
 
   const [globalWindFromDeg, setGlobalWindFromDeg] = useState("");
   const [globalWindSpeedKt, setGlobalWindSpeedKt] = useState("");
@@ -9501,10 +9532,10 @@ if (activePage === "lane") {
                   ? "compare-row-button active"
                   : "compare-row-button"
               }
-              disabled={!menuJump.raw_csv}
+              disabled={savedCompareLoading}
               onClick={() => {
                 openCompareTracksSelector();
-                toggleSavedJumpCompare(menuJump);
+                void toggleSavedJumpCompare(menuJump);
                 setLogbookActionMenu(null);
               }}
             >
