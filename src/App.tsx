@@ -2,7 +2,7 @@ import { forecastUrl, mapForecast, forecastModelLabels } from "./windForecast";
 import type { ForecastModel, ForecastResponse } from "./windForecast";
 import { correctSimulationWind } from "./simulation";
 import { measureChartRange } from "./chartMeasurement";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   FormEvent,
   MutableRefObject,
@@ -7464,6 +7464,12 @@ function pinBestLogbookJumps(jumps: SavedJump[]): SavedJump[] {
   }
 
   const [activePage, setActivePage] = useState<AppPage>(getSavedAppPage);
+
+  useLayoutEffect(() => {
+    // Reset after the new page renders, before the previous scroll position paints.
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [activePage]);
+
   const [appMode, setAppMode] = useState<AppMode>(() =>
   window.matchMedia("(min-width: 900px)").matches
     ? "desktop"
@@ -8662,9 +8668,6 @@ function pushFlyNumbersToConfig() {
 
   setCopyStatus("Fly numbers pushed to Config the Numbers.");
   setActivePage("config");
-  window.setTimeout(() => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, 0);
 }
 
 function storeConfigTonePreset(
