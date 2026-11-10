@@ -42,6 +42,19 @@ accounts remain excluded from production builds.
 
 ## Competitor journey
 
+Competitors must request league registration with their name and home state.
+Only the organiser can approve, decline or revoke registration. Pending,
+declined and revoked registrations cannot upload originals or submit entries.
+Approval applies across rounds; each jump still requires separate score review.
+Organisers retain their management access. Registration does not grant access
+to the training app, and prior training-app access does not approve a competitor.
+The registration queue and organiser notes are private. Local registrations
+survive refresh alongside local tracks; previous saved tracks are retained.
+
+The registration migration is prepared locally and has not been applied to the
+live Supabase project. Apply it as part of an authorised release: it restricts
+both Storage uploads and entry inserts, rather than relying on hidden controls.
+
 Home state starts unselected and remembers the last chosen state in browser
 storage. The selector excludes TAS. Drop zone uses the supplied club list, with
 Moruya replacing Skydive Oz. Selecting a CSV and entering ground elevation shows

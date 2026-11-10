@@ -37,6 +37,7 @@ export function createPreviewStore() {
     instanceId: crypto.randomUUID(),
     persist: undefined as (() => Promise<void>) | undefined,
     rounds: [round] as Row[],
+    registrations: [] as Row[],
     entries: rows,
     files: new Map<string, Blob>(),
   };
@@ -54,6 +55,12 @@ export function createLeaguePreviewClient(
     signedIn
       ? { user: { id: PREVIEW_USER_ID, email: `${role}@preview.invalid` } }
       : null;
+  const canSubmit = () =>
+    signedIn &&
+    (organiser ||
+      store.registrations.some(
+        (row) => row.user_id === PREVIEW_USER_ID && row.status === "approved",
+      ));
   const subscribers = new Set<(event: string, session: unknown) => void>();
   class Query {
     filters: [string, unknown][] = [];
@@ -97,7 +104,9 @@ export function createLeaguePreviewClient(
           ? store.rounds
           : this.table === "league_entries"
             ? store.entries
-            : null;
+            : this.table === "league_registrations"
+              ? store.registrations
+              : null;
       if (!rows)
         return fail("This local preview does not access other tables.");
       const matches = (row: Row) =>
@@ -105,7 +114,34 @@ export function createLeaguePreviewClient(
       if (this.operation === "insert") {
         if (!signedIn || (this.table === "league_rounds" && !organiser))
           return fail("Choose the organiser preview to create rounds.");
+        if (this.table === "league_registrations") {
+          if (
+            this.payload.user_id !== PREVIEW_USER_ID ||
+            Object.keys(this.payload).some(
+              (key) => !["user_id", "public_name", "region"].includes(key),
+            )
+          )
+            return fail(
+              "Request your own registration without assigning approval fields.",
+            );
+          if (
+            store.registrations.some((row) => row.user_id === PREVIEW_USER_ID)
+          )
+            return fail("Your registration has already been requested.");
+          if (
+            String(this.payload.public_name ?? "").trim().length < 2 ||
+            String(this.payload.public_name).length > 60 ||
+            !["ACT", "NSW", "NT", "QLD", "SA", "VIC", "WA"].includes(
+              String(this.payload.region),
+            )
+          )
+            return fail("Enter your name and home state.");
+        }
         if (this.table === "league_entries") {
+          if (!canSubmit())
+            return fail(
+              "Your league registration must be approved before entering a round.",
+            );
           const round = store.rounds.find(
             (row) => row.id === this.payload.round_id,
           );
@@ -127,6 +163,8 @@ export function createLeaguePreviewClient(
           id: crypto.randomUUID(),
           status: "pending",
           submitted_at: new Date().toISOString(),
+          requested_at: new Date().toISOString(),
+          email: session()?.user.email ?? "",
           coaching_note: null,
           review_note: null,
           ...this.payload,
@@ -232,6 +270,23 @@ export function createLeaguePreviewClient(
       }
       if (!signedIn || !organiser)
         return fail("Choose the organiser preview for this action.");
+      if (name === "league_review_registration") {
+        const applicant = store.registrations.find(
+          (row) => row.user_id === args.applicant_id,
+        );
+        if (
+          !applicant ||
+          !["approved", "rejected"].includes(String(args.decision))
+        )
+          return fail("Invalid registration review.");
+        Object.assign(applicant, {
+          status: args.decision,
+          review_note: String(args.note ?? "").slice(0, 2000),
+          reviewed_at: new Date().toISOString(),
+        });
+        await store.persist?.();
+        return ok();
+      }
       const entry = store.entries.find((row) => row.id === args.entry_id);
       if (!entry) return fail("Preview entry not found.");
       if (name === "league_review_entry") {
@@ -267,6 +322,10 @@ export function createLeaguePreviewClient(
       from: () => ({
         upload: async (path: string, file: Blob) => {
           if (!signedIn) return fail("Choose a signed-in preview role.");
+          if (!canSubmit())
+            return fail(
+              "Your league registration must be approved before uploading a track.",
+            );
           const [userId, roundId] = path.split("/");
           const round = store.rounds.find((row) => row.id === roundId);
           if (

@@ -51,6 +51,19 @@ async function upload(
   csv = trackCsv(),
 ) {
   const client = createLeaguePreviewClient(store, "competitor");
+  if (!store.registrations.some((row) => row.user_id === PREVIEW_USER_ID)) {
+    await client
+      .from("league_registrations")
+      .insert({
+        user_id: PREVIEW_USER_ID,
+        public_name: "Test pilot",
+        region: "NSW",
+      });
+    await createLeaguePreviewClient(store, "organiser").rpc(
+      "league_review_registration",
+      { applicant_id: PREVIEW_USER_ID, decision: "approved" },
+    );
+  }
   const id = crypto.randomUUID(),
     roundId = String(store.rounds[0].id);
   const path = `${PREVIEW_USER_ID}/${roundId}/${id}.csv`;
@@ -61,19 +74,17 @@ async function upload(
   );
   assert.equal(
     (
-      await client
-        .from("league_entries")
-        .insert({
-          id,
-          user_id: PREVIEW_USER_ID,
-          round_id: roundId,
-          public_name: "Test pilot",
-          region: "NSW",
-          discipline: "speed",
-          location_name: "Moruya",
-          ground_elevation_m: 100,
-          file_path: path,
-        })
+      await client.from("league_entries").insert({
+        id,
+        user_id: PREVIEW_USER_ID,
+        round_id: roundId,
+        public_name: "Test pilot",
+        region: "NSW",
+        discipline: "speed",
+        location_name: "Moruya",
+        ground_elevation_m: 100,
+        file_path: path,
+      })
     ).error,
     null,
   );
@@ -282,4 +293,95 @@ test("a new test store discards prior entries and files", async () => {
   assert.equal(fresh.entries.length, 0);
   assert.equal(fresh.files.size, 0);
   assert.notEqual(fresh.instanceId, old.instanceId);
+  assert.equal(fresh.registrations.length, 0);
+});
+
+test("registration must be approved before uploads or round entries, including direct adapter calls", async () => {
+  const store = createPreviewStore();
+  const competitor = createLeaguePreviewClient(store, "competitor");
+  const organiser = createLeaguePreviewClient(store, "organiser");
+  const path = `${PREVIEW_USER_ID}/${store.rounds[0].id}/${crypto.randomUUID()}.csv`;
+  const file = new Blob([trackCsv()]);
+  assert.ok(
+    (await competitor.storage.from("league-tracks").upload(path, file)).error,
+  );
+  assert.ok(
+    (
+      await competitor
+        .from("league_registrations")
+        .insert({
+          user_id: PREVIEW_USER_ID,
+          public_name: "Test pilot",
+          region: "NSW",
+          status: "approved",
+        })
+    ).error,
+  );
+  assert.equal(
+    (
+      await competitor
+        .from("league_registrations")
+        .insert({
+          user_id: PREVIEW_USER_ID,
+          public_name: "Test pilot",
+          region: "NSW",
+        })
+    ).error,
+    null,
+  );
+  assert.equal(store.registrations[0].status, "pending");
+  assert.ok(
+    (await competitor.storage.from("league-tracks").upload(path, file)).error,
+  );
+  assert.ok(
+    (
+      await competitor.rpc("league_review_registration", {
+        applicant_id: PREVIEW_USER_ID,
+        decision: "approved",
+      })
+    ).error,
+  );
+  assert.equal(
+    (
+      await organiser.rpc("league_review_registration", {
+        applicant_id: PREVIEW_USER_ID,
+        decision: "approved",
+        note: "Welcome",
+      })
+    ).error,
+    null,
+  );
+  assert.equal(
+    (await competitor.storage.from("league-tracks").upload(path, file)).error,
+    null,
+  );
+  await organiser.rpc("league_review_registration", {
+    applicant_id: PREVIEW_USER_ID,
+    decision: "rejected",
+    note: "Entry access paused",
+  });
+  assert.ok(
+    (
+      await competitor
+        .from("league_entries")
+        .insert({
+          id: crypto.randomUUID(),
+          user_id: PREVIEW_USER_ID,
+          round_id: store.rounds[0].id,
+          file_path: path,
+        })
+    ).error,
+  );
+  assert.ok(
+    (
+      await competitor.storage
+        .from("league-tracks")
+        .upload(path.replace(".csv", "-second.csv"), file)
+    ).error,
+  );
+  assert.equal(
+    (await competitor.from("league_registrations").select("*")).data?.[0]
+      .review_note,
+    "Entry access paused",
+  );
 });

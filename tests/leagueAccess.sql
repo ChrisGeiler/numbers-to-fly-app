@@ -10,6 +10,13 @@ select set_config('league.owner_email',(select email from public.app_access wher
 insert into auth.users(id,email) values
   (current_setting('league.test_user')::uuid,'league-access-test@example.invalid'),
   (current_setting('league.test_other')::uuid,'league-other-test@example.invalid');
+-- Preserve this existing scoring/access test after the registration release.
+do $$ begin
+  if to_regclass('public.league_registrations') is not null then
+    execute 'insert into public.league_registrations(user_id,public_name,region,status) values ($1,''Approved access fixture'',''NSW'',''approved'')'
+      using current_setting('league.test_user')::uuid;
+  end if;
+end $$;
 insert into public.league_rounds(id,title,opens_at,closes_at,published) values
   (current_setting('league.test_round')::uuid,'Permission test',now()-interval '1 day',now()+interval '1 day',true),
   (current_setting('league.test_draft')::uuid,'Hidden draft test',now()-interval '1 day',now()+interval '1 day',false);

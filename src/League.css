@@ -644,6 +644,8 @@ button:disabled {
   grid-template-columns: 1fr 1fr;
   gap: 24px;
 }
+.league-registration > .league-form-card { max-width:600px; }
+.league-registration .league-review-card { overflow-wrap:anywhere; }
 .league-review-card {
   background: #fff;
   border: 1px solid #dce0d2;

@@ -4,6 +4,8 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { leagueWindow } from "./leagueScoring";
 import LeagueGoogleSignIn from "./LeagueGoogleSignIn";
+import LeagueRegistration from "./LeagueRegistration";
+import type { RegistrationAccess } from "./LeagueRegistration";
 import {
   calculateLeagueUploadScores,
   measureLeagueUploadWindow,
@@ -101,6 +103,8 @@ export default function League({
   const [tab, setTab] = useState("overall");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [registrationAccess, setRegistrationAccess] =
+    useState<RegistrationAccess>("checking");
   const [selectedTask, setSelectedTask] = useState<Discipline>("speed");
   const [groundElevation, setGroundElevation] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -193,6 +197,15 @@ export default function League({
     !!round?.published &&
     Date.now() >= Date.parse(round.opens_at) &&
     Date.now() < Date.parse(round.closes_at);
+  const canEnter = owner || registrationAccess === "approved";
+  function rememberHomeState(selected: string) {
+    setHomeState(selected);
+    try {
+      window.localStorage.setItem(HOME_STATE_STORAGE_KEY, selected);
+    } catch {
+      /* Browser preference is optional. */
+    }
+  }
 
   useEffect(() => {
     void client.auth.getSession().then(({ data }) => setSession(data.session));
@@ -326,6 +339,12 @@ export default function League({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!session || !round || !accepting) return;
+    if (!canEnter) {
+      setStatus(
+        "Your league registration must be approved before entering a round.",
+      );
+      return;
+    }
     const form = new FormData(event.currentTarget);
     const file = form.get("track") as File;
     setBusy(true);
@@ -500,8 +519,11 @@ export default function League({
           <a href="#how">How it works</a>
           <a href="#coaching">Coaching</a>
           {appAccess && <a href="/">Numbers to Fly ↗</a>}
-          <a className="league-nav-cta" href="#enter">
-            {session ? "Submit a jump" : "Join the league"}
+          <a
+            className="league-nav-cta"
+            href={session && !canEnter ? "#registration" : "#enter"}
+          >
+            {session && canEnter ? "Submit a jump" : "Register to enter"}
           </a>
         </nav>
       </header>
@@ -795,6 +817,18 @@ export default function League({
             three. Missing tasks score zero. Equal scores share rank.
           </p>
         </section>
+        {session && (
+          <LeagueRegistration
+            client={client}
+            userId={session.user.id}
+            owner={owner}
+            regions={regions}
+            homeState={homeState}
+            onHomeStateChange={rememberHomeState}
+            onAccessChange={setRegistrationAccess}
+            preview={preview}
+          />
+        )}
         <section className="league-section league-entry-section" id="enter">
           <div>
             <p className="league-eyebrow">YOUR DROP ZONE. YOUR ROUND.</p>
@@ -908,166 +942,168 @@ export default function League({
                       : "The organiser has not opened a round yet."}
                   </p>
                 )}
-                <form ref={formRef} onSubmit={submit}>
-                  <fieldset disabled={busy || !accepting}>
-                    <div className="league-fields">
-                      <label>
-                        Public competitor name
-                        <input
-                          name="name"
-                          required
-                          minLength={2}
-                          maxLength={60}
-                          autoComplete="name"
-                        />
-                      </label>
-                      <label>
-                        Home state
-                        <select
-                          name="region"
-                          required
-                          value={homeState}
-                          onChange={(event) => {
-                            const selected = event.target.value;
-                            setHomeState(selected);
-                            try {
-                              window.localStorage.setItem(
-                                HOME_STATE_STORAGE_KEY,
-                                selected,
-                              );
-                            } catch {
-                              // Keep the selection usable when storage is unavailable.
+                {canEnter ? (
+                  <form ref={formRef} onSubmit={submit}>
+                    <fieldset disabled={busy || !accepting}>
+                      <div className="league-fields">
+                        <label>
+                          Public competitor name
+                          <input
+                            name="name"
+                            required
+                            minLength={2}
+                            maxLength={60}
+                            autoComplete="name"
+                          />
+                        </label>
+                        <label>
+                          Home state
+                          <select
+                            name="region"
+                            required
+                            value={homeState}
+                            onChange={(event) =>
+                              rememberHomeState(event.target.value)
                             }
-                          }}
-                        >
-                          <option value="" disabled>
-                            Select home state
-                          </option>
-                          {regions.map((r) => (
-                            <option key={r}>{r}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Discipline
-                        <select
-                          name="discipline"
-                          value={selectedTask}
-                          onChange={(event) =>
-                            setSelectedTask(event.target.value as Discipline)
-                          }
-                        >
-                          {disciplines.map((d) => (
-                            <option key={d}>{d}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Drop zone / location
-                        <select name="location" required defaultValue="">
-                          <option value="" disabled>
-                            Select drop zone
-                          </option>
-                          {dropZones.map((dropZone) => (
-                            <option key={dropZone} value={dropZone}>
-                              {dropZone}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                    <label>
-                      Drop zone elevation / metres above sea level
-                      <input
-                        name="ground"
-                        type="number"
-                        required
-                        min={-100}
-                        max={3000}
-                        step="0.1"
-                        value={groundElevation}
-                        onChange={(event) =>
-                          setGroundElevation(event.target.value)
-                        }
-                      />
-                      <small>
-                        Use the verified drop zone elevation, not exit altitude.
-                      </small>
-                    </label>
-                    <label className="league-file">
-                      Original FlySight CSV
-                      <input
-                        name="track"
-                        type="file"
-                        accept=".csv,text/csv,text/plain"
-                        required
-                        onChange={(event) =>
-                          setUploadFile(event.target.files?.[0] ?? null)
-                        }
-                      />
-                      <small>
-                        FlySight 1 or 2 · up to 8 MB · jump within the round
-                        dates
-                      </small>
-                    </label>
-                    <div aria-live="polite">
-                      {calculatingUpload && (
-                        <p className="league-caption">
-                          Calculating your task score…
-                        </p>
-                      )}
-                      {uploadScoreStatus && (
-                        <p className="league-notice">{uploadScoreStatus}</p>
-                      )}
-                      {displayedUploadMetrics &&
-                        displayedUploadValue != null && (
-                          <section
-                            className="league-upload-score"
-                            aria-label="Calculated task score"
                           >
-                            <p className="league-caption">
-                              {uploadFile?.name ??
-                                `Last uploaded track: ${lastSubmission?.filename}`}
-                            </p>
-                            <h4>Calculated {displayedUploadTask} score</h4>
-                            <strong>
-                              {fmt(
-                                displayedUploadValue,
-                                displayedUploadTask === "time" ? 2 : 1,
-                              )}{" "}
-                              <span>
-                                {displayedUploadTask === "speed"
-                                  ? "km/h"
-                                  : displayedUploadTask === "time"
-                                    ? "seconds"
-                                    : "metres"}
-                              </span>
-                            </strong>
-                            <p className="league-caption">
-                              {displayedUploadTask === "time"
-                                ? "Measured elapsed time through the 2,500–1,500 m AGL window. Pending organiser approval."
-                                : "Provisional ground score through the 2,500–1,500 m AGL window. The wind-corrected competition result is calculated during organiser review."}
-                            </p>
-                          </section>
+                            <option value="" disabled>
+                              Select home state
+                            </option>
+                            {regions.map((r) => (
+                              <option key={r}>{r}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Discipline
+                          <select
+                            name="discipline"
+                            value={selectedTask}
+                            onChange={(event) =>
+                              setSelectedTask(event.target.value as Discipline)
+                            }
+                          >
+                            {disciplines.map((d) => (
+                              <option key={d}>{d}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Drop zone / location
+                          <select name="location" required defaultValue="">
+                            <option value="" disabled>
+                              Select drop zone
+                            </option>
+                            {dropZones.map((dropZone) => (
+                              <option key={dropZone} value={dropZone}>
+                                {dropZone}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <label>
+                        Drop zone elevation / metres above sea level
+                        <input
+                          name="ground"
+                          type="number"
+                          required
+                          min={-100}
+                          max={3000}
+                          step="0.1"
+                          value={groundElevation}
+                          onChange={(event) =>
+                            setGroundElevation(event.target.value)
+                          }
+                        />
+                        <small>
+                          Use the verified drop zone elevation, not exit
+                          altitude.
+                        </small>
+                      </label>
+                      <label className="league-file">
+                        Original FlySight CSV
+                        <input
+                          name="track"
+                          type="file"
+                          accept=".csv,text/csv,text/plain"
+                          required
+                          onChange={(event) =>
+                            setUploadFile(event.target.files?.[0] ?? null)
+                          }
+                        />
+                        <small>
+                          FlySight 1 or 2 · up to 8 MB · jump within the round
+                          dates
+                        </small>
+                      </label>
+                      <div aria-live="polite">
+                        {calculatingUpload && (
+                          <p className="league-caption">
+                            Calculating your task score…
+                          </p>
                         )}
-                    </div>
-                    <label className="league-checkbox">
-                      <input name="coaching" type="checkbox" /> I’d like remote
-                      coaching on this entry.
-                    </label>
-                    <label className="league-checkbox">
-                      <input type="checkbox" required /> {preview
-                        ? "Allow this local test to use the track’s location and time for archived wind lookup via Open-Meteo. This does not create an official competition entry."
-                        : "I agree to the pilot rules below and to publishing my name, state and approved scores. My track may be reviewed by the organiser; its location and time are used to obtain weather data from Open-Meteo."}
-                    </label>
-                    <button
-                      className="league-button"
-                      disabled={busy || !accepting}
-                    >
-                      {busy ? "Working…" : "Submit for review ↗"}
-                    </button>
-                  </fieldset>
-                </form>
+                        {uploadScoreStatus && (
+                          <p className="league-notice">{uploadScoreStatus}</p>
+                        )}
+                        {displayedUploadMetrics &&
+                          displayedUploadValue != null && (
+                            <section
+                              className="league-upload-score"
+                              aria-label="Calculated task score"
+                            >
+                              <p className="league-caption">
+                                {uploadFile?.name ??
+                                  `Last uploaded track: ${lastSubmission?.filename}`}
+                              </p>
+                              <h4>Calculated {displayedUploadTask} score</h4>
+                              <strong>
+                                {fmt(
+                                  displayedUploadValue,
+                                  displayedUploadTask === "time" ? 2 : 1,
+                                )}{" "}
+                                <span>
+                                  {displayedUploadTask === "speed"
+                                    ? "km/h"
+                                    : displayedUploadTask === "time"
+                                      ? "seconds"
+                                      : "metres"}
+                                </span>
+                              </strong>
+                              <p className="league-caption">
+                                {displayedUploadTask === "time"
+                                  ? "Measured elapsed time through the 2,500–1,500 m AGL window. Pending organiser approval."
+                                  : "Provisional ground score through the 2,500–1,500 m AGL window. The wind-corrected competition result is calculated during organiser review."}
+                              </p>
+                            </section>
+                          )}
+                      </div>
+                      <label className="league-checkbox">
+                        <input name="coaching" type="checkbox" /> I’d like
+                        remote coaching on this entry.
+                      </label>
+                      <label className="league-checkbox">
+                        <input type="checkbox" required />{" "}
+                        {preview
+                          ? "Allow this local test to use the track’s location and time for archived wind lookup via Open-Meteo. This does not create an official competition entry."
+                          : "I agree to the pilot rules below and to publishing my name, state and approved scores. My track may be reviewed by the organiser; its location and time are used to obtain weather data from Open-Meteo."}
+                      </label>
+                      <button
+                        className="league-button"
+                        disabled={busy || !accepting}
+                      >
+                        {busy ? "Working…" : "Submit for review ↗"}
+                      </button>
+                    </fieldset>
+                  </form>
+                ) : (
+                  <p className="league-notice">
+                    {registrationAccess === "checking"
+                      ? "Checking your league registration…"
+                      : "Registration approval is required before you can upload round entries."}{" "}
+                    <a href="#registration">View registration</a>
+                  </p>
+                )}
               </>
             )}
           </div>

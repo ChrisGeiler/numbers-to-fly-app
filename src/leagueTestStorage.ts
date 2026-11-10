@@ -23,6 +23,7 @@ function openDatabase() {
 type Snapshot = {
   rounds: PreviewStore["rounds"];
   entries: PreviewStore["entries"];
+  registrations?: PreviewStore["registrations"];
   files: [string, Blob][];
 };
 export async function readLeagueTestStore(): Promise<Snapshot | null> {
@@ -53,6 +54,7 @@ export function writeLeagueTestStore(store: PreviewStore): Promise<void> {
   const snapshot: Snapshot = structuredClone({
     rounds: store.rounds,
     entries: store.entries,
+    registrations: store.registrations,
     files: [...store.files],
   });
   const save = async () => {

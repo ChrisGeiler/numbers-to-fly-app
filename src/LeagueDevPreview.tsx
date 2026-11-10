@@ -26,6 +26,7 @@ export default function LeagueDevPreview() {
         if (saved) {
           next.rounds = saved.rounds;
           next.entries = saved.entries;
+          next.registrations = saved.registrations ?? [];
           next.files = new Map(saved.files);
         }
         setStore(persistentStore(next));
@@ -48,7 +49,7 @@ export default function LeagueDevPreview() {
   async function resetTest() {
     if (
       !window.confirm(
-        "Delete all local test tracks, results and coaching feedback? This does not affect Supabase or official results.",
+        "Delete all local test registrations, tracks, results and coaching feedback? This does not affect Supabase or official results.",
       )
     )
       return;
