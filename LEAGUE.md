@@ -5,6 +5,26 @@ its existing access controls. League sign-in never inserts into `app_access`.
 Only authorised app users see the optional Numbers to Fly link on the league.
 The working name, colours and copy are provisional.
 
+## Local development review
+
+Keep this pilot unpublished until the organiser explicitly approves release.
+Vite development on a loopback host opens a separate preview adapter with a
+sticky Visitor / Competitor / Organiser selector. It starts in Organiser view
+so round setup, approvals and coaching can be reviewed without Google sign-in.
+All names and results are sample data; score calculation is simulated. Local
+test uploads stay in browser memory. Reset sample data or refresh to discard
+changes. This adapter does not call Supabase, send emails or create real auth
+tokens. It is dynamically imported only under `import.meta.env.DEV` on localhost
+and is excluded from production builds.
+
+Try real sign-in switches back to the existing authenticated backend. The
+observed local login blocker is Google's `origin not allowed` error. Add the
+exact local origin to the Google OAuth client's Authorized JavaScript origins
+before testing real local login. Google documents adding both `http://localhost`
+and the exact port origin, such as `http://localhost:5175`; `127.0.0.1` is a
+different origin and also needs its own exact entry if used. No Google settings
+or production authentication permissions are changed by the preview adapter.
+
 ## Competitor journey
 
 Sign in with Google using the existing production Google client. Choose an open

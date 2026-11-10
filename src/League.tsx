@@ -55,7 +55,13 @@ const score = (row: Result, discipline: string) =>
       ? row.corrected_distance_m
       : row.time_s;
 
-export default function League() {
+export default function League({
+  client = supabase,
+  preview = false,
+}: {
+  client?: typeof supabase;
+  preview?: boolean;
+}) {
   const [session, setSession] = useState<Session | null>(null);
   const [owner, setOwner] = useState(false);
   const [appAccess, setAppAccess] = useState(false);
@@ -85,10 +91,8 @@ export default function League() {
     Date.now() < Date.parse(round.closes_at);
 
   useEffect(() => {
-    void supabase.auth
-      .getSession()
-      .then(({ data }) => setSession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_event, next) =>
+    void client.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data } = client.auth.onAuthStateChange((_event, next) =>
       setSession(next),
     );
     return () => data.subscription.unsubscribe();
@@ -103,8 +107,8 @@ export default function League() {
     setFeedback({});
     if (!session) return;
     void Promise.all([
-      supabase.rpc("current_user_is_app_owner"),
-      supabase.rpc("current_user_has_app_access"),
+      client.rpc("current_user_is_app_owner"),
+      client.rpc("current_user_has_app_access"),
     ]).then(([a, b]) => {
       if (id !== epoch.current) return;
       setOwner(a.data === true);
@@ -114,7 +118,7 @@ export default function League() {
 
   useEffect(() => {
     let cancelled = false;
-    void supabase
+    void client
       .from("league_rounds")
       .select("id,title,opens_at,closes_at,published")
       .order("opens_at", { ascending: false })
@@ -151,7 +155,7 @@ export default function League() {
       return;
     }
     const currentEpoch = epoch.current;
-    const { data, error } = await supabase.rpc("league_leaderboard", {
+    const { data, error } = await client.rpc("league_leaderboard", {
       selected_round: roundId,
     });
     if (currentEpoch !== epoch.current || requestId !== refreshId.current)
@@ -162,7 +166,7 @@ export default function League() {
     }
     setResults((data ?? []) as Result[]);
     if (session) {
-      let query = supabase
+      let query = client
         .from("league_entries")
         .select(
           "id,round_id,public_name,region,discipline,status,location_name,ground_elevation_m,file_path,submitted_at,coaching_requested,coaching_note,review_note,time_s,corrected_speed_kmh,corrected_distance_m,raw_speed_kmh,raw_distance_m,scoring_version",
@@ -190,7 +194,7 @@ export default function League() {
     event.preventDefault();
     setBusy(true);
     setAuthStatus("");
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await client.auth.signInWithOtp({
       email: email.trim(),
       options: {
         shouldCreateUser: true,
@@ -206,7 +210,7 @@ export default function League() {
   }
   async function verifyCode() {
     setBusy(true);
-    const { error } = await supabase.auth.verifyOtp({
+    const { error } = await client.auth.verifyOtp({
       email: email.trim(),
       token: otp.trim(),
       type: "email",
@@ -230,31 +234,30 @@ export default function League() {
       const ground = Number(form.get("ground"));
       const window = leagueWindow(await file.text(), ground);
       if (
-        window[0].timestampMs! < Date.parse(round.opens_at) ||
-        window.at(-1)!.timestampMs! >= Date.parse(round.closes_at)
+        !preview &&
+        (window[0].timestampMs! < Date.parse(round.opens_at) ||
+          window.at(-1)!.timestampMs! >= Date.parse(round.closes_at))
       )
         throw new Error("The jump must take place within this round's dates.");
       const id = crypto.randomUUID();
       path = `${session.user.id}/${round.id}/${id}.csv`;
       setStatus("Uploading your private track…");
-      const upload = await supabase.storage
+      const upload = await client.storage
         .from("league-tracks")
         .upload(path, file, { contentType: "text/csv", upsert: false });
       if (upload.error) throw upload.error;
-      const { error } = await supabase
-        .from("league_entries")
-        .insert({
-          id,
-          user_id: session.user.id,
-          round_id: round.id,
-          public_name: String(form.get("name")).trim(),
-          region: form.get("region"),
-          discipline: form.get("discipline"),
-          location_name: String(form.get("location")).trim(),
-          ground_elevation_m: ground,
-          file_path: path,
-          coaching_requested: form.get("coaching") === "on",
-        });
+      const { error } = await client.from("league_entries").insert({
+        id,
+        user_id: session.user.id,
+        round_id: round.id,
+        public_name: String(form.get("name")).trim(),
+        region: form.get("region"),
+        discipline: form.get("discipline"),
+        location_name: String(form.get("location")).trim(),
+        ground_elevation_m: ground,
+        file_path: path,
+        coaching_requested: form.get("coaching") === "on",
+      });
       if (error) throw error;
       submitted = true;
       formRef.current?.reset();
@@ -264,7 +267,7 @@ export default function League() {
       await refresh();
     } catch (error) {
       if (path && !submitted)
-        await supabase.storage.from("league-tracks").remove([path]);
+        await client.storage.from("league-tracks").remove([path]);
       setStatus(
         error instanceof Error
           ? error.message
@@ -291,7 +294,7 @@ export default function League() {
         const detail = context ? await context.json().catch(() => null) : null;
         throw new Error(detail?.error ?? response.error.message);
       }
-      setStatus(success);
+      setStatus(preview ? "Local simulation complete. No live competition data was changed." : success);
       await refresh();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Please retry.");
@@ -308,16 +311,14 @@ export default function League() {
         closes = new Date(String(form.get("closes")));
       if (!(closes > opens))
         throw new Error("The closing date must be after the opening date.");
-      return await supabase
-        .from("league_rounds")
-        .insert({
-          title: String(form.get("title")).trim(),
-          opens_at: opens.toISOString(),
-          closes_at: closes.toISOString(),
-          published: false,
-        });
+      return await client.from("league_rounds").insert({
+        title: String(form.get("title")).trim(),
+        opens_at: opens.toISOString(),
+        closes_at: closes.toISOString(),
+        published: false,
+      });
     }, "Draft round created. Check the dates before publishing.");
-    const { data } = await supabase
+    const { data } = await client
       .from("league_rounds")
       .select("id,title,opens_at,closes_at,published")
       .order("opens_at", { ascending: false });
@@ -701,12 +702,19 @@ export default function League() {
                   Sign in or create your competitor account. League membership
                   does not grant training-app access.
                 </p>
-                <LeagueGoogleSignIn onStatus={setAuthStatus} />
+                {preview ? (
+                  <p className="league-notice">
+                    Choose Competitor or Organiser in the development toolbar
+                    above to explore the signed-in screens.
+                  </p>
+                ) : (
+                  <LeagueGoogleSignIn onStatus={setAuthStatus} />
+                )}
                 <p className="league-caption">
                   Use your Google account to join the pilot league.
                 </p>
                 {authStatus && <p role="status">{authStatus}</p>}
-                {emailSignInEnabled && (
+                {emailSignInEnabled && !preview && (
                   <>
                     <p className="league-caption">Or continue by email</p>
                     <form onSubmit={signIn}>
@@ -752,7 +760,7 @@ export default function League() {
                   <span>Signed in as {session.user.email}</span>
                   <button
                     disabled={busy}
-                    onClick={() => void supabase.auth.signOut()}
+                    onClick={() => void client.auth.signOut()}
                   >
                     Sign out
                   </button>
@@ -926,10 +934,9 @@ export default function League() {
                           onClick={() =>
                             void act(
                               async () =>
-                                await supabase.functions.invoke(
-                                  "league-score",
-                                  { body: { entry_id: entry.id } },
-                                ),
+                                await client.functions.invoke("league-score", {
+                                  body: { entry_id: entry.id },
+                                }),
                               "Scores calculated from the original file and archived winds.",
                             )
                           }
@@ -940,7 +947,7 @@ export default function League() {
                           disabled={busy}
                           onClick={() =>
                             void act(async () => {
-                              const response = await supabase.storage
+                              const response = await client.storage
                                 .from("league-tracks")
                                 .download(entry.file_path);
                               if (response.error) return response;
@@ -973,7 +980,7 @@ export default function League() {
                           onClick={() =>
                             void act(
                               async () =>
-                                await supabase.rpc("league_review_entry", {
+                                await client.rpc("league_review_entry", {
                                   entry_id: entry.id,
                                   decision: "approved",
                                   note: note[entry.id] ?? "",
@@ -989,7 +996,7 @@ export default function League() {
                           onClick={() =>
                             void act(
                               async () =>
-                                await supabase.rpc("league_review_entry", {
+                                await client.rpc("league_review_entry", {
                                   entry_id: entry.id,
                                   decision: "rejected",
                                   note: note[entry.id] ?? "",
@@ -1022,7 +1029,7 @@ export default function League() {
                         onClick={() =>
                           void act(
                             async () =>
-                              await supabase.rpc("league_coaching_note", {
+                              await client.rpc("league_coaching_note", {
                                 entry_id: entry.id,
                                 note:
                                   feedback[entry.id] ??
@@ -1097,7 +1104,7 @@ export default function League() {
                     )
                   )
                     void act(async () => {
-                      const response = await supabase
+                      const response = await client
                         .from("league_rounds")
                         .update({ published: true })
                         .eq("id", round.id);

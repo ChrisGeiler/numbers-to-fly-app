@@ -12,6 +12,58 @@
 body {
   margin: 0;
 }
+.league-dev-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: 16px 5%;
+  background: #fff0c4;
+  border-bottom: 1px solid #cfb66c;
+  color: #493b16;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  font-family: "DM Sans", sans-serif;
+}
+.league-dev-toolbar strong {
+  font-size: 14px;
+}
+.league-dev-toolbar p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.league-dev-controls {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.league-dev-controls label {
+  font-size: 11px;
+}
+.league-dev-controls select,
+.league-dev-controls button {
+  border: 1px solid #bfaa70;
+  border-radius: 3px;
+  padding: 9px 11px;
+  background: #fffaf0;
+  color: #493b16;
+  font-size: 12px;
+}
+.league-dev-controls select {
+  display: block;
+  margin-top: 4px;
+}
+@media (max-width: 760px) {
+  .league-dev-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+}
 html {
   scroll-behavior: smooth;
   scroll-padding-top: 30px;
