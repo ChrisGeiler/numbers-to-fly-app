@@ -35,6 +35,7 @@ jobs:
         run: |
           npx tsc -b
           npm run test:reference-points
+          npm run test:league
           npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
