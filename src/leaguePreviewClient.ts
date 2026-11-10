@@ -1,19 +1,25 @@
 // LOCAL_LEAGUE_PREVIEW_ONLY: UI fixtures, never an authentication bypass.
-// This adapter has no network client, credentials or connection to Supabase.
+// Supabase data/auth remain local. Weather lookup and GPS scoring are real.
 import type { supabase } from "./supabase";
+import {
+  leagueWindow,
+  fetchLeagueWinds,
+  scoreLeagueWindow,
+  LEAGUE_SCORING_VERSION,
+  LEAGUE_WIND_MODEL,
+} from "./leagueScoring.ts";
 
 export type PreviewRole = "visitor" | "competitor" | "organiser";
 type Row = Record<string, unknown>;
 type Reply = { data: unknown; error: { message: string } | null };
 export const PREVIEW_USER_ID = "10000000-0000-4000-8000-000000000001";
-const OTHER_USER_ID = "10000000-0000-4000-8000-000000000002";
 const ROUND_ID = "20000000-0000-4000-8000-000000000001";
 const ok = (data: unknown = null): Reply => ({ data, error: null });
 const fail = (message: string): Reply => ({ data: null, error: { message } });
 
 export function createPreviewStore() {
   const now = new Date();
-  const opens = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const opens = "2022-01-01T00:00:00.000Z";
   const closes = new Date(
     now.getFullYear(),
     now.getMonth() + 1,
@@ -21,58 +27,15 @@ export function createPreviewStore() {
   ).toISOString();
   const round = {
     id: ROUND_ID,
-    title: "Sample monthly round",
+    title: "Local scoring test round",
     opens_at: opens,
     closes_at: closes,
     published: true,
   };
-  const rows: Row[] = ["speed", "time", "distance"].flatMap((discipline, i) => [
-    {
-      id: `30000000-0000-4000-8000-00000000000${i + 1}`,
-      user_id: OTHER_USER_ID,
-      round_id: ROUND_ID,
-      public_name: "Alex · sample competitor",
-      region: "NSW",
-      discipline,
-      location_name: "Sample drop zone",
-      ground_elevation_m: 100,
-      file_path: "sample-only.csv",
-      submitted_at: now.toISOString(),
-      status: "approved",
-      time_s: 42 + i * 2,
-      raw_distance_m: 2700,
-      raw_speed_kmh: 230,
-      corrected_distance_m: 2500,
-      corrected_speed_kmh: 214,
-      scoring_version: "sample-preview",
-      coaching_requested: false,
-      coaching_note: null,
-      review_note: "Sample approved result",
-    },
-  ]);
-  rows.push({
-    id: "30000000-0000-4000-8000-000000000009",
-    user_id: PREVIEW_USER_ID,
-    round_id: ROUND_ID,
-    public_name: "Sam · sample competitor",
-    region: "VIC",
-    discipline: "distance",
-    location_name: "Sample drop zone",
-    ground_elevation_m: 100,
-    file_path: "sample-only.csv",
-    submitted_at: now.toISOString(),
-    status: "pending",
-    time_s: null,
-    raw_distance_m: null,
-    raw_speed_kmh: null,
-    corrected_distance_m: null,
-    corrected_speed_kmh: null,
-    scoring_version: null,
-    coaching_requested: true,
-    coaching_note: null,
-    review_note: null,
-  });
+  const rows: Row[] = [];
   return {
+    instanceId: crypto.randomUUID(),
+    persist: undefined as (() => Promise<void>) | undefined,
     rounds: [round] as Row[],
     entries: rows,
     files: new Map<string, Blob>(),
@@ -83,6 +46,7 @@ export type PreviewStore = ReturnType<typeof createPreviewStore>;
 export function createLeaguePreviewClient(
   store: PreviewStore,
   role: PreviewRole,
+  fetcher: typeof fetch = fetch,
 ): typeof supabase {
   const organiser = role === "organiser";
   let signedIn = role !== "visitor";
@@ -141,6 +105,24 @@ export function createLeaguePreviewClient(
       if (this.operation === "insert") {
         if (!signedIn || (this.table === "league_rounds" && !organiser))
           return fail("Choose the organiser preview to create rounds.");
+        if (this.table === "league_entries") {
+          const round = store.rounds.find(
+            (row) => row.id === this.payload.round_id,
+          );
+          if (
+            this.payload.user_id !== PREVIEW_USER_ID ||
+            !store.files.has(String(this.payload.file_path))
+          )
+            return fail(
+              "Upload your original file before submitting the entry.",
+            );
+          if (
+            !round?.published ||
+            Date.now() < Date.parse(String(round.opens_at)) ||
+            Date.now() >= Date.parse(String(round.closes_at))
+          )
+            return fail("This round is not accepting entries.");
+        }
         rows.push({
           id: crypto.randomUUID(),
           status: "pending",
@@ -149,12 +131,18 @@ export function createLeaguePreviewClient(
           review_note: null,
           ...this.payload,
         });
+        await store.persist?.();
         return ok();
       }
       if (this.operation === "update") {
         if (!organiser || this.table !== "league_rounds")
           return fail("This preview action requires the organiser view.");
+        if (rows.some((row) => matches(row) && row.published))
+          return fail(
+            "Published rounds are locked. Create a new round instead.",
+          );
         rows.filter(matches).forEach((row) => Object.assign(row, this.payload));
+        await store.persist?.();
         return ok();
       }
       let visible = rows
@@ -247,14 +235,30 @@ export function createLeaguePreviewClient(
       const entry = store.entries.find((row) => row.id === args.entry_id);
       if (!entry) return fail("Preview entry not found.");
       if (name === "league_review_entry") {
-        if (args.decision === "approved" && !entry.scoring_version)
-          return fail("Calculate the sample scores before approving.");
+        if (!["approved", "rejected"].includes(String(args.decision)))
+          return fail("Invalid review decision.");
+        if (
+          args.decision === "approved" &&
+          (entry.scoring_version !== LEAGUE_SCORING_VERSION ||
+            !(entry.wind_snapshot as { model?: string })?.model ||
+            (entry.wind_snapshot as { model: string }).model !==
+              LEAGUE_WIND_MODEL)
+        )
+          return fail(
+            "Calculate wind-corrected scores from the original track before approving.",
+          );
+        if (args.decision === "approved" && entry.round_eligible !== true)
+          return fail(
+            "The jump is outside this round’s dates and cannot be approved.",
+          );
         entry.status = args.decision;
         entry.review_note = args.note;
+        await store.persist?.();
         return ok();
       }
       if (name === "league_coaching_note") {
         entry.coaching_note = args.note;
+        await store.persist?.();
         return ok();
       }
       return fail("This action is not part of the local preview.");
@@ -263,11 +267,32 @@ export function createLeaguePreviewClient(
       from: () => ({
         upload: async (path: string, file: Blob) => {
           if (!signedIn) return fail("Choose a signed-in preview role.");
+          const [userId, roundId] = path.split("/");
+          const round = store.rounds.find((row) => row.id === roundId);
+          if (
+            userId !== PREVIEW_USER_ID ||
+            !round?.published ||
+            Date.now() < Date.parse(String(round.opens_at)) ||
+            Date.now() >= Date.parse(String(round.closes_at))
+          )
+            return fail("Upload requires your own folder and an open round.");
+          if (file.size === 0 || file.size > 8388608)
+            return fail("Choose a FlySight CSV smaller than 8 MB.");
+          if (store.files.has(path))
+            return fail("Original tracks cannot be replaced.");
+          const folder = path.split("/").slice(0, 2).join("/") + "/";
+          if (
+            [...store.files.keys()].filter((key) => key.startsWith(folder))
+              .length >= 12
+          )
+            return fail("Maximum 12 tracks per round.");
           store.files.set(path, file);
+          await store.persist?.();
           return ok({ path });
         },
         remove: async (paths: string[]) => {
           paths.forEach((path) => store.files.delete(path));
+          await store.persist?.();
           return ok();
         },
         download: async (path: string) =>
@@ -285,23 +310,72 @@ export function createLeaguePreviewClient(
       ) => {
         if (!signedIn || !organiser)
           return fail(
-            "Choose the organiser preview to calculate sample scores.",
+            "Choose the organiser test view to calculate wind-corrected scores.",
           );
         const entry = store.entries.find(
           (row) => row.id === options.body.entry_id,
         );
         if (!entry) return fail("Preview entry not found.");
-        Object.assign(entry, {
-          time_s: 40,
-          raw_distance_m: 2750,
-          raw_speed_kmh: 247.5,
-          corrected_distance_m: 2380,
-          corrected_speed_kmh: 214.2,
-          scoring_version: "sample-preview",
-        });
-        return ok({
-          message: "Sample scores only; no weather API was called.",
-        });
+        if (_name !== "league-score") return fail("Unsupported test function.");
+        if (entry.status !== "pending")
+          return fail("Only pending entries can be calculated.");
+        if (entry.scoring_version === LEAGUE_SCORING_VERSION)
+          return ok({
+            message:
+              "Previously calculated result retained with its saved winds.",
+          });
+        try {
+          const original = store.files.get(String(entry.file_path));
+          if (!original)
+            return fail(
+              "Original GPS file is missing. Upload a track to test real scoring.",
+            );
+          const buffer = await original.arrayBuffer();
+          const file_hash = Array.from(
+            new Uint8Array(await crypto.subtle.digest("SHA-256", buffer)),
+            (b) => b.toString(16).padStart(2, "0"),
+          ).join("");
+          if (
+            store.entries.some(
+              (other) =>
+                other.id !== entry.id &&
+                other.user_id === entry.user_id &&
+                other.round_id === entry.round_id &&
+                other.discipline === entry.discipline &&
+                other.file_hash === file_hash,
+            )
+          )
+            return fail(
+              "This original file has already been scored in this task and round.",
+            );
+          const points = leagueWindow(
+            new TextDecoder().decode(buffer),
+            Number(entry.ground_elevation_m),
+          );
+          const wind_snapshot = await fetchLeagueWinds(points, fetcher);
+          const scores = scoreLeagueWindow(points, wind_snapshot);
+          const round = store.rounds.find((row) => row.id === entry.round_id);
+          const round_eligible =
+            !!round &&
+            points[0].timestampMs! >= Date.parse(String(round.opens_at)) &&
+            points.at(-1)!.timestampMs! < Date.parse(String(round.closes_at)) &&
+            points.at(-1)!.timestampMs! <=
+              Date.parse(String(entry.submitted_at));
+          Object.assign(entry, {
+            ...scores,
+            wind_snapshot,
+            file_hash,
+            round_eligible,
+          });
+          await store.persist?.();
+          return ok({ ...scores, model: wind_snapshot.model });
+        } catch (error) {
+          return fail(
+            error instanceof Error
+              ? error.message
+              : "Could not calculate this track. It remains pending.",
+          );
+        }
       },
     },
   };

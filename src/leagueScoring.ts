@@ -56,10 +56,12 @@ export function leagueWindow(csv: string, ground: number) {
     throw new Error("The complete 2,500–1,500 m AGL window is required.");
   // Validate the original boundary segments too; clipping must not hide gaps.
   validateLeagueWindow(points.slice(start - 1, end + 1));
+  const entry = crossAt(points[start - 1], points[start], top);
+  const exit = crossAt(points[end - 1], points[end], bottom);
   const window = [
-    crossAt(points[start - 1], points[start], top),
-    ...points.slice(start, end),
-    crossAt(points[end - 1], points[end], bottom),
+    entry,
+    ...points.slice(start, end).filter(point => point.timestampMs! > entry.timestampMs! && point.timestampMs! < exit.timestampMs!),
+    exit,
   ];
   validateLeagueWindow(window);
   return window;

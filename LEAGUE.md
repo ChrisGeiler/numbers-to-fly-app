@@ -5,27 +5,50 @@ its existing access controls. League sign-in never inserts into `app_access`.
 Only authorised app users see the optional Numbers to Fly link on the league.
 The working name, colours and copy are provisional.
 
-## Local development review
+## Local development testing
 
 Keep this pilot unpublished until the organiser explicitly approves release.
-Vite development on a loopback host opens a separate preview adapter with a
-sticky Visitor / Competitor / Organiser selector. It starts in Organiser view
-so round setup, approvals and coaching can be reviewed without Google sign-in.
-All names and results are sample data; score calculation is simulated. Local
-test uploads stay in browser memory. Reset sample data or refresh to discard
-changes. This adapter does not call Supabase, send emails or create real auth
-tokens. It is dynamically imported only under `import.meta.env.DEV` on localhost
-and is excluded from production builds.
+Vite development on a loopback host opens a local test adapter with Visitor,
+Competitor and Organiser views. There are no preloaded competitors or placeholder
+scores. The initial local test round covers archived jumps from 2022 onwards;
+it is not an official monthly round.
+
+Uploads store the actual original CSV in this browser's IndexedDB. Entries,
+results, retained winds and coaching feedback survive refresh on the same local
+origin. Reset local test clears only this test data after confirmation. It does
+not touch Supabase. Different hosts or ports use separate browser stores.
+
+Calculate wind-corrected scores reads that original file, uses the same parser,
+window and scoring functions as the server, and fetches real archived GFS Global
+winds from Open-Meteo. No fixed or fabricated values are assigned. An organiser
+upload calculates automatically; competitor uploads wait for organiser
+calculation. Failures leave the entry pending. Cached calculations retain their
+original weather snapshot and SHA-256. Approval updates only the local test
+leaderboard. The wide test round permits historical tracks; user-created test
+rounds can test eligibility restrictions.
+
+Only the account/role selection and database transport remain local adapters.
+This verifies genuine file/weather/calculation behaviour and local workflow; it
+does not verify real Google login, Supabase RLS, the deployed Edge Function or
+production storage HTTP uploads. The SQL role tests cover database permissions
+separately. Complete an authenticated end-to-end run before opening a live round.
 
 Try real sign-in switches back to the existing authenticated backend. The
 observed local login blocker is Google's `origin not allowed` error. Add the
 exact local origin to the Google OAuth client's Authorized JavaScript origins
-before testing real local login. Google documents adding both `http://localhost`
-and the exact port origin, such as `http://localhost:5175`; `127.0.0.1` is a
-different origin and also needs its own exact entry if used. No Google settings
-or production authentication permissions are changed by the preview adapter.
+before testing real local login. No Google settings or production authentication
+permissions are changed by the local test adapter. The adapter and its local
+accounts remain excluded from production builds.
 
 ## Competitor journey
+
+Home state starts unselected and remembers the last chosen state in browser
+storage. The selector excludes TAS. Drop zone uses the supplied club list, with
+Moruya replacing Skydive Oz. Selecting a CSV and entering ground elevation shows
+the calculated score for the nominated task: km/h, seconds or metres. Changing
+the task changes the displayed score; changing elevation recalculates the
+window. Speed and distance previews are provisional ground measurements, not
+wind-corrected official results. No weather lookup occurs during file selection.
 
 Sign in with Google using the existing production Google client. Choose an open
 round, a discipline, public name, home state, drop zone and verified ground

@@ -557,6 +557,28 @@ button:disabled {
   padding: 15px;
   border-radius: 3px;
 }
+.league-upload-score {
+  padding: 18px;
+  margin: 0 0 20px;
+  border: 1px solid #bdc8a8;
+  border-radius: 4px;
+  background: #f0f4e7;
+  overflow-wrap: anywhere;
+}
+.league-upload-score h4 {
+  margin: 10px 0;
+  font-family: "Manrope", sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+}
+.league-upload-score > strong {
+  font-size: 30px;
+  font-weight: 600;
+}
+.league-upload-score > strong span {
+  font-size: 14px;
+  font-weight: 400;
+}
 .league-signed-in {
   display: flex;
   gap: 12px;
