@@ -1,6 +1,27 @@
 # Australian Wingsuit League — initial pilot
 
-Independent entry point: `/league.html`. The existing app stays at `/` behind
+## Release — 11 November 2026
+
+Published route: `https://numbers.flywithcruza.com/ozleague/`.
+The legacy `/league.html` route remains available. Registration approval,
+scoreboard/replay and pending-entry editing migrations have now been applied
+to the live project. The revision-aware `league-score` function is deployed
+with JWT verification. Database access checks passed with all fixtures rolled
+back. No local competitors, tracks, scores or test rounds were migrated.
+
+Live rounds must be created and published by the organiser. Production scoring
+enforces the GPS scoring window's timestamps against the selected round dates,
+and rejects jumps after submission. The local development adapter alone permits
+tracks from other months for testing. Local roles are excluded from builds.
+
+The promotional screenshot tiles support full-size previews. Training-app
+access remains separately approved. Meteomatics is not configured; production
+uses Open-Meteo GFS. The optional weather fallback remains local infrastructure.
+
+The development notes below describe the implementation history; references
+to migrations being prepared/unapplied predate this release.
+
+Independent entry point: `/ozleague/`. The existing app stays at `/` behind
 its existing access controls. League sign-in never inserts into `app_access`.
 Only authorised app users see the optional Numbers to Fly link on the league.
 The working name, colours and copy are provisional.
@@ -166,3 +187,123 @@ allowance is finite; multiple retained rounds may warrant a plan change.
 Check Open-Meteo's current commercial-use terms before offering paid coaching
 against this weather integration. The initial integration uses its public API;
 it does not purchase a commercial licence or take payments.
+# Drop zone elevation references
+
+Pending entry editing: competitors can use Edit submitted track on their own
+pending entries while the round is open and their registration remains approved.
+They can change public name, state, discipline, DZ, elevation, coaching request,
+or optionally replace the CSV. Cancel does not alter the saved entry. Replacement
+uploads are immutable new objects; the previous object is cleaned up only after
+the edit succeeds. At the 12-entry limit, one temporary replacement upload is
+allowed without permitting a thirteenth entry.
+
+The guarded league_edit_entry RPC accepts only editable fields, preserves entry
+identity / owner / round, increments revision and clears all scores, wind data,
+file hash and derived replay. It remains pending. Organiser review recalculates
+each new revision. In-flight calculations and stale review decisions cannot
+overwrite or approve a different revision. Approved / rejected / closed-round
+entries are not editable by competitors. These rules are verified in local
+adapter tests and the replacement-file browser workflow on port 5176.
+
+Production preparation only: 20261111045931_add_pending_league_entry_edits.sql
+and the revision-aware league-score source are not applied / deployed. Apply
+pending migrations before releasing the updated UI and scorer together.
+
+Local multi-competitor testing: choose View as Competitor, then Test competitor
+1-4 in the development toolbar. Each profile has a distinct stable test user ID,
+registration approval, uploads, entries and scoreboard row. Existing local data
+remains with Competitor 1. Request registration for each new profile and approve
+it in Organiser mode before submitting. The selected profile is remembered in
+browser storage. No Google/Supabase account is created or signed in. Original
+downloads and upload cleanup remain restricted to the active profile; the
+organiser can review all competitors. Public names are filled from registration.
+
+## Round scoreboard and replay
+
+Each selected round has a scoreboard with grouped Distance, Speed and Time
+attempts, per-attempt percentages, best task percentages and a round total.
+The league uses the best approved attempt per discipline, up to 100
+points each / 300 total; equal scores share rank. This differs from averaging
+all championship jumps. Only approved entries from published rounds appear.
+
+Up to four score cells can be selected for replay. Traces are requested only
+after Replay selected is clicked. Replay uses the saved scoring wind snapshot,
+interpolates actual GPS timestamps, removes the integrated horizontal wind
+vector, aligns scoring-window entry at zero seconds / zero distance, and rotates
+each flight onto its corrected overall flight direction. The displayed endpoint
+matches the authoritative corrected displacement. Altitude remains AGL and time
+is unchanged. Only the 2,500-1,500 m scored window is replayed.
+
+Controls: play/pause, restart, continuous scrubber, 0.25-4x playback, corrected
+distance / elapsed-time axis and zoom. Shorter tracks freeze at their own finish.
+Public payloads contain relative seconds, AGL altitude, relative horizontal
+geometry and corrected speed only. They exclude GPS coordinates, absolute times,
+original files, weather-location payloads, email and private coaching notes.
+Withdrawn / unapproved / draft-round entries cannot be replayed. The RPC enforces
+one to four distinct entries from a single round; originals retain private access.
+
+The local adapter implements these RPCs and can generate legacy approved replays
+from saved winds on demand without another weather request. Newly scored entries
+persist the derived replay. Synthetic four-track browser QA is isolated on port
+5176; user data on port 5175 is not seeded or approved by these tests.
+
+Production preparation only: migration
+20261111015621_add_league_scoreboard_replay.sql adds replay_data and narrow public
+league_round_scoreboard / league_replay_tracks RPCs, and league-score prepares the
+derived payload on scoring. This migration and Edge Function change have NOT
+been applied or deployed. Existing production scored entries would need an
+organiser-controlled replay backfill from their original file and saved winds
+before becoming replayable. No production originals are made public.
+
+Local weather reliability: Vite serves a same-origin POST /api/league-winds
+endpoint, used by both import preview and the local review scorer. It gives
+Open-Meteo 45 seconds, shares identical in-flight lookups and retains up to 100
+successful snapshots for one hour in server memory. Saved scored entries retain
+their original snapshots; they are never silently recalculated.
+
+An optional server-only Meteomatics fallback is prepared. It requires
+METEOMATICS_USERNAME and METEOMATICS_PASSWORD in .env.local, with account access
+to historical upper-air data. See .env.league-weather.example. No account is
+currently configured or purchased. Do not prefix credentials with VITE_.
+The fallback explicitly requests source=ncep-gfs to preserve the league's fixed
+GFS model; it is not an assertion that a different model is more accurate.
+Snapshots record provider, model, retrieval time and fallback reason. Failed or
+incomplete winds still prevent approval. Meteomatics parsing/fallback is tested
+with mocked responses; a live credentialed test remains outstanding.
+
+This server-only fallback is local development infrastructure. It has not been
+deployed to Supabase or published. A production preview needs an authenticated
+server endpoint with secrets before enabling this fallback there.
+
+The organiser review desk automatically calculates previously unscored pending
+entries from their original files and archived winds, refreshing each result.
+Failures are shown on the affected card and can be retried manually. The local
+scorer persists raw time, speed and distance before the weather request, so a
+weather failure does not hide valid raw measurements. Approval still requires
+successful authoritative scoring with saved winds. Import previews alone never
+make an entry approvable.
+
+The jump-import score panel shows both raw and wind-corrected scores for the
+selected task. Raw measurements remain local. Selecting a track with a valid
+DZ elevation automatically retrieves archived GFS winds using the shared scoring
+functions. Location/time lookup is required for entry; there is no opt-in checkbox.
+Changing the original file or elevation invalidates the previous corrected
+preview, cancels the old request and recalculates; changing task reuses the
+calculated metrics. Unavailable winds show an error, never a zero-wind fallback.
+These previews remain provisional until server calculation and organiser review.
+
+The local league uses Skyderby MSL elevations for all 12 matched locations:
+Lower Light 17 m, Commando 45 m, Tully 20 m, Hillman Farm 258 m, Elderslie 34 m,
+Ramblers 94 m, Langhorne Creek 6 m, Byron Bay 7 m, Great Ocean Road 15 m,
+Jurien Bay 3 m, Moruya 5 m, and Torquay 9 m. Each links to its place record.
+Checked 11 November 2026. APF values are no longer used for the import reference.
+
+Selecting a DZ fills its Skyderby elevation into the controlled scoring field,
+which recalculates an already selected track and is submitted as ground_elevation_m.
+Changing DZ replaces the previous value; selecting an unmatched DZ clears it so
+an elevation from another location cannot carry across. Manual adjustment remains
+available. Previous entries and their recorded elevations are unchanged.
+
+Airlie Beach Skydivers, Coastal Skydive SA and Darwin Parachute Club were not
+matched in Skyderby's Australian places list and require a manual confirmed value.
+No runway, weather-station or town elevation is used as a substitute.

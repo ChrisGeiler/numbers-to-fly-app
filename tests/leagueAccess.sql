@@ -64,7 +64,7 @@ do $$ begin
   begin
     perform public.league_review_entry(current_setting('league.test_entry')::uuid,'approved','');
     raise exception 'Unscored result approved';
-  exception when raise_exception then if sqlerrm <> 'Calculate valid scores before approving this entry' then raise; end if; end;
+  exception when raise_exception then if sqlerrm <> 'Entry changed or needs recalculation. Refresh and review before approving' then raise; end if; end;
 end $$;
 reset role;
 -- Only a trusted server can write the calculated values.

@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test:league": "node --experimental-strip-types --test tests/leagueScoring.test.ts tests/leaguePreview.test.ts tests/leagueUploadScore.test.ts",
+    "test:league": "node --experimental-strip-types --test tests/leagueScoring.test.ts tests/leaguePreview.test.ts tests/leagueUploadScore.test.ts tests/leagueWeather.test.ts tests/leagueReplay.test.ts",
     "test:wind-forecast": "node --experimental-strip-types --test tests/windForecast.test.ts",
     "test:reference-points": "node --experimental-strip-types --test tests/referencePoints.test.ts",
     "dev": "vite",

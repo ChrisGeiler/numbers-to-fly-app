@@ -6,6 +6,8 @@ export const LEAGUE_WIND_MODEL = "gfs_global";
 export type LeagueWindLevel = { height: number; north: number; east: number };
 export type LeagueWindSnapshot = {
   model: string;
+  provider?: "open-meteo" | "meteomatics";
+  fallback_reason?: string;
   fetched_at: string;
   hours: { time: number; levels: LeagueWindLevel[] }[];
 };
@@ -116,15 +118,10 @@ function atHeight(levels: LeagueWindLevel[], height: number) {
   };
 }
 
-export function scoreLeagueWindow(
-  points: GpsTrackPoint[],
-  snapshot: LeagueWindSnapshot,
-) {
-  validateLeagueWindow(points);
+export function leagueWindAtPoint(p: GpsTrackPoint, snapshot: LeagueWindSnapshot) {
   if (snapshot.model !== LEAGUE_WIND_MODEL)
     throw new Error("The round requires the fixed GFS Global model.");
   const hours = [...snapshot.hours].sort((a, b) => a.time - b.time);
-  const windAt = (p: GpsTrackPoint) => {
     const lo = hours.filter((h) => h.time <= p.timestampMs!).at(-1),
       hi = hours.find((h) => h.time >= p.timestampMs!);
     if (!lo || !hi)
@@ -139,7 +136,12 @@ export function scoreLeagueWindow(
       north: a.north + (b.north - a.north) * f,
       east: a.east + (b.east - a.east) * f,
     };
-  };
+}
+
+export function scoreLeagueWindow(points: GpsTrackPoint[], snapshot: LeagueWindSnapshot) {
+  validateLeagueWindow(points);
+  if (snapshot.model !== LEAGUE_WIND_MODEL)
+    throw new Error("The round requires the fixed GFS Global model.");
   let north = 0,
     east = 0,
     windNorth = 0,
@@ -152,7 +154,7 @@ export function scoreLeagueWindow(
     (((last.lon - origin.lon) * Math.PI) / 180) *
     6371000 *
     Math.cos((((last.lat + origin.lat) / 2) * Math.PI) / 180);
-  const winds = points.map(windAt);
+  const winds = points.map(p => leagueWindAtPoint(p, snapshot));
   for (let i = 1; i < points.length; i++) {
     const dt = (points[i].timestampMs! - points[i - 1].timestampMs!) / 1000;
     windNorth += ((winds[i - 1].north + winds[i].north) / 2) * dt;
@@ -209,26 +211,27 @@ export async function fetchLeagueWinds(
   });
   const response = await fetcher(
     `https://historical-forecast-api.open-meteo.com/v1/forecast?${params}`,
-    { signal: AbortSignal.timeout(20000) },
+    { signal: AbortSignal.timeout(45000) },
   );
   if (!response.ok)
     throw new Error(
       "Archived winds are unavailable. Retry later; the entry remains pending.",
     );
-  const data = await response.json();
-  if (!data.hourly?.time?.length)
+  const data = await response.json() as { hourly?: { time?: number[]; [key: string]: (number | null)[] | undefined } };
+  const hourly = data.hourly;
+  if (!hourly?.time?.length)
     throw new Error("No archived wind data returned.");
-  const hours = data.hourly.time.map((time: number, i: number) => ({
+  const hours = hourly.time.map((time: number, i: number) => ({
     time: time * 1000,
     levels: levels.flatMap((p) => {
-      const height = data.hourly[`geopotential_height_${p}hPa`]?.[i];
-      const speed = data.hourly[`wind_speed_${p}hPa`]?.[i];
-      const direction = data.hourly[`wind_direction_${p}hPa`]?.[i];
+      const height = hourly[`geopotential_height_${p}hPa`]?.[i];
+      const speed = hourly[`wind_speed_${p}hPa`]?.[i];
+      const direction = hourly[`wind_direction_${p}hPa`]?.[i];
       if (
         ![height, speed, direction].every(
           (v) => typeof v === "number" && Number.isFinite(v),
         ) ||
-        speed < 0
+        speed == null || speed < 0 || height == null || direction == null
       )
         return [];
       const angle = (direction * Math.PI) / 180;
@@ -243,6 +246,7 @@ export async function fetchLeagueWinds(
   }));
   return {
     model: LEAGUE_WIND_MODEL,
+    provider: "open-meteo",
     fetched_at: new Date().toISOString(),
     hours,
   };

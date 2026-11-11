@@ -4,6 +4,7 @@ import {
   leagueWindow,
   scoreLeagueWindow,
 } from "../../../src/leagueScoring.ts";
+import { buildLeagueReplay } from "../../../src/leagueReplay.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -69,9 +70,8 @@ Deno.serve(async (request) => {
       .single();
     const round = roundResponse.data;
     if (!round?.published) throw new Error("Round is not published.");
-    if (
-      entry.file_path !== `${entry.user_id}/${entry.round_id}/${entry.id}.csv`
-    )
+    const prefix = `${entry.user_id}/${entry.round_id}/`;
+    if (!entry.file_path.startsWith(prefix) || !/^[0-9a-f-]{36}[.]csv$/.test(entry.file_path.slice(prefix.length)))
       throw new Error("Invalid original file path.");
     const download = await admin.storage
       .from("league-tracks")
@@ -100,9 +100,11 @@ Deno.serve(async (request) => {
     const scores = scoreLeagueWindow(points, winds);
     const update = await admin
       .from("league_entries")
-      .update({ ...scores, wind_snapshot: winds, file_hash })
+      .update({ ...scores, wind_snapshot: winds, file_hash,
+        replay_data: buildLeagueReplay(new TextDecoder().decode(buffer), entry.ground_elevation_m, winds) })
       .eq("id", entry.id)
       .eq("status", "pending")
+      .eq("revision", entry.revision ?? 0)
       .is("scoring_version", null)
       .select("id");
     if (update.error)

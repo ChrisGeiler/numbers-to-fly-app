@@ -1,6 +1,9 @@
 // LOCAL_LEAGUE_PREVIEW_ONLY: UI fixtures, never an authentication bypass.
 // Supabase data/auth remain local. Weather lookup and GPS scoring are real.
 import type { supabase } from "./supabase";
+import { measureLeagueUploadWindow } from "./leagueUploadScore.ts";
+import { buildLeagueReplay } from "./leagueReplay.ts";
+import type { LeagueWindSnapshot } from "./leagueScoring.ts";
 import {
   leagueWindow,
   fetchLeagueWinds,
@@ -13,6 +16,10 @@ export type PreviewRole = "visitor" | "competitor" | "organiser";
 type Row = Record<string, unknown>;
 type Reply = { data: unknown; error: { message: string } | null };
 export const PREVIEW_USER_ID = "10000000-0000-4000-8000-000000000001";
+export const PREVIEW_COMPETITORS = [1, 2, 3, 4].map(number => ({
+  id: `10000000-0000-4000-8000-${String(number).padStart(12, "0")}`,
+  name: `Competitor ${number}`,
+}));
 const ROUND_ID = "20000000-0000-4000-8000-000000000001";
 const ok = (data: unknown = null): Reply => ({ data, error: null });
 const fail = (message: string): Reply => ({ data: null, error: { message } });
@@ -48,18 +55,24 @@ export function createLeaguePreviewClient(
   store: PreviewStore,
   role: PreviewRole,
   fetcher: typeof fetch = fetch,
+  windLoader: typeof fetchLeagueWinds = fetchLeagueWinds,
+  competitorId = PREVIEW_USER_ID,
 ): typeof supabase {
   const organiser = role === "organiser";
+  const userId = organiser ? PREVIEW_USER_ID : competitorId;
+  const profile = PREVIEW_COMPETITORS.find(profile => profile.id === userId);
+  if (!profile) throw new Error("Choose a valid local test competitor.");
   let signedIn = role !== "visitor";
   const session = () =>
     signedIn
-      ? { user: { id: PREVIEW_USER_ID, email: `${role}@preview.invalid` } }
+      ? { user: { id: userId, email: userId === PREVIEW_USER_ID ? `${role}@preview.invalid` : `competitor${PREVIEW_COMPETITORS.indexOf(profile) + 1}@preview.invalid`,
+          user_metadata: { full_name: store.registrations.find(row => row.user_id === userId)?.public_name ?? profile.name } } }
       : null;
   const canSubmit = () =>
     signedIn &&
     (organiser ||
       store.registrations.some(
-        (row) => row.user_id === PREVIEW_USER_ID && row.status === "approved",
+        (row) => row.user_id === userId && row.status === "approved",
       ));
   const subscribers = new Set<(event: string, session: unknown) => void>();
   class Query {
@@ -116,7 +129,7 @@ export function createLeaguePreviewClient(
           return fail("Choose the organiser preview to create rounds.");
         if (this.table === "league_registrations") {
           if (
-            this.payload.user_id !== PREVIEW_USER_ID ||
+            this.payload.user_id !== userId ||
             Object.keys(this.payload).some(
               (key) => !["user_id", "public_name", "region"].includes(key),
             )
@@ -125,7 +138,7 @@ export function createLeaguePreviewClient(
               "Request your own registration without assigning approval fields.",
             );
           if (
-            store.registrations.some((row) => row.user_id === PREVIEW_USER_ID)
+            store.registrations.some((row) => row.user_id === userId)
           )
             return fail("Your registration has already been requested.");
           if (
@@ -138,6 +151,8 @@ export function createLeaguePreviewClient(
             return fail("Enter your name and home state.");
         }
         if (this.table === "league_entries") {
+          if (store.entries.filter(row=>row.user_id===userId && row.round_id===this.payload.round_id).length >= 12)
+            return fail("Maximum 12 entries per round. Edit an existing pending entry instead.");
           if (!canSubmit())
             return fail(
               "Your league registration must be approved before entering a round.",
@@ -146,7 +161,7 @@ export function createLeaguePreviewClient(
             (row) => row.id === this.payload.round_id,
           );
           if (
-            this.payload.user_id !== PREVIEW_USER_ID ||
+            this.payload.user_id !== userId ||
             !store.files.has(String(this.payload.file_path))
           )
             return fail(
@@ -167,6 +182,7 @@ export function createLeaguePreviewClient(
           email: session()?.user.email ?? "",
           coaching_note: null,
           review_note: null,
+          revision: 0,
           ...this.payload,
         });
         await store.persist?.();
@@ -188,7 +204,7 @@ export function createLeaguePreviewClient(
         .filter((row) =>
           this.table === "league_rounds"
             ? organiser || row.published
-            : signedIn && (organiser || row.user_id === PREVIEW_USER_ID),
+            : signedIn && (organiser || row.user_id === userId),
         );
       if (this.sort) {
         const { column, ascending } = this.sort;
@@ -240,6 +256,45 @@ export function createLeaguePreviewClient(
         return ok(signedIn && organiser);
       // A preview role must never display a link implying real training-app access.
       if (name === "current_user_has_app_access") return ok(false);
+      if (name === "league_round_scoreboard" || name === "league_replay_tracks") {
+        const publicEntries = store.entries.filter(row => row.status === "approved" &&
+          store.rounds.some(round => round.id === row.round_id && round.published))
+          .sort((a, b) => String(a.submitted_at).localeCompare(String(b.submitted_at)) || String(a.id).localeCompare(String(b.id)));
+        const attempts = new Map<string, number>();
+        const projected = publicEntries.map(row => {
+          const key = `${row.round_id}/${row.user_id}/${row.discipline}`;
+          const attempt = (attempts.get(key) ?? 0) + 1;
+          attempts.set(key, attempt);
+          return { id: row.id, competitor_key: row.user_id, public_name: row.public_name,
+            region: row.region, discipline: row.discipline, attempt,
+            replay_available: !!row.replay_data || (!!row.wind_snapshot && store.files.has(String(row.file_path))),
+            time_s: row.time_s, corrected_speed_kmh: row.corrected_speed_kmh,
+            corrected_distance_m: row.corrected_distance_m, raw_speed_kmh: row.raw_speed_kmh,
+            raw_distance_m: row.raw_distance_m };
+        });
+        if (name === "league_round_scoreboard") return ok(projected.filter(row =>
+          publicEntries.find(entry => entry.id === row.id)?.round_id === args.selected_round));
+        const ids = args.entry_ids;
+        if (!Array.isArray(ids) || ids.length < 1 || ids.length > 4 || new Set(ids).size !== ids.length)
+          return fail("Select between one and four distinct approved tracks.");
+        const rows = ids.map(id => publicEntries.find(row => row.id === id));
+        if (rows.some(row => !row)) return fail("A selected track is no longer approved or available.");
+        if (rows.some(row => row!.round_id !== rows[0]!.round_id)) return fail("Select tracks from the same round.");
+        try {
+          const payload = [];
+          for (const row of rows) {
+            if (!row!.replay_data) {
+              const original = store.files.get(String(row!.file_path));
+              if (!original || !row!.wind_snapshot) return fail("Replay is unavailable for this entry. The organiser must calculate its saved replay.");
+              row!.replay_data = buildLeagueReplay(await original.text(), Number(row!.ground_elevation_m), row!.wind_snapshot as LeagueWindSnapshot);
+            }
+            const projection = projected.find(item => item.id === row!.id)!;
+            payload.push({ id: row!.id, public_name: row!.public_name, discipline: row!.discipline, attempt: projection.attempt, replay: row!.replay_data });
+          }
+          await store.persist?.();
+          return ok(payload);
+        } catch (error) {return fail(error instanceof Error ? error.message : "Replay could not be prepared.");}
+      }
       if (name === "league_leaderboard") {
         const best = new Map<string, Row>();
         store.entries
@@ -268,6 +323,36 @@ export function createLeaguePreviewClient(
           })),
         );
       }
+      if (name === "league_edit_entry") {
+        if (!canSubmit()) return fail("Approved registration is required to edit an entry.");
+        const entry = store.entries.find(row => row.id === args.entry_id && row.user_id === userId);
+        if (!entry || entry.status !== "pending") return fail("Only your own pending entries can be edited.");
+        const revision = Number(entry.revision ?? 0);
+        if (args.expected_revision !== revision) return fail("This entry changed. Refresh before editing again.");
+        const round = store.rounds.find(row => row.id === entry.round_id);
+        if (!round?.published || Date.now() < Date.parse(String(round.opens_at)) || Date.now() >= Date.parse(String(round.closes_at)))
+          return fail("Entries can only be edited while the round is open.");
+        const changes = args.changes as Row;
+        const allowed = ["public_name","region","discipline","location_name","ground_elevation_m","coaching_requested","file_path"];
+        if (!changes || typeof changes !== "object" || Object.keys(changes).length !== allowed.length || Object.keys(changes).some(key=>!allowed.includes(key)) ||
+          typeof changes.public_name !== "string" || changes.public_name.trim().length < 2 || changes.public_name.trim().length > 60 ||
+          !["ACT","NSW","NT","QLD","SA","VIC","WA"].includes(String(changes.region)) ||
+          !["speed","time","distance"].includes(String(changes.discipline)) ||
+          typeof changes.location_name !== "string" || changes.location_name.trim().length < 2 || changes.location_name.length > 100 ||
+          typeof changes.ground_elevation_m !== "number" || typeof changes.coaching_requested !== "boolean" ||
+          typeof changes.file_path !== "string" || !changes.file_path.startsWith(`${userId}/${entry.round_id}/`) ||
+          store.entries.some(row=>row.id!==entry.id && row.file_path===changes.file_path))
+          return fail("Invalid entry changes. Scores and approval fields cannot be edited.");
+        const original = store.files.get(changes.file_path);
+        if (!original) return fail("Upload the replacement track before saving changes.");
+        try {leagueWindow(await original.text(), changes.ground_elevation_m);} catch(error) {return fail(error instanceof Error ? error.message : "Invalid track.");}
+        if (entry.status !== "pending" || Number(entry.revision ?? 0) !== revision) return fail("This entry changed while saving. Refresh before editing again.");
+        Object.assign(entry, changes, { revision: revision + 1, submitted_at: new Date().toISOString(),
+          time_s:null,raw_speed_kmh:null,raw_distance_m:null,corrected_speed_kmh:null,corrected_distance_m:null,
+          scoring_version:null,wind_snapshot:null,replay_data:null,file_hash:null,jump_at:null,round_eligible:false });
+        await store.persist?.();
+        return ok();
+      }
       if (!signedIn || !organiser)
         return fail("Choose the organiser preview for this action.");
       if (name === "league_review_registration") {
@@ -290,6 +375,8 @@ export function createLeaguePreviewClient(
       const entry = store.entries.find((row) => row.id === args.entry_id);
       if (!entry) return fail("Preview entry not found.");
       if (name === "league_review_entry") {
+        if (args.expected_revision !== undefined && args.expected_revision !== Number(entry.revision ?? 0))
+          return fail("This entry changed. Refresh and review its latest scores before deciding.");
         if (!["approved", "rejected"].includes(String(args.decision)))
           return fail("Invalid review decision.");
         if (
@@ -302,10 +389,8 @@ export function createLeaguePreviewClient(
           return fail(
             "Calculate wind-corrected scores from the original track before approving.",
           );
-        if (args.decision === "approved" && entry.round_eligible !== true)
-          return fail(
-            "The jump is outside this round’s dates and cannot be approved.",
-          );
+        // Local testing permits historical tracks; hosted review still enforces
+        // the GPS jump date against the round dates on the server.
         entry.status = args.decision;
         entry.review_note = args.note;
         await store.persist?.();
@@ -326,10 +411,10 @@ export function createLeaguePreviewClient(
             return fail(
               "Your league registration must be approved before uploading a track.",
             );
-          const [userId, roundId] = path.split("/");
+          const [folderUserId, roundId] = path.split("/");
           const round = store.rounds.find((row) => row.id === roundId);
           if (
-            userId !== PREVIEW_USER_ID ||
+            folderUserId !== userId ||
             !round?.published ||
             Date.now() < Date.parse(String(round.opens_at)) ||
             Date.now() >= Date.parse(String(round.closes_at))
@@ -340,22 +425,25 @@ export function createLeaguePreviewClient(
           if (store.files.has(path))
             return fail("Original tracks cannot be replaced.");
           const folder = path.split("/").slice(0, 2).join("/") + "/";
-          if (
-            [...store.files.keys()].filter((key) => key.startsWith(folder))
-              .length >= 12
-          )
+          const uploads = [...store.files.keys()].filter(key=>key.startsWith(folder));
+          const hasPending = store.entries.some(row=>row.user_id===userId && row.round_id===roundId && row.status==="pending");
+          const unsubmitted = uploads.some(key=>!store.entries.some(row=>row.file_path===key));
+          if (uploads.length >= 12 && !(uploads.length === 12 && hasPending && !unsubmitted))
             return fail("Maximum 12 tracks per round.");
           store.files.set(path, file);
           await store.persist?.();
           return ok({ path });
         },
         remove: async (paths: string[]) => {
+          if (!signedIn || paths.some(path => !path.startsWith(`${userId}/`) ||
+            store.entries.some(entry => entry.file_path === path)))
+            return fail("Only your own unsubmitted uploads can be removed.");
           paths.forEach((path) => store.files.delete(path));
           await store.persist?.();
           return ok();
         },
         download: async (path: string) =>
-          store.files.has(path)
+          signedIn && (organiser || path.startsWith(`${userId}/`)) && store.files.has(path)
             ? ok(store.files.get(path))
             : fail(
                 "This sample entry has no original GPS file. Upload your own file in the competitor preview to test downloads.",
@@ -375,6 +463,7 @@ export function createLeaguePreviewClient(
           (row) => row.id === options.body.entry_id,
         );
         if (!entry) return fail("Preview entry not found.");
+        const scoringRevision = Number(entry.revision ?? 0);
         if (_name !== "league-score") return fail("Unsupported test function.");
         if (entry.status !== "pending")
           return fail("Only pending entries can be calculated.");
@@ -411,8 +500,21 @@ export function createLeaguePreviewClient(
             new TextDecoder().decode(buffer),
             Number(entry.ground_elevation_m),
           );
-          const wind_snapshot = await fetchLeagueWinds(points, fetcher);
+          if (entry.status !== "pending" || Number(entry.revision ?? 0) !== scoringRevision)
+            return fail("Entry changed during calculation. Refresh to score the revised track.");
+          // Retain actual raw measurements even if the weather lookup fails.
+          const raw = measureLeagueUploadWindow(points);
+          Object.assign(entry, {
+            time_s: raw.timeSeconds,
+            raw_speed_kmh: raw.speedKmh,
+            raw_distance_m: raw.distanceMetres,
+            file_hash,
+          });
+          await store.persist?.();
+          const wind_snapshot = await windLoader(points, fetcher);
           const scores = scoreLeagueWindow(points, wind_snapshot);
+          if (entry.status !== "pending" || Number(entry.revision ?? 0) !== scoringRevision)
+            return fail("Entry changed during calculation. Refresh to score the revised track.");
           const round = store.rounds.find((row) => row.id === entry.round_id);
           const round_eligible =
             !!round &&
@@ -422,6 +524,7 @@ export function createLeaguePreviewClient(
               Date.parse(String(entry.submitted_at));
           Object.assign(entry, {
             ...scores,
+            replay_data: buildLeagueReplay(new TextDecoder().decode(buffer), Number(entry.ground_elevation_m), wind_snapshot),
             wind_snapshot,
             file_hash,
             round_eligible,

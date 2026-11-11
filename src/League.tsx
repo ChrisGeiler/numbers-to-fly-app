@@ -2,9 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
-import { leagueWindow } from "./leagueScoring";
+import { leagueWindow, fetchLeagueWinds, scoreLeagueWindow } from "./leagueScoring";
+import { fetchLocalLeagueWinds } from "./leagueLocalWeather";
 import LeagueGoogleSignIn from "./LeagueGoogleSignIn";
 import LeagueRegistration from "./LeagueRegistration";
+import LeagueEntryEditor from "./LeagueEntryEditor";
+import LeagueScoreboard from "./LeagueScoreboard";
+import LeagueAppPromo from "./LeagueAppPromo";
+import type { LeagueScoreboardEntry } from "./leagueScoreboardModel";
+import { dropZoneReferences } from "./leagueDropZones";
 import type { RegistrationAccess } from "./LeagueRegistration";
 import {
   calculateLeagueUploadScores,
@@ -43,30 +49,15 @@ type Entry = Result & {
   scoring_version: string | null;
   jump_at?: string | null;
   file_hash?: string | null;
-  wind_snapshot?: { model: string; fetched_at: string } | null;
+  wind_snapshot?: { model: string; fetched_at: string; provider?: string; fallback_reason?: string } | null;
   round_eligible?: boolean;
+  revision?: number;
 };
 const emailSignInEnabled =
   import.meta.env.VITE_LEAGUE_EMAIL_SIGN_IN_ENABLED === "true";
 const regions = ["ACT", "NSW", "NT", "QLD", "SA", "VIC", "WA"];
 const HOME_STATE_STORAGE_KEY = "ntf-league-home-state";
-const dropZones = [
-  "ADELAIDE SKYDIVING CENTRE",
-  "AIRLIE BEACH SKYDIVERS",
-  "COASTAL SKYDIVE SA",
-  "COMMANDO SKYDIVERS INCORPORATED",
-  "FAR NORTH FREEFALL CLUB INC.",
-  "HILLMAN FARM SKYDIVERS",
-  "NEWCASTLE SPORT PARACHUTE CLUB",
-  "RAMBLERS PARACHUTE CENTRE",
-  "SA SKYDIVING OPS",
-  "SKYDIVE BYRON BAY",
-  "SKYDIVE GREAT OCEAN ROAD",
-  "SKYDIVE JURIEN BAY",
-  "Moruya",
-  "TORQUAY SKYDIVERS",
-  "DARWIN PARACHUTE CLUB",
-];
+const dropZones = dropZoneReferences.map((reference) => reference.name);
 const disciplines = ["speed", "time", "distance"] as const;
 type Discipline = (typeof disciplines)[number];
 type UploadMetrics = ReturnType<typeof calculateLeagueUploadScores>;
@@ -78,13 +69,7 @@ const date = (value: string) =>
     month: "short",
     year: "numeric",
   });
-const score = (row: Result, discipline: string) =>
-  discipline === "speed"
-    ? row.corrected_speed_kmh
-    : discipline === "distance"
-      ? row.corrected_distance_m
-      : row.time_s;
-
+const reviewKey = (entry: { id: string; revision?: number }) => `${entry.id}:${entry.revision ?? 0}`;
 export default function League({
   client = supabase,
   preview = false,
@@ -97,27 +82,30 @@ export default function League({
   const [appAccess, setAppAccess] = useState(false);
   const [rounds, setRounds] = useState<Round[]>([]);
   const [roundId, setRoundId] = useState("");
-  const [results, setResults] = useState<Result[]>([]);
+  const [results, setResults] = useState<LeagueScoreboardEntry[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [editingEntry, setEditingEntry] = useState<string | null>(null);
   const [entryLimit, setEntryLimit] = useState(200);
-  const [tab, setTab] = useState("overall");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [registrationAccess, setRegistrationAccess] =
     useState<RegistrationAccess>("checking");
   const [selectedTask, setSelectedTask] = useState<Discipline>("speed");
   const [groundElevation, setGroundElevation] = useState("");
+  const [selectedDropZone, setSelectedDropZone] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadMetrics, setUploadMetrics] = useState<UploadMetrics | null>(
     null,
   );
   const [uploadScoreStatus, setUploadScoreStatus] = useState("");
   const [calculatingUpload, setCalculatingUpload] = useState(false);
-  const [lastSubmission, setLastSubmission] = useState<{
-    task: Discipline;
+  const [correctedUpload, setCorrectedUpload] = useState<{
+    file: File;
+    ground: string;
     metrics: UploadMetrics;
-    filename: string;
+    provider?: string;
   } | null>(null);
+  const [windScoreStatus, setWindScoreStatus] = useState("");
   const [homeState, setHomeState] = useState(() => {
     try {
       const saved = window.localStorage.getItem(HOME_STATE_STORAGE_KEY);
@@ -134,6 +122,8 @@ export default function League({
   const formRef = useRef<HTMLFormElement>(null);
   const epoch = useRef(0);
   const refreshId = useRef(0);
+  const reviewAttempts = useRef(new Set<string>());
+  const [reviewScores, setReviewScores] = useState<Record<string, string>>({});
   useEffect(() => {
     let cancelled = false;
     setUploadMetrics(null);
@@ -176,12 +166,52 @@ export default function League({
       cancelled = true;
     };
   }, [uploadFile, groundElevation]);
-  const displayedUploadMetrics = uploadFile
-    ? uploadMetrics
-    : lastSubmission?.metrics;
-  const displayedUploadTask = uploadFile
-    ? selectedTask
-    : (lastSubmission?.task ?? selectedTask);
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    setCorrectedUpload(null);
+    setWindScoreStatus("");
+    if (!uploadFile || !groundElevation.trim()) return;
+    const timer = setTimeout(() => {
+      setWindScoreStatus("Calculating from archived winds…");
+      void (async () => {
+        try {
+          const points = leagueWindow(await uploadFile.text(), Number(groundElevation));
+          measureLeagueUploadWindow(points);
+          if (cancelled) return;
+          const winds = await (preview ? fetchLocalLeagueWinds : fetchLeagueWinds)(points, (input, init) => fetch(input, {
+            ...init,
+            signal: init?.signal
+              ? AbortSignal.any([init.signal, controller.signal])
+              : controller.signal,
+          }));
+          const scores = scoreLeagueWindow(points, winds);
+          if (cancelled) return;
+          setCorrectedUpload({ file: uploadFile, ground: groundElevation, provider: winds.provider ?? "open-meteo", metrics: {
+            timeSeconds: scores.time_s,
+            speedKmh: scores.corrected_speed_kmh,
+            distanceMetres: scores.corrected_distance_m,
+          } });
+          setWindScoreStatus("");
+        } catch (error) {
+          if (!cancelled) setWindScoreStatus(error instanceof Error
+            ? `Wind correction unavailable: ${error.message}`
+            : "Wind correction unavailable. Try again.");
+        }
+      })();
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [uploadFile, groundElevation, preview]);
+  const currentCorrectedMetrics = correctedUpload?.file === uploadFile &&
+    correctedUpload?.ground === groundElevation
+    ? correctedUpload.metrics : undefined;
+  const displayedCorrectedMetrics = uploadFile ? currentCorrectedMetrics : undefined;
+  const displayedUploadMetrics = uploadFile ? uploadMetrics : null;
+  const displayedUploadTask = selectedTask;
   const displayedUploadValue =
     displayedUploadMetrics &&
     (displayedUploadTask === "speed"
@@ -189,8 +219,13 @@ export default function League({
       : displayedUploadTask === "time"
         ? displayedUploadMetrics.timeSeconds
         : displayedUploadMetrics.distanceMetres);
+  const displayedCorrectedValue = displayedCorrectedMetrics &&
+    (displayedUploadTask === "speed" ? displayedCorrectedMetrics.speedKmh
+      : displayedUploadTask === "time" ? displayedCorrectedMetrics.timeSeconds
+        : displayedCorrectedMetrics.distanceMetres);
   useEffect(() => {
     setEntryLimit(200);
+    setResults([]);
   }, [roundId]);
   const round = rounds.find((r) => r.id === roundId);
   const accepting =
@@ -272,7 +307,7 @@ export default function League({
       return;
     }
     const currentEpoch = epoch.current;
-    const { data, error } = await client.rpc("league_leaderboard", {
+    const { data, error } = await client.rpc("league_round_scoreboard", {
       selected_round: roundId,
     });
     if (currentEpoch !== epoch.current || requestId !== refreshId.current)
@@ -281,12 +316,12 @@ export default function League({
       setStatus(error.message);
       return;
     }
-    setResults((data ?? []) as Result[]);
+    setResults((data ?? []) as LeagueScoreboardEntry[]);
     if (session) {
       let query = client
         .from("league_entries")
         .select(
-          "id,round_id,public_name,region,discipline,status,location_name,ground_elevation_m,file_path,submitted_at,coaching_requested,coaching_note,review_note,time_s,corrected_speed_kmh,corrected_distance_m,raw_speed_kmh,raw_distance_m,scoring_version,jump_at,file_hash,wind_snapshot",
+          "id,round_id,public_name,region,discipline,status,location_name,ground_elevation_m,file_path,submitted_at,coaching_requested,coaching_note,review_note,time_s,corrected_speed_kmh,corrected_distance_m,raw_speed_kmh,raw_distance_m,scoring_version,jump_at,file_hash,wind_snapshot,revision",
         )
         .eq("round_id", roundId)
         .order("submitted_at", { ascending: false })
@@ -307,6 +342,28 @@ export default function League({
     };
   }, [refresh]);
 
+  useEffect(() => {
+    if (!owner) return;
+    const entry = entries.find((row) => row.status === "pending" &&
+      !row.scoring_version && !reviewAttempts.current.has(`${row.id}:${row.revision ?? 0}`));
+    if (!entry) return;
+    reviewAttempts.current.add(`${entry.id}:${entry.revision ?? 0}`);
+    const currentEpoch = epoch.current;
+    setReviewScores((current) => ({ ...current, [reviewKey(entry)]: "Calculating scores from the original track and archived winds…" }));
+    void (async () => {
+      try {
+        const response = await client.functions.invoke("league-score", { body: { entry_id: entry.id } });
+        if (currentEpoch !== epoch.current) return;
+        setReviewScores((current) => ({ ...current, [reviewKey(entry)]: response.error
+          ? `Calculation failed: ${response.error.message}` : "" }));
+      } catch (error) {
+        if (currentEpoch !== epoch.current) return;
+        setReviewScores((current) => ({ ...current, [reviewKey(entry)]: `Calculation failed: ${error instanceof Error ? error.message : "Please retry."}` }));
+      }
+      if (currentEpoch === epoch.current) await refresh();
+    })();
+  }, [entries, owner, client, refresh]);
+
   async function signIn(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -315,7 +372,7 @@ export default function League({
       email: email.trim(),
       options: {
         shouldCreateUser: true,
-        emailRedirectTo: new URL("league.html", window.location.origin).href,
+        emailRedirectTo: new URL("/ozleague/", window.location.origin).href,
       },
     });
     setAuthStatus(
@@ -383,14 +440,15 @@ export default function League({
       });
       if (error) throw error;
       submitted = true;
-      setLastSubmission({
-        task: selectedTask,
-        metrics: measureLeagueUploadWindow(window),
-        filename: file.name,
-      });
       formRef.current?.reset();
       setUploadFile(null);
+      setUploadMetrics(null);
+      setCorrectedUpload(null);
+      setUploadScoreStatus("");
+      setWindScoreStatus("");
+      setCalculatingUpload(false);
       setGroundElevation("");
+      setSelectedDropZone("");
       setSelectedTask("speed");
       let message =
         "Entry received. Your track is private and your result is pending review.";
@@ -471,38 +529,12 @@ export default function League({
     }
   }
 
-  const ranked = results
-    .filter((r) => r.discipline === tab)
-    .sort((a, b) => score(b, tab) - score(a, tab));
-  const totals = new Map<
-    string,
-    { name: string; region: string; points: number; tasks: number }
-  >();
-  disciplines.forEach((d) => {
-    const rows = results.filter((r) => r.discipline === d),
-      best = Math.max(0, ...rows.map((r) => score(r, d)));
-    rows.forEach((r) => {
-      const item = totals.get(r.competitor_key) ?? {
-        name: r.public_name,
-        region: r.region,
-        points: 0,
-        tasks: 0,
-      };
-      item.points += best ? (1000 * score(r, d)) / best : 0;
-      item.tasks++;
-      totals.set(r.competitor_key, item);
-    });
-  });
-  const overall = [...totals.entries()].sort(
-    (a, b) => b[1].points - a[1].points,
-  );
-
   return (
     <div className="league">
       <header className="league-header">
         <a
           className="league-brand"
-          href="/league.html"
+          href="/ozleague/"
           aria-label="Australian Wingsuit League home"
         >
           <span className="league-mark">
@@ -536,11 +568,12 @@ export default function League({
             <h1>
               Different skies.
               <br />
-              One <em>starting line.</em>
+              One window of flight.
             </h1>
             <p className="league-intro">
-              Your local drop zone. A nationwide challenge. Fly your round,
-              upload your track and see how you measure up across Australia.
+              Your local drop zone. A nationwide challenge.
+              <br />
+              Fly when you can, upload your track and see how you measure up across Australia.
             </p>
             <div className="league-actions">
               <a className="league-button" href="#enter">
@@ -552,7 +585,7 @@ export default function League({
             </div>
             <div className="league-hero-facts">
               <span>
-                <strong>03</strong> performance disciplines
+                <strong>03</strong> performance tasks
               </span>
               <span>
                 <strong>01</strong> national community
@@ -662,7 +695,7 @@ export default function League({
           <div className="league-section-heading">
             <p className="league-eyebrow">A REASON TO FLY. A WAY TO IMPROVE.</p>
             <h2>
-              Three disciplines.
+              Three tasks.
               <br />
               Every jump counts.
             </h2>
@@ -673,19 +706,19 @@ export default function League({
                 name: "Speed",
                 number: "01",
                 unit: "km/h",
-                text: "Find your pace. Ranked on wind-adjusted horizontal speed through the performance window.",
+                text: "Fly fast! Ranked on wind-adjusted horizontal speed through the performance window.",
               },
               {
                 name: "Time",
                 number: "02",
                 unit: "seconds",
-                text: "Make the window last. Ranked on measured elapsed time, with corrected speed and distance shown alongside.",
+                text: "Fly slow! Ranked on measured elapsed time, with corrected speed and distance shown alongside.",
               },
               {
                 name: "Distance",
                 number: "03",
                 unit: "metres",
-                text: "Make every metre work. Ranked on wind-adjusted horizontal displacement through the window.",
+                text: "Make every metre count. Ranked on wind-adjusted horizontal distance through the performance window.",
               },
             ].map((task) => (
               <article key={task.name} className="league-task">
@@ -706,117 +739,11 @@ export default function League({
             <a href="#rules">Read the pilot scoring method ↓</a>
           </p>
         </section>
-        <section className="league-section league-standings" id="standings">
-          <div className="league-section-top">
-            <div>
-              <p className="league-eyebrow">THE NATIONAL PICTURE</p>
-              <h2>Round standings</h2>
-            </div>
-            <button
-              className="league-secondary"
-              disabled={busy || !roundId}
-              onClick={() => void refresh()}
-            >
-              Refresh results ↻
-            </button>
-          </div>
-          <div
-            className="league-tabs"
-            role="tablist"
-            aria-label="Leaderboard discipline"
-          >
-            {["overall", ...disciplines].map((t) => (
-              <button
-                key={t}
-                role="tab"
-                aria-selected={tab === t}
-                className={tab === t ? "active" : ""}
-                onClick={() => setTab(t)}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-          {results.length === 0 ? (
-            <div className="league-empty">
-              <span>↗</span>
-              <h3>
-                A fresh leaderboard.
-                <br />
-                Room for your name.
-              </h3>
-              <p>
-                Approved results will appear here once the round gets underway.
-              </p>
-            </div>
-          ) : (
-            <div className="league-table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Rank</th>
-                    <th>Competitor</th>
-                    <th>State</th>
-                    {tab === "overall" ? (
-                      <>
-                        <th>Tasks</th>
-                        <th>Round points</th>
-                      </>
-                    ) : (
-                      <>
-                        <th>Time / s</th>
-                        <th>Corrected / km/h</th>
-                        <th>Corrected / m</th>
-                        <th>Ground / km/h</th>
-                        <th>Ground / m</th>
-                      </>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {tab === "overall"
-                    ? overall.map(([key, r]) => (
-                        <tr key={key}>
-                          <td>
-                            {overall.findIndex(
-                              ([, row]) =>
-                                Math.abs(row.points - r.points) < 0.000001,
-                            ) + 1}
-                          </td>
-                          <th>{r.name}</th>
-                          <td>{r.region}</td>
-                          <td>{r.tasks}/3</td>
-                          <td>{fmt(r.points)}</td>
-                        </tr>
-                      ))
-                    : ranked.map((r) => (
-                        <tr key={r.competitor_key}>
-                          <td>
-                            {ranked.findIndex(
-                              (row) =>
-                                Math.abs(score(row, tab) - score(r, tab)) <
-                                0.000001,
-                            ) + 1}
-                          </td>
-                          <th>{r.public_name}</th>
-                          <td>{r.region}</td>
-                          <td>{fmt(r.time_s, 2)}</td>
-                          <td>{fmt(r.corrected_speed_kmh)}</td>
-                          <td>{fmt(r.corrected_distance_m)}</td>
-                          <td>{fmt(r.raw_speed_kmh)}</td>
-                          <td>{fmt(r.raw_distance_m)}</td>
-                        </tr>
-                      ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <p className="league-caption">
-            Best approved entry per discipline. Each task awards up to 1,000
-            points relative to the round leader; overall is the sum of all
-            three. Missing tasks score zero. Equal scores share rank.
-          </p>
+        <section className="league-section" id="standings">
+          <LeagueScoreboard key={roundId} client={client} rows={results}
+            roundTitle={round?.title ?? "Select a round"} onRefresh={() => void refresh()} />
         </section>
+        <LeagueAppPromo appAccess={appAccess} />
         {session && (
           <LeagueRegistration
             client={client}
@@ -838,13 +765,13 @@ export default function League({
               <em>best flight.</em>
             </h2>
             <p>
-              Submit an original FlySight CSV for speed, time or distance. You
+              Submit an original FlySight CSV file for speed, time or distance. You
               can enter up to 12 tracks per round. Your best approved result in
-              each discipline counts.
+              each task counts. You'll need to submit a minimum of 1 track per task to complete the round.
             </p>
             <ol className="league-steps">
               <li>Sign in to your competitor account.</li>
-              <li>Choose a discipline and upload your jump.</li>
+              <li>Choose a task and upload your jump.</li>
               <li>Get reviewed. Get ranked. Keep improving.</li>
             </ol>
             <p className="league-caption">
@@ -950,6 +877,7 @@ export default function League({
                           Public competitor name
                           <input
                             name="name"
+                            defaultValue={preview ? session.user.user_metadata?.full_name ?? "" : ""}
                             required
                             minLength={2}
                             maxLength={60}
@@ -975,7 +903,7 @@ export default function League({
                           </select>
                         </label>
                         <label>
-                          Discipline
+                          Task
                           <select
                             name="discipline"
                             value={selectedTask}
@@ -990,7 +918,13 @@ export default function League({
                         </label>
                         <label>
                           Drop zone / location
-                          <select name="location" required defaultValue="">
+                          <select name="location" required value={selectedDropZone}
+                            onChange={(event) => {
+                              const location = event.target.value;
+                              const reference = dropZoneReferences.find((dz) => dz.name === location);
+                              setSelectedDropZone(location);
+                              setGroundElevation(reference?.metres == null ? "" : String(reference.metres));
+                            }}>
                             <option value="" disabled>
                               Select drop zone
                             </option>
@@ -1017,8 +951,8 @@ export default function League({
                           }
                         />
                         <small>
-                          Use the verified drop zone elevation, not exit
-                          altitude.
+                          Filled from Skyderby when available. You can adjust it for
+                          the actual landing area. Unlisted elevations must be entered manually.
                         </small>
                       </label>
                       <label className="league-file">
@@ -1053,10 +987,9 @@ export default function League({
                               aria-label="Calculated task score"
                             >
                               <p className="league-caption">
-                                {uploadFile?.name ??
-                                  `Last uploaded track: ${lastSubmission?.filename}`}
+                                {uploadFile?.name}
                               </p>
-                              <h4>Calculated {displayedUploadTask} score</h4>
+                              <h4>Raw {displayedUploadTask} score</h4>
                               <strong>
                                 {fmt(
                                   displayedUploadValue,
@@ -1070,10 +1003,17 @@ export default function League({
                                       : "metres"}
                                 </span>
                               </strong>
+                              <h4>Wind-corrected {displayedUploadTask} score</h4>
+                              {displayedCorrectedValue != null ? <strong>
+                                {fmt(displayedCorrectedValue, displayedUploadTask === "time" ? 2 : 1)}{" "}
+                                <span>{displayedUploadTask === "speed" ? "km/h" : displayedUploadTask === "time" ? "seconds" : "metres"}</span>
+                              </strong> : <p className="league-caption">
+                                {windScoreStatus || "Calculating wind-corrected score…"}
+                              </p>}
                               <p className="league-caption">
-                                {displayedUploadTask === "time"
-                                  ? "Measured elapsed time through the 2,500–1,500 m AGL window. Pending organiser approval."
-                                  : "Provisional ground score through the 2,500–1,500 m AGL window. The wind-corrected competition result is calculated during organiser review."}
+                                {displayedCorrectedMetrics && <>Weather: {correctedUpload?.provider === "meteomatics" ? "Meteomatics" : "Open-Meteo"} · GFS Global. </>}
+                                {displayedUploadTask === "time" ? "Time is unchanged by horizontal wind correction. " : ""}
+                                Provisional scores through the 2,500–1,500 m AGL window. Pending organiser approval.
                               </p>
                             </section>
                           )}
@@ -1082,12 +1022,10 @@ export default function League({
                         <input name="coaching" type="checkbox" /> I’d like
                         remote coaching on this entry.
                       </label>
-                      <label className="league-checkbox">
-                        <input type="checkbox" required />{" "}
-                        {preview
-                          ? "Allow this local test to use the track’s location and time for archived wind lookup via Open-Meteo. This does not create an official competition entry."
-                          : "I agree to the pilot rules below and to publishing my name, state and approved scores. My track may be reviewed by the organiser; its location and time are used to obtain weather data from Open-Meteo."}
-                      </label>
+                      <p className="league-caption">
+                        Track location and time are required for automatic wind correction using Open-Meteo, or Meteomatics when configured.
+                        {!preview && " Submitting an entry accepts the pilot rules and publication of your name, state, approved scores and relative replay. Original GPS files stay private to you and the organiser."}
+                      </p>
                       <button
                         className="league-button"
                         disabled={busy || !accepting}
@@ -1114,8 +1052,15 @@ export default function League({
               {owner ? "ORGANISER WORKSPACE" : "YOUR PROGRESS"}
             </p>
             <h2>{owner ? "Review desk" : "Your entries"}</h2>
-            <div className="league-entry-list">
-              {entries.map((entry) => (
+            {(owner ? [null] : disciplines).map((task) => {
+              const taskEntries = task ? entries.filter(entry => entry.discipline === task) : entries;
+              const Section = task ? "details" : "div";
+              return (
+              <Section key={task ?? "review"} className={task ? "league-task-section" : undefined}>
+                {task && <summary>{task[0].toUpperCase() + task.slice(1)} ({taskEntries.length})</summary>}
+                {task && taskEntries.length === 0 && <p className="league-caption">No {task} entries for this round.</p>}
+                <div className="league-entry-list">
+              {taskEntries.map((entry) => (
                 <article key={entry.id} className="league-review-card">
                   <div className="league-section-top">
                     <h3>
@@ -1143,12 +1088,12 @@ export default function League({
                       <b>{fmt(entry.corrected_distance_m)} m</b>
                     </span>
                   </div>
+                  <p className="league-caption">
+                    Raw speed: {fmt(entry.raw_speed_kmh)} km/h · Raw distance: {fmt(entry.raw_distance_m)} m
+                  </p>
+                  {reviewScores[reviewKey(entry)] && <p className="league-notice" role="status">{reviewScores[reviewKey(entry)]}</p>}
                   {entry.scoring_version && (
                     <>
-                      <p className="league-caption">
-                        Ground speed: {fmt(entry.raw_speed_kmh)} km/h · Ground
-                        distance: {fmt(entry.raw_distance_m)} m
-                      </p>
                       {entry.jump_at && (
                         <p className="league-caption">
                           Recorded jump:{" "}
@@ -1157,7 +1102,7 @@ export default function League({
                       )}
                       {entry.wind_snapshot && (
                         <p className="league-caption">
-                          Wind model:{" "}
+                          Weather source: {entry.wind_snapshot.provider === "meteomatics" ? "Meteomatics" : "Open-Meteo"} · Wind model:{" "}
                           {entry.wind_snapshot.model === "gfs_global"
                             ? "GFS Global"
                             : entry.wind_snapshot.model}{" "}
@@ -1167,6 +1112,7 @@ export default function League({
                           ).toLocaleString("en-AU")}
                         </p>
                       )}
+                      {entry.wind_snapshot?.fallback_reason && <p className="league-caption">Fallback used: {entry.wind_snapshot.fallback_reason}</p>}
                       {entry.file_hash && (
                         <p className="league-caption">
                           Original file SHA-256: {entry.file_hash.slice(0, 16)}…
@@ -1174,8 +1120,9 @@ export default function League({
                       )}
                       {entry.round_eligible === false && (
                         <p className="league-notice">
-                          This jump is outside the round’s eligible dates and
-                          cannot be approved.
+                          {preview
+                            ? "This jump is outside the round’s dates. Allowed for local testing only."
+                            : "This jump is outside the round’s eligible dates and cannot be approved."}
                         </p>
                       )}
                     </>
@@ -1192,23 +1139,34 @@ export default function League({
                       {entry.coaching_note}
                     </p>
                   )}
+                  {!owner && entry.status === "pending" && accepting && canEnter && (
+                    editingEntry === entry.id ? <LeagueEntryEditor key={`${entry.id}:${entry.revision ?? 0}`}
+                      client={client} entry={entry} userId={session.user.id}
+                      onCancel={() => setEditingEntry(null)} onSaved={async () => {
+                        setEditingEntry(null); setStatus("Entry updated. Scores will be recalculated before organiser approval."); await refresh();
+                      }} /> : <button className="league-secondary" onClick={() => setEditingEntry(entry.id)}>Edit submitted track</button>
+                  )}
                   {owner && (
                     <>
                       <p className="league-caption">
                         Elevation: {entry.ground_elevation_m} m MSL ·{" "}
                         {entry.scoring_version ?? "Not calculated"}. Verify the
-                        original file, location, elevation and discipline before
+                        original file, location, elevation and task before
                         approval.
                       </p>
                       <div className="league-review-actions">
                         <button
-                          disabled={busy || entry.status !== "pending"}
+                          disabled={busy || entry.status !== "pending" || reviewScores[reviewKey(entry)]?.startsWith("Calculating")}
                           onClick={() =>
                             void act(
-                              async () =>
-                                await client.functions.invoke("league-score", {
+                              async () => {
+                                setReviewScores((current) => ({ ...current, [reviewKey(entry)]: "Calculating scores…" }));
+                                const response = await client.functions.invoke("league-score", {
                                   body: { entry_id: entry.id },
-                                }),
+                                });
+                                setReviewScores((current) => ({ ...current, [reviewKey(entry)]: response.error ? `Calculation failed: ${response.error.message}` : "" }));
+                                return response;
+                              },
                               "Scores calculated from the original file and archived winds.",
                               "Reading the original track and fetching archived GFS winds…",
                             )
@@ -1256,6 +1214,7 @@ export default function League({
                                 await client.rpc("league_review_entry", {
                                   entry_id: entry.id,
                                   decision: "approved",
+                                  expected_revision: entry.revision ?? 0,
                                   note: note[entry.id] ?? "",
                                 }),
                               "Entry approved and leaderboard updated.",
@@ -1272,6 +1231,7 @@ export default function League({
                                 await client.rpc("league_review_entry", {
                                   entry_id: entry.id,
                                   decision: "rejected",
+                                  expected_revision: entry.revision ?? 0,
                                   note: note[entry.id] ?? "",
                                 }),
                               "Entry rejected. The competitor can see your review note.",
@@ -1319,7 +1279,10 @@ export default function League({
                   )}
                 </article>
               ))}
-            </div>
+                </div>
+              </Section>
+              );
+            })}
             <p className="league-caption">
               Showing {entries.length} entries for this round.
             </p>
@@ -1413,8 +1376,7 @@ export default function League({
             </p>
             <p className="league-caption">
               Coaching is optional and arranged separately. Requesting it does
-              not purchase a session or affect judging. Feedback is private
-              between you and the organiser.
+              not purchase a session or affect judging.
             </p>
             <a className="league-button" href="#enter">
               Request coaching with an entry ↗
@@ -1431,27 +1393,28 @@ export default function League({
                 Speed and distance use the displacement between the interpolated
                 2,500 m and 1,500 m AGL boundaries, less the integrated
                 horizontal wind vector. Speed is corrected distance divided by
-                elapsed time. Time rankings use measured elapsed time.
+                elapsed time. Time rankings use measured elapsed time with no
+                factoring for winds on the final score.
               </p>
               <p>
                 All entries use GFS Global archived forecasts from Open-Meteo,
                 interpolated in height and time. Forecast winds are estimates;
                 correction does not guarantee identical atmospheric conditions
-                between jumps. No silent substitution of another model.
+                between jumps.
               </p>
             </div>
             <div>
               <h3>Reviewed, then ranked</h3>
               <p>
-                Upload original Australian FlySight tracks from within the round
-                dates. Scores are calculated on the server, then reviewed by the
+                Upload your FlySight tracks from within the round
+                dates at an Australian DZ. Scores are calculated on the server, then reviewed by the
                 organiser. Missing winds, incomplete windows and poor GPS
                 samples remain unapproved. Original tracks are not public.
               </p>
               <p>
                 This is an independent pilot league, not an official
                 championship result. The method is versioned as pilot-v1. Best
-                approved entry per discipline counts; future rule changes apply
+                approved entry per task counts; future rule changes apply
                 to future rounds. Queries and corrections go through the
                 organiser.
               </p>

@@ -3,12 +3,20 @@ import League from "./League";
 import {
   createLeaguePreviewClient,
   createPreviewStore,
+  PREVIEW_COMPETITORS,
 } from "./leaguePreviewClient";
 import type { PreviewRole } from "./leaguePreviewClient";
 import { readLeagueTestStore, writeLeagueTestStore } from "./leagueTestStorage";
+import { fetchLocalLeagueWinds } from "./leagueLocalWeather";
 
 export default function LeagueDevPreview() {
   const [role, setRole] = useState<PreviewRole>("organiser");
+  const [competitorId, setCompetitorId] = useState(() => {
+    try {
+      const saved = localStorage.getItem("league-test-competitor");
+      return PREVIEW_COMPETITORS.some(profile => profile.id === saved) ? saved! : PREVIEW_COMPETITORS[0].id;
+    } catch {return PREVIEW_COMPETITORS[0].id;}
+  });
   const [store, setStore] = useState(createPreviewStore);
   const [realLogin, setRealLogin] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -67,8 +75,8 @@ export default function LeagueDevPreview() {
     }
   }
   const client = useMemo(
-    () => createLeaguePreviewClient(store, role),
-    [store, role],
+    () => createLeaguePreviewClient(store, role, fetch, fetchLocalLeagueWinds, competitorId),
+    [store, role, competitorId],
   );
   return (
     <>
@@ -81,7 +89,7 @@ export default function LeagueDevPreview() {
           <p>
             {realLogin
               ? "Real sign-in: Google must authorise this local address. Nothing has been published."
-              : "Real uploaded tracks and archived-wind calculations. Accounts and results stay local; nothing is published or uploaded to Supabase."}
+              : "Real uploaded tracks and archived-wind calculations. Jumps from any month are allowed for testing. Accounts and results stay local; nothing is published or uploaded to Supabase."}
           </p>
         </div>
         <div className="league-dev-controls">
@@ -96,6 +104,20 @@ export default function LeagueDevPreview() {
                 <option value="visitor">Visitor</option>
                 <option value="competitor">Competitor</option>
                 <option value="organiser">Organiser</option>
+              </select>
+            </label>
+          )}
+          {!realLogin && role === "competitor" && (
+            <label>
+              Test competitor
+              <select aria-label="Test competitor" value={competitorId}
+                onChange={event => {
+                  setCompetitorId(event.target.value);
+                  try {localStorage.setItem("league-test-competitor", event.target.value);} catch { /* Optional browser preference. */ }
+                }}>
+                {PREVIEW_COMPETITORS.map(profile => <option key={profile.id} value={profile.id}>
+                  {profile.name}{store.registrations.find(row => row.user_id === profile.id)?.public_name ? ` — ${store.registrations.find(row => row.user_id === profile.id)!.public_name}` : ""}
+                </option>)}
               </select>
             </label>
           )}
@@ -122,7 +144,7 @@ export default function LeagueDevPreview() {
       ) : realLogin ? (
         <League key="real" />
       ) : (
-        <League key={`${role}-${store.instanceId}`} client={client} preview />
+        <League key={`${role}-${competitorId}-${store.instanceId}`} client={client} preview />
       )}
     </>
   );

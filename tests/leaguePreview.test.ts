@@ -91,6 +91,117 @@ async function upload(
   return { id, path, entry: store.entries.find((row) => row.id === id)! };
 }
 
+function entryChanges(entry: Record<string, unknown>, overrides: Record<string,unknown> = {}) {
+  return { public_name:entry.public_name,region:entry.region,discipline:entry.discipline,
+    location_name:entry.location_name,ground_elevation_m:entry.ground_elevation_m,
+    coaching_requested:Boolean(entry.coaching_requested),file_path:entry.file_path,...overrides };
+}
+
+test("pending entry edits are owner-only, clear scores and require a fresh revision for approval", async () => {
+  const store=createPreviewStore(), item=await upload(store);
+  const competitor=createLeaguePreviewClient(store,"competitor");
+  const organiser=createLeaguePreviewClient(store,"organiser",weatherFetcher());
+  await organiser.functions.invoke("league-score",{body:{entry_id:item.id}});
+  assert.ok(item.entry.scoring_version);assert.ok(item.entry.replay_data);
+  const forbidden=await competitor.rpc("league_edit_entry",{entry_id:item.id,expected_revision:0,changes:entryChanges(item.entry,{corrected_speed_kmh:999})});
+  assert.ok(forbidden.error);assert.equal(item.entry.revision,0);
+  const edited=await competitor.rpc("league_edit_entry",{entry_id:item.id,expected_revision:0,changes:entryChanges(item.entry,{discipline:"distance",ground_elevation_m:101,coaching_requested:true})});
+  assert.equal(edited.error,null);assert.equal(item.entry.revision,1);assert.equal(item.entry.status,"pending");
+  for(const field of ["time_s","raw_speed_kmh","raw_distance_m","corrected_speed_kmh","corrected_distance_m","scoring_version","wind_snapshot","replay_data","file_hash","jump_at"]) assert.equal(item.entry[field],null,field);
+  assert.equal(item.entry.discipline,"distance");assert.equal(item.entry.ground_elevation_m,101);
+  assert.equal(item.entry.file_path,item.path);assert.ok(store.files.has(item.path));
+  assert.ok((await competitor.rpc("league_edit_entry",{entry_id:item.id,expected_revision:0,changes:entryChanges(item.entry)})).error);
+  assert.ok((await organiser.rpc("league_review_entry",{entry_id:item.id,decision:"approved",expected_revision:0})).error);
+  const otherId="10000000-0000-4000-8000-000000000002";
+  const other=createLeaguePreviewClient(store,"competitor",fetch,undefined,otherId);
+  await other.from("league_registrations").insert({user_id:otherId,public_name:"Other pilot",region:"NSW"});
+  await organiser.rpc("league_review_registration",{applicant_id:otherId,decision:"approved"});
+  assert.ok((await other.rpc("league_edit_entry",{entry_id:item.id,expected_revision:1,changes:entryChanges(item.entry)})).error);
+  assert.equal((await organiser.functions.invoke("league-score",{body:{entry_id:item.id}})).error,null);
+  assert.ok(item.entry.replay_data);
+  assert.equal((await organiser.rpc("league_review_entry",{entry_id:item.id,decision:"approved",expected_revision:1})).error,null);
+  assert.ok((await competitor.rpc("league_edit_entry",{entry_id:item.id,expected_revision:1,changes:entryChanges(item.entry)})).error);
+});
+
+test("replacement CSV edits retain the entry identity and protect the current file on failure", async () => {
+  const store=createPreviewStore(), item=await upload(store);
+  const competitor=createLeaguePreviewClient(store,"competitor");
+  const path=`${PREVIEW_USER_ID}/${store.rounds[0].id}/${crypto.randomUUID()}.csv`;
+  assert.equal((await competitor.storage.from("league-tracks").upload(path,new Blob([trackCsv(80)]))).error,null);
+  assert.ok((await competitor.rpc("league_edit_entry",{entry_id:item.id,expected_revision:99,changes:entryChanges(item.entry,{file_path:path})})).error);
+  assert.equal(item.entry.file_path,item.path);
+  assert.ok((await competitor.storage.from("league-tracks").remove([item.path])).error);
+  assert.equal((await competitor.rpc("league_edit_entry",{entry_id:item.id,expected_revision:0,changes:entryChanges(item.entry,{file_path:path})})).error,null);
+  assert.equal(item.entry.id,item.id);assert.equal(item.entry.file_path,path);
+  assert.equal((await competitor.storage.from("league-tracks").remove([item.path])).error,null);
+  assert.ok(store.files.has(path));assert.ok(!store.files.has(item.path));
+  store.rounds[0].closes_at=new Date(Date.now()-1000).toISOString();
+  assert.ok((await competitor.rpc("league_edit_entry",{entry_id:item.id,expected_revision:1,changes:entryChanges(item.entry)})).error);
+  assert.equal(item.entry.revision,1);
+});
+
+test("an edit during a weather request prevents the old calculation overwriting the revised entry", async () => {
+  const store=createPreviewStore(), item=await upload(store);
+  let start!:()=>void, release!:()=>void;
+  const started=new Promise<void>(resolve=>{start=resolve;});
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  const organiser=createLeaguePreviewClient(store,"organiser",(async (input,init)=>{start();await gate;return weatherFetcher()(input,init);}) as typeof fetch);
+  const scoring=organiser.functions.invoke("league-score",{body:{entry_id:item.id}});
+  await started;
+  const competitor=createLeaguePreviewClient(store,"competitor");
+  const edited=await competitor.rpc("league_edit_entry",{entry_id:item.id,expected_revision:0,changes:entryChanges(item.entry,{ground_elevation_m:102})});
+  assert.equal(edited.error,null);
+  release();
+  assert.ok((await scoring).error);
+  assert.equal(item.entry.revision,1);assert.equal(item.entry.ground_elevation_m,102);
+  assert.equal(item.entry.scoring_version,null);assert.equal(item.entry.corrected_speed_kmh,null);assert.equal(item.entry.raw_speed_kmh,null);
+});
+
+test("a replacement is possible at the entry cap without allowing a thirteenth entry", async () => {
+  const store=createPreviewStore();
+  const items=[];for(let i=0;i<12;i++)items.push(await upload(store));
+  const competitor=createLeaguePreviewClient(store,"competitor");
+  const path=`${PREVIEW_USER_ID}/${store.rounds[0].id}/${crypto.randomUUID()}.csv`;
+  assert.equal((await competitor.storage.from("league-tracks").upload(path,new Blob([trackCsv(60)]))).error,null);
+  assert.ok((await competitor.from("league_entries").insert({...items[0].entry,id:crypto.randomUUID(),file_path:path})).error);
+  assert.equal((await competitor.rpc("league_edit_entry",{entry_id:items[0].id,expected_revision:0,changes:entryChanges(items[0].entry,{file_path:path})})).error,null);
+  assert.equal((await competitor.storage.from("league-tracks").remove([items[0].path])).error,null);
+  assert.equal(store.entries.length,12);assert.equal(store.files.size,12);
+});
+
+test("four local competitors have independent registration, files and scoreboard identities", async () => {
+  const store = createPreviewStore();
+  const organiser = createLeaguePreviewClient(store,"organiser",weatherFetcher());
+  const { PREVIEW_COMPETITORS } = await import("../src/leaguePreviewClient.ts");
+  const clients = PREVIEW_COMPETITORS.map(profile => createLeaguePreviewClient(store,"competitor",weatherFetcher(),undefined,profile.id));
+  const round = String(store.rounds[0].id);
+  const paths: string[] = [];
+  for (const [index, profile] of PREVIEW_COMPETITORS.entries()) {
+    const client = clients[index];
+    assert.equal((await client.auth.getSession()).data.session?.user.id,profile.id);
+    assert.equal((await client.from("league_registrations").insert({user_id:profile.id,public_name:profile.name,region:"NSW"})).error,null);
+    const id = crypto.randomUUID(), path = `${profile.id}/${round}/${id}.csv`;
+    assert.ok((await client.storage.from("league-tracks").upload(path,new Blob([trackCsv()]))).error);
+    await organiser.rpc("league_review_registration",{applicant_id:profile.id,decision:"approved"});
+    assert.equal((await client.storage.from("league-tracks").upload(path,new Blob([trackCsv()]))).error,null);
+    assert.equal((await client.from("league_entries").insert({id,user_id:profile.id,round_id:round,public_name:profile.name,region:"NSW",discipline:"speed",location_name:"Moruya",ground_elevation_m:100,file_path:path})).error,null);
+    assert.equal((await organiser.functions.invoke("league-score",{body:{entry_id:id}})).error,null);
+    assert.equal((await organiser.rpc("league_review_entry",{entry_id:id,decision:"approved"})).error,null);
+    paths.push(path);
+  }
+  for (const [index,client] of clients.entries()) {
+    const own = (await client.from("league_entries").select("*")).data!;
+    assert.equal(own.length,1);assert.equal(own[0].user_id,PREVIEW_COMPETITORS[index].id);
+    const other = paths[(index+1)%4];
+    assert.ok((await client.storage.from("league-tracks").download(other)).error);
+    assert.ok((await client.storage.from("league-tracks").remove([other])).error);
+    assert.ok((await client.storage.from("league-tracks").upload(other+".other",new Blob([trackCsv()]))).error);
+  }
+  const board = (await organiser.rpc("league_round_scoreboard",{selected_round:round})).data as Record<string,unknown>[];
+  assert.equal(board.length,4);assert.equal(new Set(board.map(row=>row.competitor_key)).size,4);
+  assert.ok(board.every(row=>row.attempt===1));
+});
+
 test("local test starts empty and does not create real auth or app access", async () => {
   const store = createPreviewStore();
   assert.equal(store.entries.length, 0);
@@ -117,6 +228,42 @@ test("local test starts empty and does not create real auth or app access", asyn
     ).data,
     true,
   );
+});
+
+test("public scoreboard and lazy replay expose approved relative traces only, with a four-track limit", async () => {
+  const store = createPreviewStore();
+  const item = await upload(store);
+  let weatherCalls = 0;
+  const organiser = createLeaguePreviewClient(store,"organiser",weatherFetcher(() => weatherCalls++));
+  const visitor = createLeaguePreviewClient(store,"visitor");
+  const round = String(store.rounds[0].id);
+  assert.deepEqual((await visitor.rpc("league_round_scoreboard",{selected_round:round})).data,[]);
+  assert.ok((await visitor.rpc("league_replay_tracks",{entry_ids:[item.id]})).error);
+  await organiser.functions.invoke("league-score",{body:{entry_id:item.id}});
+  await organiser.rpc("league_review_entry",{entry_id:item.id,decision:"approved"});
+  const board = (await visitor.rpc("league_round_scoreboard",{selected_round:round})).data as Record<string,unknown>[];
+  assert.equal(board.length,1); assert.equal(board[0].attempt,1);
+  assert.equal(board[0].replay_available,true);
+  for(const key of ["file_path","wind_snapshot","coaching_note","email","jump_at","replay_data"]) assert.ok(!(key in board[0]));
+  assert.ok((await visitor.storage.from("league-tracks").download(item.path)).error);
+  // Legacy approved entries can derive replay from saved winds without fetching new weather.
+  delete item.entry.replay_data;
+  const publicReplay = await visitor.rpc("league_replay_tracks",{entry_ids:[item.id]});
+  assert.equal(publicReplay.error,null);
+  assert.equal(weatherCalls,1);
+  const serialised = JSON.stringify(publicReplay.data);
+  assert.ok(!serialised.includes('"lat"'));assert.ok(!serialised.includes('"lon"'));
+  assert.ok(!serialised.includes("timestampMs"));assert.ok(!serialised.includes(item.path));
+  assert.ok((await visitor.rpc("league_replay_tracks",{entry_ids:[]})).error);
+  assert.ok((await visitor.rpc("league_replay_tracks",{entry_ids:[item.id,item.id]})).error);
+  assert.ok((await visitor.rpc("league_replay_tracks",{entry_ids:[item.id,"a","b","c","d"]})).error);
+  const additional = Array.from({length:3}, () => ({...item.entry,id:crypto.randomUUID()}));
+  store.entries.push(...additional);
+  const four = await visitor.rpc("league_replay_tracks",{entry_ids:[item.id,...additional.map(row=>row.id)]});
+  assert.equal(four.error,null);assert.equal((four.data as unknown[]).length,4);
+  await organiser.rpc("league_review_entry",{entry_id:item.id,decision:"rejected"});
+  assert.equal(((await visitor.rpc("league_round_scoreboard",{selected_round:round})).data as unknown[]).length,3);
+  assert.ok((await visitor.rpc("league_replay_tracks",{entry_ids:[item.id]})).error);
 });
 
 test("review scores the actual uploaded file with archived winds and retains provenance", async () => {
@@ -222,6 +369,9 @@ test("missing original or unavailable winds leave results pending and unapprovab
   assert.ok(response.error);
   assert.equal(item.entry.status, "pending");
   assert.equal(item.entry.corrected_speed_kmh, undefined);
+  assert.equal(item.entry.time_s, 50);
+  assert.ok(Math.abs(Number(item.entry.raw_speed_kmh) - 180) < 0.001);
+  assert.ok(Math.abs(Number(item.entry.raw_distance_m) - 2500) < 0.001);
   assert.ok(
     (
       await organiser.rpc("league_review_entry", {
