@@ -73,7 +73,7 @@ export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCa
         <label>Elevation / metres<input type="number" required min={-100} max={3000} step="0.1" value={ground} onChange={e=>setGround(e.target.value)} /></label>
       </div>
       <label>Replacement FlySight CSV (optional)<input type="file" accept=".csv,text/csv,text/plain" onChange={e=>setReplacement(e.target.files?.[0]??null)} /><small>Leave blank to keep the saved track.</small></label>
-      <label className="league-checkbox"><input name="coaching" type="checkbox" defaultChecked={entry.coaching_requested} /> Request remote coaching</label>
+      <label className="league-checkbox"><input name="coaching" type="checkbox" defaultChecked={entry.coaching_requested} /> Request remote coaching — A$30 per track</label>
       <p className="league-caption">Saving clears the previous scores and replay. The revised entry stays pending for recalculation and organiser approval.</p>
       {status && <p className="league-notice" role="status">{status}</p>}
       <div className="league-review-actions"><button type="submit" className="league-button" disabled={!original && !replacement}>{busy ? "Saving…" : "Save changes"}</button><button type="button" className="league-secondary" onClick={onCancel}>Cancel</button></div>

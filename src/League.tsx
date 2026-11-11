@@ -1020,7 +1020,7 @@ export default function League({
                       </div>
                       <label className="league-checkbox">
                         <input name="coaching" type="checkbox" /> I’d like
-                        remote coaching on this entry.
+                        remote coaching on this entry — A$30 per track.
                       </label>
                       <p className="league-caption">
                         Track location and time are required for automatic wind correction using Open-Meteo, or Meteomatics when configured.
@@ -1374,6 +1374,7 @@ export default function League({
               with your entry for individual feedback from Chris Geiler on your
               performance, flight profile and next training focus.
             </p>
+            <p><strong>A$30 per track</strong></p>
             <p className="league-caption">
               Coaching is optional and arranged separately. Requesting it does
               not purchase a session or affect judging.
