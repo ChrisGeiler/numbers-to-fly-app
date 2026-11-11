@@ -2,6 +2,7 @@
 
 :root {
   font-family: "DM Sans", sans-serif;
+  font-size: clamp(16px, calc(14px + 0.25vw), 20px);
   color: #18342d;
   background: #f6f6ef;
   font-synthesis: none;
@@ -11,6 +12,7 @@
 }
 body {
   margin: 0;
+  line-height: 1.65;
 }
 .league-dev-toolbar {
   position: sticky;
@@ -27,11 +29,11 @@ body {
   font-family: "DM Sans", sans-serif;
 }
 .league-dev-toolbar strong {
-  font-size: 14px;
+  font-size: 1rem;
 }
 .league-dev-toolbar p {
   margin: 5px 0 0;
-  font-size: 12px;
+  font-size: 0.875rem;
   line-height: 1.6;
 }
 .league-dev-controls {
@@ -42,7 +44,7 @@ body {
   flex-shrink: 0;
 }
 .league-dev-controls label {
-  font-size: 11px;
+  font-size: 0.875rem;
 }
 .league-dev-controls select,
 .league-dev-controls button {
@@ -51,7 +53,7 @@ body {
   padding: 9px 11px;
   background: #fffaf0;
   color: #493b16;
-  font-size: 12px;
+  font-size: 0.875rem;
 }
 .league-dev-controls select {
   display: block;
@@ -96,7 +98,8 @@ button:disabled {
   outline-offset: 4px;
 }
 .league {
-  max-width: 1600px;
+  width: 100%;
+  max-width: 112rem;
   margin: auto;
 }
 .league-header {
@@ -113,16 +116,16 @@ button:disabled {
   align-items: center;
   gap: 15px;
   text-decoration: none;
-  font-size: 10px;
+  font-size: 0.75rem;
   letter-spacing: 1.7px;
   line-height: 1.7;
 }
 .league-brand b {
-  font-size: 12px;
+  font-size: 0.875rem;
 }
 .league-mark {
   font-family: "Manrope", sans-serif;
-  font-size: 34px;
+  font-size: 2.125rem;
   font-weight: 800;
   letter-spacing: -6px;
   padding-right: 9px;
@@ -132,9 +135,10 @@ button:disabled {
 }
 .league-header nav {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 28px;
-  font-size: 13px;
+  font-size: 1rem;
   font-weight: 600;
 }
 .league-header nav a {
@@ -154,7 +158,7 @@ button:disabled {
   padding: 75px 8% 50px 9%;
 }
 .league-eyebrow {
-  font-size: 10px;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 2px;
   line-height: 1.7;
@@ -174,7 +178,7 @@ button:disabled {
   font-family: "Manrope", sans-serif;
 }
 .league h1 {
-  font-size: clamp(44px, 5vw, 76px);
+  font-size: clamp(2.75rem, 5vw, 4.75rem);
   line-height: 1.07;
   letter-spacing: -3.5px;
   font-weight: 600;
@@ -185,8 +189,8 @@ button:disabled {
   font-weight: 400;
 }
 .league-intro {
-  max-width: 410px;
-  font-size: 16px;
+  max-width: 32rem;
+  font-size: 1rem;
   line-height: 1.8;
   color: #63716a;
 }
@@ -208,14 +212,14 @@ button:disabled {
   border: 0;
   border-radius: 3px;
   text-decoration: none;
-  font-size: 13px;
+  font-size: 1rem;
   font-weight: 700;
 }
 .league-button:hover {
   background: #c7e77b;
 }
 .league-text-link {
-  font-size: 12px;
+  font-size: 0.875rem;
   text-underline-offset: 5px;
 }
 .league-hero-facts {
@@ -224,12 +228,12 @@ button:disabled {
   border-top: 1px solid #dce0d2;
   padding-top: 24px;
   margin-top: 45px;
-  font-size: 10px;
+  font-size: 0.75rem;
   color: #63716a;
 }
 .league-hero-facts strong {
   display: block;
-  font-size: 24px;
+  font-size: 1.5rem;
   font-family: "Manrope", sans-serif;
   font-weight: 500;
   color: #18342d;
@@ -254,7 +258,7 @@ button:disabled {
   z-index: 1;
   top: 32px;
   left: 32px;
-  font-size: 9px;
+  font-size: 0.75rem;
   letter-spacing: 2px;
 }
 .league-art-bottom {
@@ -265,7 +269,7 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   gap: 20px;
-  font-size: 10px;
+  font-size: 0.75rem;
   line-height: 1.9;
   letter-spacing: 1px;
 }
@@ -286,21 +290,21 @@ button:disabled {
   padding: 8px 10px;
   border: 1px solid #bdc8a8;
   border-radius: 3px;
-  font-size: 9px;
+  font-size: 0.75rem;
   letter-spacing: 1.4px;
 }
 .league-round-strip h2 {
-  font-size: 18px;
+  font-size: 1.125rem;
   margin: 0 0 5px;
 }
 .league-round-strip p {
-  font-size: 12px;
+  font-size: 0.875rem;
   margin: 0;
   color: #63716a;
 }
 .league-round-picker {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 0.75rem;
 }
 .league-round-picker select {
   min-width: 180px;
@@ -311,7 +315,7 @@ button:disabled {
   padding: 75px 5%;
 }
 .league h2 {
-  font-size: clamp(30px, 3.4vw, 45px);
+  font-size: clamp(1.875rem, 3.4vw, 2.8125rem);
   line-height: 1.15;
   letter-spacing: -1.5px;
   font-weight: 500;
@@ -335,13 +339,13 @@ button:disabled {
   padding-left: 30px;
 }
 .league-task > span {
-  font-size: 10px;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 1.5px;
   color: #63716a;
 }
 .league-task h3 {
-  font-size: 29px;
+  font-size: 1.8125rem;
   font-weight: 500;
   display: flex;
   justify-content: space-between;
@@ -352,12 +356,12 @@ button:disabled {
 }
 .league-task p,
 .league-rules p {
-  font-size: 14px;
+  font-size: 1rem;
   line-height: 1.8;
   color: #63716a;
 }
 .league-method-note {
-  font-size: 11px;
+  font-size: 0.875rem;
   padding-top: 20px;
   color: #63716a;
   line-height: 1.8;
@@ -387,7 +391,7 @@ button:disabled {
   border: 1px solid #bbc5ae;
   background: transparent;
   border-radius: 3px;
-  font-size: 12px;
+  font-size: 0.875rem;
   color: #18342d;
 }
 .league-tabs {
@@ -413,21 +417,21 @@ button:disabled {
   padding: 50px 15px;
 }
 .league-empty > span {
-  font-size: 38px;
+  font-size: 2.375rem;
   color: #8a9e73;
 }
 .league-empty h3 {
-  font-size: 23px;
+  font-size: 1.4375rem;
   font-weight: 500;
   line-height: 1.4;
 }
 .league-empty p {
-  font-size: 13px;
+  font-size: 1rem;
   color: #63716a;
 }
 .league-caption {
   color: #63716a;
-  font-size: 11px;
+  font-size: 0.875rem;
   line-height: 1.8;
 }
 .league-table-scroll {
@@ -437,7 +441,7 @@ button:disabled {
   border-collapse: collapse;
   width: 100%;
   text-align: left;
-  font-size: 13px;
+  font-size: 1rem;
   white-space: nowrap;
 }
 .league th,
@@ -446,7 +450,7 @@ button:disabled {
   padding: 20px 15px;
 }
 .league thead {
-  font-size: 10px;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 1px;
   color: #63716a;
@@ -461,7 +465,7 @@ button:disabled {
 }
 .league-entry-section > div:first-child > p:not(.league-eyebrow) {
   max-width: 420px;
-  font-size: 14px;
+  font-size: 1rem;
   color: #63716a;
   line-height: 1.9;
 }
@@ -474,13 +478,13 @@ button:disabled {
 .league-steps li {
   counter-increment: step;
   padding: 16px 0;
-  font-size: 13px;
+  font-size: 1rem;
   border-bottom: 1px solid #dce0d2;
 }
 .league-steps li::before {
   content: "0" counter(step);
   color: #759355;
-  font-size: 11px;
+  font-size: 0.875rem;
   margin-right: 20px;
 }
 .league-form-card {
@@ -491,23 +495,24 @@ button:disabled {
   box-shadow: 0 15px 35px #18342d05;
 }
 .league-form-card h3 {
-  font-size: 23px;
+  font-size: 1.4375rem;
   font-weight: 500;
   margin: 0 0 15px;
 }
 .league-form-card p {
-  font-size: 13px;
+  font-size: 1rem;
   line-height: 1.7;
 }
 .league label {
   display: block;
-  font-size: 12px;
+  font-size: 0.875rem;
   margin: 0 0 19px;
   font-weight: 500;
 }
 .league input:not([type="checkbox"]),
 .league select,
 .league textarea {
+  font-size: 1rem;
   display: block;
   width: 100%;
   padding: 12px;
@@ -524,7 +529,7 @@ button:disabled {
 }
 .league small {
   display: block;
-  font-size: 10px;
+  font-size: 0.75rem;
   line-height: 1.7;
   color: #63716a;
   margin-top: 6px;
@@ -544,7 +549,7 @@ button:disabled {
   display: flex;
   align-items: flex-start;
   gap: 9px;
-  font-size: 11px;
+  font-size: 0.875rem;
   line-height: 1.65;
 }
 .league input[type="checkbox"] {
@@ -568,15 +573,15 @@ button:disabled {
 .league-upload-score h4 {
   margin: 10px 0;
   font-family: "Manrope", sans-serif;
-  font-size: 15px;
+  font-size: 1rem;
   font-weight: 600;
 }
 .league-upload-score > strong {
-  font-size: 30px;
+  font-size: 1.875rem;
   font-weight: 600;
 }
 .league-upload-score > strong span {
-  font-size: 14px;
+  font-size: 1rem;
   font-weight: 400;
 }
 .league-signed-in {
@@ -586,7 +591,7 @@ button:disabled {
   justify-content: space-between;
   margin-bottom: 25px;
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: 0.875rem;
 }
 .league-signed-in button {
   flex-shrink: 0;
@@ -597,7 +602,7 @@ button:disabled {
 }
 .league details {
   margin-top: 20px;
-  font-size: 12px;
+  font-size: 0.875rem;
 }
 .league details summary {
   margin-bottom: 15px;
@@ -608,7 +613,7 @@ button:disabled {
   padding: 14px;
   background: #edf2df;
   border-left: 3px solid #7e9a54;
-  font-size: 13px;
+  font-size: 1rem;
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
@@ -627,7 +632,7 @@ button:disabled {
   display: flex;
   align-items: flex-start;
   gap: 18px;
-  font-size: 13px;
+  font-size: 1rem;
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
@@ -635,7 +640,7 @@ button:disabled {
   border: 0;
   background: none;
   color: #18342d;
-  font-size: 23px;
+  font-size: 1.4375rem;
   line-height: 1;
   padding: 0;
 }
@@ -727,19 +732,19 @@ button:disabled {
 }
 .league-review-card h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 1.125rem;
 }
 .league-review-card h3 span {
-  font-size: 13px;
+  font-size: 1rem;
   font-weight: 400;
   color: #63716a;
 }
 .league-review-card p {
-  font-size: 12px;
+  font-size: 0.875rem;
   line-height: 1.7;
 }
 .league-badge {
-  font-size: 10px;
+  font-size: 0.75rem;
   padding: 6px 9px;
   background: #f3eacb;
   border-radius: 20px;
@@ -758,14 +763,14 @@ button:disabled {
   padding: 15px 0;
 }
 .league-score-line span {
-  font-size: 10px;
+  font-size: 0.75rem;
   color: #63716a;
 }
 .league-score-line b {
   display: block;
   color: #18342d;
   margin-top: 5px;
-  font-size: 16px;
+  font-size: 1rem;
 }
 .league-review-actions {
   display: flex;
@@ -778,7 +783,7 @@ button:disabled {
   border: 1px solid #b7c4a6;
   border-radius: 3px;
   background: #edf2df;
-  font-size: 12px;
+  font-size: 0.875rem;
   color: #18342d;
 }
 .league-feedback {
@@ -804,7 +809,7 @@ button:disabled {
   border-radius: 5px;
 }
 .league-coaching p {
-  font-size: 14px;
+  font-size: 1rem;
   line-height: 1.9;
 }
 .league-coaching .league-caption {
@@ -812,7 +817,7 @@ button:disabled {
 }
 .league-coaching .league-eyebrow {
   color: #d8ef94;
-  font-size: 10px;
+  font-size: 0.75rem;
 }
 .league-rules-grid {
   display: grid;
@@ -820,7 +825,7 @@ button:disabled {
   gap: 7%;
 }
 .league-rules h3 {
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 600;
 }
 .league-footer {
@@ -830,11 +835,11 @@ button:disabled {
   gap: 20px;
   padding: 35px 5%;
   border-top: 1px solid #dce0d2;
-  font-size: 11px;
+  font-size: 0.875rem;
   color: #63716a;
 }
 .league-footer b {
-  font-size: 10px;
+  font-size: 0.75rem;
   letter-spacing: 1px;
   color: #18342d;
 }
@@ -857,7 +862,7 @@ button:disabled {
     padding: 55px 8%;
   }
   .league h1 {
-    font-size: 49px;
+    font-size: clamp(2.5rem, 5vw, 3.5rem);
   }
   .league-flight-art {
     min-height: 530px;
@@ -878,16 +883,16 @@ button:disabled {
   }
   .league-brand {
     gap: 10px;
-    font-size: 8px;
+    font-size: 0.75rem;
   }
   .league-brand b {
-    font-size: 9px;
+    font-size: 0.75rem;
   }
   .league-mark {
-    font-size: 29px;
+    font-size: 1.8125rem;
   }
   .league-nav-cta {
-    font-size: 11px;
+    font-size: 0.875rem;
     padding: 10px 12px;
   }
   .league-hero {
@@ -897,11 +902,11 @@ button:disabled {
     padding: 45px 6%;
   }
   .league h1 {
-    font-size: 54px;
+    font-size: clamp(2.25rem, 9vw, 3.375rem);
     letter-spacing: -2.5px;
   }
   .league-intro {
-    font-size: 15px;
+    font-size: 1rem;
   }
   .league-flight-art {
     min-height: 360px;
@@ -926,7 +931,7 @@ button:disabled {
     padding: 50px 6%;
   }
   .league h2 {
-    font-size: 35px;
+    font-size: 2.1875rem;
   }
   .league-task-grid {
     grid-template-columns: 1fr;
@@ -961,7 +966,7 @@ button:disabled {
   }
   .league-tabs button {
     padding: 12px 14px;
-    font-size: 13px;
+    font-size: 1rem;
   }
   .league-footer {
     flex-wrap: wrap;
@@ -973,10 +978,10 @@ button:disabled {
     grid-template-columns: 1fr;
   }
   .league-hero .league-eyebrow {
-    font-size: 9px;
+    font-size: 0.75rem;
   }
   .league-art-bottom {
-    font-size: 9px;
+    font-size: 0.75rem;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1004,7 +1009,7 @@ button:disabled {
 }
 .league-elevations td p, .league-elevation-reference p {
   margin: 8px 0;
-  font-size: 13px;
+  font-size: 1rem;
   line-height: 1.5;
 }
 .league-elevation-reference {
@@ -1013,7 +1018,7 @@ button:disabled {
   background: #f0f2e9;
   margin: 0 0 20px;
 }
-.league-elevation-reference a, .league-elevations td a { font-size: 13px; }
+.league-elevation-reference a, .league-elevations td a { font-size: 1rem; }
 
 .league-replay-selection {
   display: flex; align-items: center; justify-content: space-between; gap: 20px;
@@ -1025,33 +1030,33 @@ button:disabled {
 .league-scoreboard-table caption { text-align: left; padding-bottom: 14px; }
 .league-scoreboard-table thead .league-task-group { text-align: center; border-left: 1px solid #cdd5c1; text-transform: capitalize; }
 .league-scoreboard-table th, .league-scoreboard-table td { padding: 12px 10px; }
-.league-scoreboard-table small { display: block; font-size: 10px; font-weight: 400; margin-top: 5px; color: #657269; }
+.league-scoreboard-table small { display: block; font-size: 0.75rem; font-weight: 400; margin-top: 5px; color: #657269; }
 .league-scoreboard-table .league-scoreboard-name { position: sticky; left: 0; background: #f7f7ef; z-index: 1; min-width: 145px; }
 .league-scoreboard-table tbody .league-scoreboard-name { background: #fff; }
 .league-score-pick { display: flex; align-items: center; gap: 8px; cursor: pointer; border: 1px solid transparent; padding: 8px; min-width: 105px; }
 .league-score-pick.selected { background: #e9eedc; border-color: #839a5a; border-radius: 4px; }
 .league-score-pick input { accent-color: #557c30; width: 16px; height: 16px; }
-.league-score-pick b { font-size: 15px; }
+.league-score-pick b { font-size: 1rem; }
 .league-best-score { font-weight: 600; background: #f2f4ea; }
-.league-round-total { font-size: 18px; font-weight: 700; }
+.league-round-total { font-size: 1.125rem; font-weight: 700; }
 .league-no-score { color: #849185; text-align: center; }
 .league-pending-editor { padding: 20px; border: 1px solid #cad4ba; background: #f4f6ed; margin-top: 20px; }
 .league-pending-editor fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
-.league-pending-editor label:not(.league-checkbox) { display: grid; gap: 8px; margin: 12px 0; font-size: 13px; }
+.league-pending-editor label:not(.league-checkbox) { display: grid; gap: 8px; margin: 12px 0; font-size: 1rem; }
 .league-pending-editor input:not([type="checkbox"]), .league-pending-editor select { padding: 10px; border: 1px solid #bdc8ac; background: white; width: 100%; box-sizing: border-box; }
 .league-replay { border: 1px solid #cdd6bd; background: #fafbf6; padding: 25px; margin-top: 30px; }
-.league-replay h3 { font-size: 30px; margin: 6px 0; }
+.league-replay h3 { font-size: 1.875rem; margin: 6px 0; }
 .league-replay-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 24px 0; }
-.league-replay-controls label { display: grid; gap: 6px; font-size: 12px; }
+.league-replay-controls label { display: grid; gap: 6px; font-size: 0.875rem; }
 .league-replay-controls select { padding: 10px; border: 1px solid #c6cfb9; color: #193b31; background: white; }
 .league-replay-chart svg { display: block; width: 100%; min-height: 220px; touch-action: none; cursor: crosshair; }
-.league-replay-chart text { fill: #435d4d; font-size: 12px; }
-.league-replay-scrubber { display: grid; gap: 12px; font-size: 13px; }
+.league-replay-chart text { fill: #435d4d; font-size: 0.875rem; }
+.league-replay-scrubber { display: grid; gap: 12px; font-size: 1rem; }
 .league-replay-scrubber input { width: 100%; accent-color: #527631; }
 .league-replay-readouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 20px; }
 .league-replay-readouts article { border: 1px solid #d7ddcf; border-top: 3px solid; padding: 16px; background: white; }
-.league-replay-readouts small { display: block; font-size: 10px; line-height: 1.7; margin-top: 6px; }
-.league-replay-readouts p { font-size: 12px; margin: 8px 0 0; }
+.league-replay-readouts small { display: block; font-size: 0.75rem; line-height: 1.7; margin-top: 6px; }
+.league-replay-readouts p { font-size: 0.875rem; margin: 8px 0 0; }
 @media (max-width: 720px) {
   .league-replay-selection { align-items: stretch; flex-direction: column; }
   .league-replay { padding: 15px; }
