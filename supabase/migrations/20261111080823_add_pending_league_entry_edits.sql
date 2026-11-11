@@ -1,4 +1,4 @@
--- Prepared for local review only. Not applied to the hosted project.
+-- Applied at the organiser-authorised release on 11 November 2026.
 alter table public.league_entries add column revision integer not null default 0 check (revision >= 0);
 
 create function public.league_edit_entry(entry_id uuid, expected_revision integer, changes jsonb)

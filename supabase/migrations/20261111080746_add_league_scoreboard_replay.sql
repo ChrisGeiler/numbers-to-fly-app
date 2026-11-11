@@ -1,4 +1,4 @@
--- Prepared for release; do not apply while the league remains local-only.
+-- Applied at the organiser-authorised release on 11 November 2026.
 -- Private originals and weather snapshots retain their existing RLS policies.
 alter table public.league_entries add column replay_data jsonb;
 alter table public.league_entries add constraint league_replay_object

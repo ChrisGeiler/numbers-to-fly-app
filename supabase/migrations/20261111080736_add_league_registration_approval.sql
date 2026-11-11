@@ -1,4 +1,4 @@
--- Prepared for release. Do not apply to the live project during local review.
+-- Applied at the organiser-authorised release on 11 November 2026.
 create table public.league_registrations (
   user_id uuid primary key references auth.users(id),
   public_name text not null check (length(trim(public_name)) between 2 and 60),
