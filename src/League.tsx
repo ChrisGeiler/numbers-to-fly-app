@@ -568,7 +568,7 @@ export default function League({
             <h1>
               Different skies.
               <br />
-              One window of flight.
+              <em>One window of flight.</em>
             </h1>
             <p className="league-intro">
               Your local drop zone. A nationwide challenge.
