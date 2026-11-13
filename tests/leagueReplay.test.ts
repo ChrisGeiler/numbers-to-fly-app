@@ -55,3 +55,27 @@ test("round scoreboard counts best approved attempt only, preserves ties and zer
   assert.equal(complete.rows[0].total,300);
   assert.ok(Object.values(complete.rows[0].points).every(value=>value===100));
 });
+
+test("category leaders and round points stay independent even for the same competitor", () => {
+  const rows = [
+    {...entry("b1","A","speed",120),category:"beginner" as const},
+    {...entry("b2","B","speed",100),category:"beginner" as const},
+    {...entry("i1","A","speed",200),category:"intermediate" as const},
+    entry("o1","A","speed",300),
+  ];
+  const beginner = rankLeagueScoreboard(rows,"overall","beginner");
+  assert.equal(beginner.leaders.speed,120);
+  assert.equal(beginner.rows.length,2);
+  assert.equal(beginner.rows[0].total,100);
+  assert.equal(beginner.rows[0].entries[0].id,"b1");
+  assert.ok(Math.abs(beginner.rows[1].total-100*100/120)<1e-8);
+  assert.equal(rankLeagueScoreboard(rows,"speed","intermediate").leaders.speed,200);
+  assert.equal(rankLeagueScoreboard(rows).leaders.speed,300);
+  for (const category of ["beginner","intermediate","open"] as const) {
+    const complete = ["speed","time","distance"].map((task,index)=>({
+      ...entry(`${category}-${index}`,"Winner",task as LeagueScoreboardEntry["discipline"],100),category,
+    }));
+    assert.equal(rankLeagueScoreboard([...rows,...complete],"overall",category).rows.find(row=>row.name==="Winner")!.points.time,100);
+    assert.ok(rankLeagueScoreboard([...rows,...complete],"overall",category).rows.every(row=>row.total<=300));
+  }
+});

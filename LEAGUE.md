@@ -1,5 +1,22 @@
 # Australian Wingsuit League — initial pilot
 
+## Competition categories — released 13 November 2026
+
+Beginner (suits smaller than an ATC/Strix), Intermediate (non-race/non-competition
+suits), and Open (experienced competitors in race/competition suits) have separate
+scoreboard tabs and independent task leaders/points, each with a 300-point maximum.
+Competitors select a category for each track. The category appears on private entry
+and organiser review cards. Pending edits may change category and invalidate the
+old scoring/replay; approved entries cannot be edited. Attempt numbering is scoped
+to category as well as competitor/task/round, including replay labels.
+
+Existing entries default to Open without changing recorded scores. Old seven-field
+edit clients preserve the existing category. The organiser authorised publication;
+the database migration is applied. The regression checks in tests/leagueCategories.sql
+passed against the live database with all fixtures rolled back. Local checks:
+33 league tests, TypeScript and production build pass; category tab switching
+verified in the browser.
+
 ## Release — 11 November 2026
 
 Published route: `https://numbers.flywithcruza.com/ozleague/`.

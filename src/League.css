@@ -400,6 +400,7 @@ button:disabled {
   border-bottom: 1px solid #ccd4c3;
   margin-top: 20px;
 }
+.league-category-tabs { flex-wrap: wrap; }
 .league-tabs button {
   background: none;
   border: 0;

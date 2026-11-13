@@ -3,6 +3,8 @@ import type { supabase } from "./supabase";
 import { leagueTasks, leagueTaskUnit, leagueTaskValue, rankLeagueScoreboard } from "./leagueScoreboardModel";
 import type { LeagueScoreboardEntry, LeagueTask } from "./leagueScoreboardModel";
 import type { LeagueReplayData } from "./leagueReplay";
+import { leagueCategories } from "./leagueCategories";
+import type { LeagueCategory } from "./leagueCategories";
 const LeagueReplay = lazy(() => import("./LeagueTrackReplay"));
 export type ReplayTrack = { id: string; public_name: string; discipline: LeagueTask; attempt: number; replay: LeagueReplayData };
 
@@ -10,14 +12,16 @@ export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }
   client: typeof supabase; rows: LeagueScoreboardEntry[]; roundTitle: string; onRefresh: () => void;
 }) {
   const [task, setTask] = useState<LeagueTask | "overall">("overall");
+  const [category, setCategory] = useState<LeagueCategory>("open");
   const [selected, setSelected] = useState<string[]>([]);
   const [replay, setReplay] = useState<ReplayTrack[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const sequence = useRef(0);
-  const { leaders, rows: ranked } = rankLeagueScoreboard(rows, task);
+  const categoryRows = rows.filter(entry => (entry.category ?? "open") === category);
+  const { leaders, rows: ranked } = rankLeagueScoreboard(rows, task, category);
   const tasks = task === "overall" ? [...leagueTasks] : [task];
-  const counts = Object.fromEntries(leagueTasks.map(d => [d, Math.max(1, ...rows.filter(e => e.discipline === d).map(e => e.attempt))]));
+  const counts = Object.fromEntries(leagueTasks.map(d => [d, Math.max(1, ...categoryRows.filter(e => e.discipline === d).map(e => e.attempt))]));
   const selectedKey = selected.join("|");
   useEffect(() => {
     sequence.current++;
@@ -54,6 +58,13 @@ export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }
       <div><p className="league-eyebrow">THE NATIONAL PICTURE</p><h2>Round scoreboard</h2><p>{roundTitle}</p></div>
       <button className="league-secondary" onClick={onRefresh}>Refresh scoreboard ↻</button>
     </div>
+    <div className="league-tabs league-category-tabs" role="tablist" aria-label="Competition category">
+      {leagueCategories.map(value => <button key={value.value} role="tab" aria-selected={category === value.value}
+        className={category === value.value ? "active" : ""} onClick={() => {
+          sequence.current++; setCategory(value.value); setSelected([]); setReplay([]); setLoading(false); setError("");
+        }}>{value.label}</button>)}
+    </div>
+    <p className="league-caption">{leagueCategories.find(value => value.value === category)!.description} Rankings and points are calculated within this category only.</p>
     <div className="league-tabs" role="tablist" aria-label="Scoreboard task">
       {(["overall", ...leagueTasks] as const).map(value => <button key={value} role="tab" aria-selected={task === value}
         className={task === value ? "active" : ""} onClick={() => setTask(value)}>{value === "overall" ? "Scoreboard" : value}</button>)}
@@ -65,7 +76,7 @@ export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }
         <button className="league-secondary" disabled={!selected.length} onClick={() => setSelected([])}>Clear selection</button>
       </div>
     </div>
-    {!rows.length ? <div className="league-empty"><h3>A fresh scoreboard.</h3><p>Approved scores will appear here for this round.</p></div> :
+    {!categoryRows.length ? <div className="league-empty"><h3>A fresh scoreboard.</h3><p>Approved {leagueCategories.find(value => value.value === category)!.label} scores will appear here for this round.</p></div> :
       <div className="league-table-scroll" tabIndex={0} role="region" aria-label="Round scores, scroll horizontally for all attempts">
         <table className="league-scoreboard-table">
           <caption className="league-caption">Wind-corrected speed and distance · measured time · approved entries only</caption>

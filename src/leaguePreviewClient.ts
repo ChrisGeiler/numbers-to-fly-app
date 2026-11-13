@@ -151,6 +151,8 @@ export function createLeaguePreviewClient(
             return fail("Enter your name and home state.");
         }
         if (this.table === "league_entries") {
+          if (this.payload.category !== undefined && !["beginner", "intermediate", "open"].includes(String(this.payload.category)))
+            return fail("Choose a valid competition category.");
           if (store.entries.filter(row=>row.user_id===userId && row.round_id===this.payload.round_id).length >= 12)
             return fail("Maximum 12 entries per round. Edit an existing pending entry instead.");
           if (!canSubmit())
@@ -183,6 +185,7 @@ export function createLeaguePreviewClient(
           coaching_note: null,
           review_note: null,
           revision: 0,
+          category: "open",
           ...this.payload,
         });
         await store.persist?.();
@@ -262,11 +265,11 @@ export function createLeaguePreviewClient(
           .sort((a, b) => String(a.submitted_at).localeCompare(String(b.submitted_at)) || String(a.id).localeCompare(String(b.id)));
         const attempts = new Map<string, number>();
         const projected = publicEntries.map(row => {
-          const key = `${row.round_id}/${row.user_id}/${row.discipline}`;
+          const key = `${row.round_id}/${row.user_id}/${row.discipline}/${row.category ?? "open"}`;
           const attempt = (attempts.get(key) ?? 0) + 1;
           attempts.set(key, attempt);
           return { id: row.id, competitor_key: row.user_id, public_name: row.public_name,
-            region: row.region, discipline: row.discipline, attempt,
+            region: row.region, discipline: row.discipline, category: row.category ?? "open", attempt,
             replay_available: !!row.replay_data || (!!row.wind_snapshot && store.files.has(String(row.file_path))),
             time_s: row.time_s, corrected_speed_kmh: row.corrected_speed_kmh,
             corrected_distance_m: row.corrected_distance_m, raw_speed_kmh: row.raw_speed_kmh,
@@ -333,8 +336,9 @@ export function createLeaguePreviewClient(
         if (!round?.published || Date.now() < Date.parse(String(round.opens_at)) || Date.now() >= Date.parse(String(round.closes_at)))
           return fail("Entries can only be edited while the round is open.");
         const changes = args.changes as Row;
-        const allowed = ["public_name","region","discipline","location_name","ground_elevation_m","coaching_requested","file_path"];
-        if (!changes || typeof changes !== "object" || Object.keys(changes).length !== allowed.length || Object.keys(changes).some(key=>!allowed.includes(key)) ||
+        const allowed = ["public_name","region","discipline","location_name","ground_elevation_m","coaching_requested","file_path","category"];
+        if (!changes || typeof changes !== "object" || ![7,8].includes(Object.keys(changes).length) || Object.keys(changes).some(key=>!allowed.includes(key)) ||
+          (changes.category !== undefined && !["beginner","intermediate","open"].includes(String(changes.category))) ||
           typeof changes.public_name !== "string" || changes.public_name.trim().length < 2 || changes.public_name.trim().length > 60 ||
           !["ACT","NSW","NT","QLD","SA","VIC","WA"].includes(String(changes.region)) ||
           !["speed","time","distance"].includes(String(changes.discipline)) ||

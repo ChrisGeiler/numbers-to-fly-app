@@ -1,3 +1,4 @@
+import type { LeagueCategory } from "./leagueCategories.ts";
 export const leagueTasks = ["distance", "speed", "time"] as const;
 export type LeagueTask = typeof leagueTasks[number];
 export type LeagueScoreboardEntry = {
@@ -6,6 +7,7 @@ export type LeagueScoreboardEntry = {
   public_name: string;
   region: string;
   discipline: LeagueTask;
+  category?: LeagueCategory;
   attempt: number;
   replay_available: boolean;
   time_s: number;
@@ -18,7 +20,8 @@ export const leagueTaskValue = (entry: LeagueScoreboardEntry) => entry.disciplin
   ? entry.time_s : entry.discipline === "speed" ? entry.corrected_speed_kmh : entry.corrected_distance_m;
 export const leagueTaskUnit = (task: LeagueTask) => task === "time" ? "s" : task === "speed" ? "km/h" : "m";
 
-export function rankLeagueScoreboard(entries: LeagueScoreboardEntry[], task: LeagueTask | "overall" = "overall") {
+export function rankLeagueScoreboard(entries: LeagueScoreboardEntry[], task: LeagueTask | "overall" = "overall", category: LeagueCategory = "open") {
+  entries = entries.filter(entry => (entry.category ?? "open") === category);
   const leaders = Object.fromEntries(leagueTasks.map(d => [d,
     Math.max(0, ...entries.filter(e => e.discipline === d).map(leagueTaskValue))]));
   const grouped = new Map<string, { id: string; name: string; region: string; entries: LeagueScoreboardEntry[] }>();

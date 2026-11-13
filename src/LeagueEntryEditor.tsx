@@ -3,10 +3,12 @@ import type { FormEvent } from "react";
 import type { supabase } from "./supabase";
 import { dropZoneReferences } from "./leagueDropZones";
 import { leagueWindow } from "./leagueScoring";
+import { leagueCategories } from "./leagueCategories";
 
 export type EditableLeagueEntry = {
   id: string; round_id: string; file_path: string; public_name: string; region: string;
   discipline: string; location_name: string; ground_elevation_m: number;
+  category?: string;
   coaching_requested: boolean; revision?: number;
 };
 export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCancel }: {
@@ -44,7 +46,7 @@ export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCa
       const response = await client.rpc("league_edit_entry", {
         entry_id: entry.id, expected_revision: entry.revision ?? 0,
         changes: { public_name: String(form.get("name")).trim(), region: form.get("region"),
-          discipline: form.get("discipline"), location_name: location,
+          discipline: form.get("discipline"), category: form.get("category"), location_name: location,
           ground_elevation_m: Number(ground), coaching_requested: form.get("coaching") === "on",
           file_path: uploaded || entry.file_path },
       });
@@ -65,6 +67,7 @@ export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCa
         <label>Public competitor name<input name="name" required minLength={2} maxLength={60} defaultValue={entry.public_name} /></label>
         <label>Home state<select name="region" defaultValue={entry.region}>{["ACT","NSW","NT","QLD","SA","VIC","WA"].map(r => <option key={r}>{r}</option>)}</select></label>
         <label>Task<select name="discipline" defaultValue={entry.discipline}>{["speed","time","distance"].map(d => <option key={d}>{d}</option>)}</select></label>
+        <label>Competition category<select name="category" required defaultValue={entry.category ?? "open"}>{leagueCategories.map(category => <option key={category.value} value={category.value}>{category.label} — {category.description}</option>)}</select></label>
         <label>Drop zone<select value={location} onChange={e => {
           setLocation(e.target.value);
           const dz = dropZoneReferences.find(d => d.name === e.target.value);

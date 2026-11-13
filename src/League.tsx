@@ -8,6 +8,7 @@ import LeagueGoogleSignIn from "./LeagueGoogleSignIn";
 import LeagueRegistration from "./LeagueRegistration";
 import LeagueEntryEditor from "./LeagueEntryEditor";
 import LeagueScoreboard from "./LeagueScoreboard";
+import { leagueCategories, categoryLabel } from "./leagueCategories";
 import LeagueAppPromo from "./LeagueAppPromo";
 import type { LeagueScoreboardEntry } from "./leagueScoreboardModel";
 import { dropZoneReferences } from "./leagueDropZones";
@@ -29,6 +30,7 @@ type Result = {
   public_name: string;
   region: string;
   discipline: string;
+  category?: string;
   time_s: number;
   corrected_speed_kmh: number;
   corrected_distance_m: number;
@@ -321,7 +323,7 @@ export default function League({
       let query = client
         .from("league_entries")
         .select(
-          "id,round_id,public_name,region,discipline,status,location_name,ground_elevation_m,file_path,submitted_at,coaching_requested,coaching_note,review_note,time_s,corrected_speed_kmh,corrected_distance_m,raw_speed_kmh,raw_distance_m,scoring_version,jump_at,file_hash,wind_snapshot,revision",
+          "id,round_id,public_name,region,discipline,category,status,location_name,ground_elevation_m,file_path,submitted_at,coaching_requested,coaching_note,review_note,time_s,corrected_speed_kmh,corrected_distance_m,raw_speed_kmh,raw_distance_m,scoring_version,jump_at,file_hash,wind_snapshot,revision",
         )
         .eq("round_id", roundId)
         .order("submitted_at", { ascending: false })
@@ -433,6 +435,7 @@ export default function League({
         public_name: String(form.get("name")).trim(),
         region: form.get("region"),
         discipline: form.get("discipline"),
+        category: form.get("category"),
         location_name: String(form.get("location")).trim(),
         ground_elevation_m: ground,
         file_path: path,
@@ -739,6 +742,16 @@ export default function League({
             <a href="#rules">Read the pilot scoring method ↓</a>
           </p>
         </section>
+        <section className="league-section" aria-labelledby="league-categories-title">
+          <p className="league-eyebrow">A CATEGORY FOR YOUR NEXT STEP</p>
+          <h2 id="league-categories-title">Three separate competitions.</h2>
+          <div className="league-task-grid">
+            {leagueCategories.map(category => <article className="league-task" key={category.value}>
+              <h3>{category.label}</h3><p>{category.description}</p>
+            </article>)}
+          </div>
+          <p className="league-caption">Choose the category that matches your suit and experience. The organiser verifies each entry before approval. Each category has its own rankings and a maximum of 300 round points.</p>
+        </section>
         <section className="league-section" id="standings">
           <LeagueScoreboard key={roundId} client={client} rows={results}
             roundTitle={round?.title ?? "Select a round"} onRefresh={() => void refresh()} />
@@ -917,6 +930,13 @@ export default function League({
                           </select>
                         </label>
                         <label>
+                          Competition category
+                          <select name="category" required defaultValue="">
+                            <option value="" disabled>Select category</option>
+                            {leagueCategories.map(category => <option key={category.value} value={category.value}>{category.label} — {category.description}</option>)}
+                          </select>
+                        </label>
+                        <label>
                           Drop zone / location
                           <select name="location" required value={selectedDropZone}
                             onChange={(event) => {
@@ -1071,7 +1091,7 @@ export default function League({
                     </span>
                   </div>
                   <p>
-                    {entry.location_name} · {entry.region} ·{" "}
+                    {categoryLabel(entry.category)} · {entry.location_name} · {entry.region} ·{" "}
                     {date(entry.submitted_at)}
                     {entry.coaching_requested ? " · Coaching requested" : ""}
                   </p>

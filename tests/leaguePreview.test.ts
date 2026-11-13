@@ -97,6 +97,22 @@ function entryChanges(entry: Record<string, unknown>, overrides: Record<string,u
     coaching_requested:Boolean(entry.coaching_requested),file_path:entry.file_path,...overrides };
 }
 
+test("pending category changes require valid categories and organiser re-review", async () => {
+  const store = createPreviewStore();
+  const {id,entry} = await upload(store);
+  const client = createLeaguePreviewClient(store,"competitor");
+  assert.ok((await client.rpc("league_edit_entry",{entry_id:id,expected_revision:0,changes:entryChanges(entry,{category:"elite"})})).error);
+  assert.equal(entry.category,"open");
+  Object.assign(entry,{scoring_version:"pilot-v1",corrected_speed_kmh:200,replay_data:{version:1,points:[]}});
+  assert.equal((await client.rpc("league_edit_entry",{entry_id:id,expected_revision:0,changes:entryChanges(entry,{category:"beginner"})})).error,null);
+  assert.equal(entry.category,"beginner");
+  assert.equal(entry.scoring_version,null);
+  assert.equal(entry.replay_data,null);
+  assert.equal(entry.status,"pending");
+  entry.status="approved";
+  assert.ok((await client.rpc("league_edit_entry",{entry_id:id,expected_revision:1,changes:entryChanges(entry,{category:"open"})})).error);
+});
+
 test("pending entry edits are owner-only, clear scores and require a fresh revision for approval", async () => {
   const store=createPreviewStore(), item=await upload(store);
   const competitor=createLeaguePreviewClient(store,"competitor");
