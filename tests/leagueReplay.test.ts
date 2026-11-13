@@ -38,7 +38,7 @@ test("replay interpolates the playhead and freezes each track at its own finish"
 });
 
 function entry(id:string,pilot:string,discipline:LeagueScoreboardEntry["discipline"],value:number):LeagueScoreboardEntry {
-  return { id, competitor_key:pilot, public_name:pilot, region:"NSW",discipline,attempt:1,replay_available:true,
+  return { id, competitor_key:pilot, public_name:pilot, region:"NSWPC",discipline,attempt:1,replay_available:true,
     time_s:discipline==="time"?value:50, corrected_speed_kmh:discipline==="speed"?value:180,
     corrected_distance_m:discipline==="distance"?value:2500,raw_speed_kmh:180,raw_distance_m:2500 };
 }

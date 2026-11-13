@@ -289,14 +289,14 @@ export default function LeagueRegistration({
             />
           </label>
           <label>
-            Home state
+            State council
             <select
               required
               value={homeState}
               onChange={(event) => onHomeStateChange(event.target.value)}
             >
               <option value="" disabled>
-                Select home state
+                Select state council
               </option>
               {regions.map((region) => (
                 <option key={region}>{region}</option>

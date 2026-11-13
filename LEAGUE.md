@@ -1,5 +1,15 @@
 # Australian Wingsuit League — initial pilot
 
+## State councils — 13 November 2026
+
+League affiliations now use NSWPC, SQPC, VTPC, SAPC, WAPC, NTPC and NQPC.
+The existing region API field stores council codes; forms label it State council.
+The authorised migration assigns V-Man to NSWPC and Chris Geiler and Charleen
+Herrmann to SQPC, including their existing entries. Old unambiguous state
+preferences migrate to council codes; an old QLD preference requires a fresh
+choice rather than guessing between SQPC and NQPC. Access/category SQL regression
+checks passed with all fixtures rolled back. Local league tests: 34 passing.
+
 ## Organiser navigation trial — 13 November 2026
 
 The authenticated app-owner account flywithcruza@gmail.com has a compartmentalised

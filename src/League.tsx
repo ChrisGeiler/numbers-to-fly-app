@@ -9,6 +9,7 @@ import LeagueRegistration from "./LeagueRegistration";
 import LeagueEntryEditor from "./LeagueEntryEditor";
 import LeagueScoreboard from "./LeagueScoreboard";
 import { leagueCategories, categoryLabel } from "./leagueCategories";
+import { stateCouncils, councilFromLegacyRegion } from "./leagueCouncils";
 import LeagueAppPromo from "./LeagueAppPromo";
 import type { LeagueScoreboardEntry } from "./leagueScoreboardModel";
 import { dropZoneReferences } from "./leagueDropZones";
@@ -57,8 +58,8 @@ type Entry = Result & {
 };
 const emailSignInEnabled =
   import.meta.env.VITE_LEAGUE_EMAIL_SIGN_IN_ENABLED === "true";
-const regions = ["ACT", "NSW", "NT", "QLD", "SA", "VIC", "WA"];
-const HOME_STATE_STORAGE_KEY = "ntf-league-home-state";
+const regions = stateCouncils;
+const HOME_STATE_STORAGE_KEY = "ntf-league-state-council";
 const dropZones = dropZoneReferences.map((reference) => reference.name);
 const disciplines = ["speed", "time", "distance"] as const;
 type Discipline = (typeof disciplines)[number];
@@ -137,8 +138,8 @@ export default function League({
   const [windScoreStatus, setWindScoreStatus] = useState("");
   const [homeState, setHomeState] = useState(() => {
     try {
-      const saved = window.localStorage.getItem(HOME_STATE_STORAGE_KEY);
-      return saved && regions.includes(saved) ? saved : "";
+      const saved = window.localStorage.getItem(HOME_STATE_STORAGE_KEY) ?? window.localStorage.getItem("ntf-league-home-state");
+      return councilFromLegacyRegion(saved ?? "");
     } catch {
       return "";
     }
@@ -728,7 +729,7 @@ export default function League({
             <p>
               {round
                 ? `${date(round.opens_at)} — ${date(round.closes_at)} · ${accepting ? "Entries open" : round.published ? "Outside submission window" : "Draft · not open for entries"}`
-                : "Monthly rounds. All states. Your next performance goal."}
+                : "Monthly rounds. All state councils. Your next performance goal."}
             </p>
           </div>
           {rounds.length > 0 && (
@@ -956,7 +957,7 @@ export default function League({
                           />
                         </label>
                         <label>
-                          Home state
+                          State council
                           <select
                             name="region"
                             required
@@ -966,7 +967,7 @@ export default function League({
                             }
                           >
                             <option value="" disabled>
-                              Select home state
+                              Select state council
                             </option>
                             {regions.map((r) => (
                               <option key={r}>{r}</option>
@@ -1102,7 +1103,7 @@ export default function League({
                       </label>
                       <p className="league-caption">
                         Track location and time are required for automatic wind correction using Open-Meteo, or Meteomatics when configured.
-                        {!preview && " Submitting an entry accepts the pilot rules and publication of your name, state, approved scores and relative replay. Original GPS files stay private to you and the organiser."}
+                        {!preview && " Submitting an entry accepts the pilot rules and publication of your name, state council, approved scores and relative replay. Original GPS files stay private to you and the organiser."}
                       </p>
                       <button
                         className="league-button"

@@ -13,7 +13,7 @@ insert into auth.users(id,email) values
 -- Preserve this existing scoring/access test after the registration release.
 do $$ begin
   if to_regclass('public.league_registrations') is not null then
-    execute 'insert into public.league_registrations(user_id,public_name,region,status) values ($1,''Approved access fixture'',''NSW'',''approved'')'
+    execute 'insert into public.league_registrations(user_id,public_name,region,status) values ($1,''Approved access fixture'',''NSWPC'',''approved'')'
       using current_setting('league.test_user')::uuid;
   end if;
 end $$;
@@ -35,7 +35,7 @@ insert into storage.objects(bucket_id,name,owner_id) values
   ('league-tracks',current_setting('league.test_user') || '/' || current_setting('league.test_round') || '/' || current_setting('league.test_entry') || '.csv',current_setting('league.test_user'));
 insert into public.league_entries(id,user_id,round_id,public_name,region,discipline,location_name,ground_elevation_m,file_path)
 values(current_setting('league.test_entry')::uuid,current_setting('league.test_user')::uuid,current_setting('league.test_round')::uuid,
-  'Test competitor','NSW','speed','Test drop zone',100,current_setting('league.test_user') || '/' || current_setting('league.test_round') || '/' || current_setting('league.test_entry') || '.csv');
+  'Test competitor','NSWPC','speed','Test drop zone',100,current_setting('league.test_user') || '/' || current_setting('league.test_round') || '/' || current_setting('league.test_entry') || '.csv');
 do $$ begin
   if public.current_user_has_app_access() then raise exception 'League membership granted app access'; end if;
   if not exists(select 1 from public.league_entries where id=current_setting('league.test_entry')::uuid) then raise exception 'Own entry inaccessible'; end if;

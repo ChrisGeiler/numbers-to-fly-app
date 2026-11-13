@@ -3,6 +3,7 @@
 import type { supabase } from "./supabase";
 import { measureLeagueUploadWindow } from "./leagueUploadScore.ts";
 import { buildLeagueReplay } from "./leagueReplay.ts";
+import { stateCouncils, councilFromLegacyRegion } from "./leagueCouncils.ts";
 import type { LeagueWindSnapshot } from "./leagueScoring.ts";
 import {
   leagueWindow,
@@ -59,6 +60,10 @@ export function createLeaguePreviewClient(
   competitorId = PREVIEW_USER_ID,
 ): typeof supabase {
   const organiser = role === "organiser";
+  for (const row of [...store.registrations, ...store.entries]) {
+    const migrated = councilFromLegacyRegion(String(row.region ?? ""));
+    if (migrated) row.region = migrated;
+  }
   const userId = organiser ? PREVIEW_USER_ID : competitorId;
   const profile = PREVIEW_COMPETITORS.find(profile => profile.id === userId);
   if (!profile) throw new Error("Choose a valid local test competitor.");
@@ -144,13 +149,14 @@ export function createLeaguePreviewClient(
           if (
             String(this.payload.public_name ?? "").trim().length < 2 ||
             String(this.payload.public_name).length > 60 ||
-            !["ACT", "NSW", "NT", "QLD", "SA", "VIC", "WA"].includes(
+            !stateCouncils.includes(
               String(this.payload.region),
             )
           )
-            return fail("Enter your name and home state.");
+            return fail("Enter your name and state council.");
         }
         if (this.table === "league_entries") {
+          if (!stateCouncils.includes(String(this.payload.region))) return fail("Choose a valid state council.");
           if (this.payload.category !== undefined && !["beginner", "intermediate", "open"].includes(String(this.payload.category)))
             return fail("Choose a valid competition category.");
           if (store.entries.filter(row=>row.user_id===userId && row.round_id===this.payload.round_id).length >= 12)
@@ -340,7 +346,7 @@ export function createLeaguePreviewClient(
         if (!changes || typeof changes !== "object" || ![7,8].includes(Object.keys(changes).length) || Object.keys(changes).some(key=>!allowed.includes(key)) ||
           (changes.category !== undefined && !["beginner","intermediate","open"].includes(String(changes.category))) ||
           typeof changes.public_name !== "string" || changes.public_name.trim().length < 2 || changes.public_name.trim().length > 60 ||
-          !["ACT","NSW","NT","QLD","SA","VIC","WA"].includes(String(changes.region)) ||
+          !stateCouncils.includes(String(changes.region)) ||
           !["speed","time","distance"].includes(String(changes.discipline)) ||
           typeof changes.location_name !== "string" || changes.location_name.trim().length < 2 || changes.location_name.length > 100 ||
           typeof changes.ground_elevation_m !== "number" || typeof changes.coaching_requested !== "boolean" ||

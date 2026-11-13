@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { stateCouncils, councilFromLegacyRegion } from "../src/leagueCouncils.ts";
 import {
   createLeaguePreviewClient,
   createPreviewStore,
@@ -7,6 +8,20 @@ import {
 } from "../src/leaguePreviewClient.ts";
 
 const base = Date.parse("2026-11-01T00:00:00Z");
+test("registration accepts all state councils and does not guess a Queensland council", async () => {
+  for (const council of stateCouncils) {
+    const store=createPreviewStore(), client=createLeaguePreviewClient(store,"competitor");
+    assert.equal((await client.from("league_registrations").insert({user_id:PREVIEW_USER_ID,public_name:"Council test",region:council})).error,null);
+    assert.equal(store.registrations[0].region,council);
+  }
+  const client=createLeaguePreviewClient(createPreviewStore(),"competitor");
+  for (const invalid of ["QLD","NSW","VIC","unknown"]) {
+    assert.ok((await client.from("league_registrations").insert({user_id:PREVIEW_USER_ID,public_name:"Council test",region:invalid})).error);
+  }
+  assert.equal(councilFromLegacyRegion("QLD"),"");
+  assert.equal(councilFromLegacyRegion("NSW"),"NSWPC");
+  assert.equal(councilFromLegacyRegion("NQPC"),"NQPC");
+});
 function trackCsv(northSpeed = 50) {
   const rows = ["time,lat,lon,hMSL,velN,velE,velD,hAcc,vAcc,sAcc,numSV"];
   for (let i = 0; i < 520; i++)
@@ -57,7 +72,7 @@ async function upload(
       .insert({
         user_id: PREVIEW_USER_ID,
         public_name: "Test pilot",
-        region: "NSW",
+        region: "NSWPC",
       });
     await createLeaguePreviewClient(store, "organiser").rpc(
       "league_review_registration",
@@ -79,7 +94,7 @@ async function upload(
         user_id: PREVIEW_USER_ID,
         round_id: roundId,
         public_name: "Test pilot",
-        region: "NSW",
+        region: "NSWPC",
         discipline: "speed",
         location_name: "Moruya",
         ground_elevation_m: 100,
@@ -130,7 +145,7 @@ test("pending entry edits are owner-only, clear scores and require a fresh revis
   assert.ok((await organiser.rpc("league_review_entry",{entry_id:item.id,decision:"approved",expected_revision:0})).error);
   const otherId="10000000-0000-4000-8000-000000000002";
   const other=createLeaguePreviewClient(store,"competitor",fetch,undefined,otherId);
-  await other.from("league_registrations").insert({user_id:otherId,public_name:"Other pilot",region:"NSW"});
+  await other.from("league_registrations").insert({user_id:otherId,public_name:"Other pilot",region:"NSWPC"});
   await organiser.rpc("league_review_registration",{applicant_id:otherId,decision:"approved"});
   assert.ok((await other.rpc("league_edit_entry",{entry_id:item.id,expected_revision:1,changes:entryChanges(item.entry)})).error);
   assert.equal((await organiser.functions.invoke("league-score",{body:{entry_id:item.id}})).error,null);
@@ -195,12 +210,12 @@ test("four local competitors have independent registration, files and scoreboard
   for (const [index, profile] of PREVIEW_COMPETITORS.entries()) {
     const client = clients[index];
     assert.equal((await client.auth.getSession()).data.session?.user.id,profile.id);
-    assert.equal((await client.from("league_registrations").insert({user_id:profile.id,public_name:profile.name,region:"NSW"})).error,null);
+    assert.equal((await client.from("league_registrations").insert({user_id:profile.id,public_name:profile.name,region:"NSWPC"})).error,null);
     const id = crypto.randomUUID(), path = `${profile.id}/${round}/${id}.csv`;
     assert.ok((await client.storage.from("league-tracks").upload(path,new Blob([trackCsv()]))).error);
     await organiser.rpc("league_review_registration",{applicant_id:profile.id,decision:"approved"});
     assert.equal((await client.storage.from("league-tracks").upload(path,new Blob([trackCsv()]))).error,null);
-    assert.equal((await client.from("league_entries").insert({id,user_id:profile.id,round_id:round,public_name:profile.name,region:"NSW",discipline:"speed",location_name:"Moruya",ground_elevation_m:100,file_path:path})).error,null);
+    assert.equal((await client.from("league_entries").insert({id,user_id:profile.id,round_id:round,public_name:profile.name,region:"NSWPC",discipline:"speed",location_name:"Moruya",ground_elevation_m:100,file_path:path})).error,null);
     assert.equal((await organiser.functions.invoke("league-score",{body:{entry_id:id}})).error,null);
     assert.equal((await organiser.rpc("league_review_entry",{entry_id:id,decision:"approved"})).error,null);
     paths.push(path);
@@ -478,7 +493,7 @@ test("registration must be approved before uploads or round entries, including d
         .insert({
           user_id: PREVIEW_USER_ID,
           public_name: "Test pilot",
-          region: "NSW",
+          region: "NSWPC",
           status: "approved",
         })
     ).error,
@@ -490,7 +505,7 @@ test("registration must be approved before uploads or round entries, including d
         .insert({
           user_id: PREVIEW_USER_ID,
           public_name: "Test pilot",
-          region: "NSW",
+          region: "NSWPC",
         })
     ).error,
     null,

@@ -4,6 +4,7 @@ import type { supabase } from "./supabase";
 import { dropZoneReferences } from "./leagueDropZones";
 import { leagueWindow } from "./leagueScoring";
 import { leagueCategories } from "./leagueCategories";
+import { stateCouncils, councilFromLegacyRegion } from "./leagueCouncils";
 
 export type EditableLeagueEntry = {
   id: string; round_id: string; file_path: string; public_name: string; region: string;
@@ -65,7 +66,7 @@ export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCa
     <fieldset disabled={busy}>
       <div className="league-fields">
         <label>Public competitor name<input name="name" required minLength={2} maxLength={60} defaultValue={entry.public_name} /></label>
-        <label>Home state<select name="region" defaultValue={entry.region}>{["ACT","NSW","NT","QLD","SA","VIC","WA"].map(r => <option key={r}>{r}</option>)}</select></label>
+        <label>State council<select name="region" required defaultValue={councilFromLegacyRegion(entry.region)}><option value="" disabled>Select state council</option>{stateCouncils.map(r => <option key={r}>{r}</option>)}</select></label>
         <label>Task<select name="discipline" defaultValue={entry.discipline}>{["speed","time","distance"].map(d => <option key={d}>{d}</option>)}</select></label>
         <label>Competition category<select name="category" required defaultValue={entry.category ?? "open"}>{leagueCategories.map(category => <option key={category.value} value={category.value}>{category.label} — {category.description}</option>)}</select></label>
         <label>Drop zone<select value={location} onChange={e => {
