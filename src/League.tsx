@@ -72,6 +72,21 @@ const date = (value: string) =>
     year: "numeric",
   });
 const reviewKey = (entry: { id: string; revision?: number }) => `${entry.id}:${entry.revision ?? 0}`;
+const organiserSections = [
+  { id: "overview", label: "Overview" },
+  { id: "standings", label: "Scoreboard" },
+  { id: "registration", label: "Registrations" },
+  { id: "review", label: "Review desk" },
+  { id: "enter", label: "Submit a jump" },
+  { id: "rounds", label: "Round control" },
+  { id: "coaching", label: "Coaching" },
+  { id: "rules", label: "Rules" },
+] as const;
+type OrganiserSection = typeof organiserSections[number]["id"];
+const sectionFromHash = (): OrganiserSection => {
+  const hash = window.location.hash.slice(1);
+  return hash === "how" ? "overview" : organiserSections.find(section => section.id === hash)?.id ?? "review";
+};
 export default function League({
   client = supabase,
   preview = false,
@@ -81,6 +96,18 @@ export default function League({
 }) {
   const [session, setSession] = useState<Session | null>(null);
   const [owner, setOwner] = useState(false);
+  const [organiserSection, setOrganiserSection] = useState<OrganiserSection>(sectionFromHash);
+  const organiserLayout = owner && (preview || session?.user.email?.toLowerCase() === "flywithcruza@gmail.com");
+  const hideOrganiserSection = (section: OrganiserSection) => organiserLayout && organiserSection !== section;
+  useEffect(() => {
+    const followHash = () => setOrganiserSection(sectionFromHash());
+    window.addEventListener("hashchange", followHash);
+    window.addEventListener("popstate", followHash);
+    return () => {
+      window.removeEventListener("hashchange", followHash);
+      window.removeEventListener("popstate", followHash);
+    };
+  }, []);
   const [appAccess, setAppAccess] = useState(false);
   const [rounds, setRounds] = useState<Round[]>([]);
   const [roundId, setRoundId] = useState("");
@@ -549,7 +576,7 @@ export default function League({
             <b>WINGSUIT LEAGUE</b>
           </span>
         </a>
-        <nav aria-label="League navigation">
+        <nav aria-label="League navigation" hidden={organiserLayout}>
           <a href="#standings">Standings</a>
           <a href="#how">How it works</a>
           <a href="#coaching">Coaching</a>
@@ -561,9 +588,38 @@ export default function League({
             {session && canEnter ? "Submit a jump" : "Register to enter"}
           </a>
         </nav>
+        {organiserLayout && <div className="league-organiser-account">
+          <span>Organiser · {session?.user.email}</span>
+          {appAccess && <a href="/">Numbers to Fly ↗</a>}
+          <button className="league-secondary" onClick={() => void client.auth.signOut()}>Sign out</button>
+        </div>}
       </header>
+      {organiserLayout && <nav className="league-organiser-nav" role="tablist" aria-label="Organiser sections">
+        {organiserSections.map(section => <button key={section.id} type="button"
+          role="tab" id={`organiser-tab-${section.id}`}
+          aria-controls="league-organiser-panel" aria-selected={organiserSection === section.id}
+          tabIndex={organiserSection === section.id ? 0 : -1}
+          className={organiserSection === section.id ? "active" : ""}
+          onKeyDown={event => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const index = organiserSections.findIndex(item => item.id === section.id);
+            const next = event.key === "Home" ? 0 : event.key === "End" ? organiserSections.length - 1
+              : (index + (event.key === "ArrowRight" ? 1 : -1) + organiserSections.length) % organiserSections.length;
+            event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button")[next].click();
+            event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button")[next].focus();
+          }}
+          onClick={() => {
+            setOrganiserSection(section.id);
+            window.history.pushState(null, "", `#${section.id}`);
+            window.scrollTo({top: 0, behavior: "instant"});
+          }}>{section.label}{section.id === "review" && entries.some(entry => entry.status === "pending")
+            ? ` (${entries.filter(entry => entry.status === "pending").length})` : ""}</button>)}
+      </nav>}
       <main>
-        <section className="league-hero">
+        <div id="league-organiser-panel" role={organiserLayout ? "tabpanel" : undefined}
+          aria-labelledby={organiserLayout ? `organiser-tab-${organiserSection}` : undefined}>
+        <section className="league-hero" hidden={hideOrganiserSection("overview")}>
           <div className="league-hero-copy">
             <p className="league-eyebrow">
               <span /> AUSTRALIA · PERFORMANCE · COMMUNITY
@@ -694,7 +750,7 @@ export default function League({
             </label>
           )}
         </section>
-        <section className="league-section" id="how">
+        <section className="league-section" id="how" hidden={hideOrganiserSection("overview")}>
           <div className="league-section-heading">
             <p className="league-eyebrow">A REASON TO FLY. A WAY TO IMPROVE.</p>
             <h2>
@@ -742,7 +798,7 @@ export default function League({
             <a href="#rules">Read the pilot scoring method ↓</a>
           </p>
         </section>
-        <section className="league-section" aria-labelledby="league-categories-title">
+        <section className="league-section" aria-labelledby="league-categories-title" hidden={hideOrganiserSection("overview")}>
           <p className="league-eyebrow">A CATEGORY FOR YOUR NEXT STEP</p>
           <h2 id="league-categories-title">Three separate competitions.</h2>
           <div className="league-task-grid">
@@ -752,12 +808,13 @@ export default function League({
           </div>
           <p className="league-caption">Choose the category that matches your suit and experience. The organiser verifies each entry before approval. Each category has its own rankings and a maximum of 300 round points.</p>
         </section>
-        <section className="league-section" id="standings">
+        <section className="league-section" id="standings" hidden={hideOrganiserSection("standings")}>
           <LeagueScoreboard key={roundId} client={client} rows={results}
             roundTitle={round?.title ?? "Select a round"} onRefresh={() => void refresh()} />
         </section>
-        <LeagueAppPromo appAccess={appAccess} />
+        <div hidden={hideOrganiserSection("overview")}><LeagueAppPromo appAccess={appAccess} /></div>
         {session && (
+          <div hidden={hideOrganiserSection("registration")}>
           <LeagueRegistration
             client={client}
             userId={session.user.id}
@@ -768,8 +825,9 @@ export default function League({
             onAccessChange={setRegistrationAccess}
             preview={preview}
           />
+          </div>
         )}
-        <section className="league-section league-entry-section" id="enter">
+        <section className="league-section league-entry-section" id="enter" hidden={hideOrganiserSection("enter")}>
           <div>
             <p className="league-eyebrow">YOUR DROP ZONE. YOUR ROUND.</p>
             <h2>
@@ -1066,12 +1124,13 @@ export default function League({
             )}
           </div>
         </section>
-        {session && entries.length > 0 && (
-          <section className="league-section">
+        {session && (owner || entries.length > 0) && (
+          <section className="league-section" id="review" hidden={hideOrganiserSection("review")}>
             <p className="league-eyebrow">
               {owner ? "ORGANISER WORKSPACE" : "YOUR PROGRESS"}
             </p>
             <h2>{owner ? "Review desk" : "Your entries"}</h2>
+            {entries.length === 0 && <p className="league-caption">No entries to review for this round yet. Use Registrations to approve competitors or Round control to set up a round.</p>}
             {(owner ? [null] : disciplines).map((task) => {
               const taskEntries = task ? entries.filter(entry => entry.discipline === task) : entries;
               const Section = task ? "details" : "div";
@@ -1318,7 +1377,7 @@ export default function League({
           </section>
         )}
         {owner && (
-          <section className="league-section league-admin">
+          <section className="league-section league-admin" id="rounds" hidden={hideOrganiserSection("rounds")}>
             <h2>Round control</h2>
             <p>
               Draft the dates in your device’s local timezone. Publishing locks
@@ -1379,7 +1438,7 @@ export default function League({
             )}
           </section>
         )}
-        <section className="league-coaching" id="coaching">
+        <section className="league-coaching" id="coaching" hidden={hideOrganiserSection("coaching")}>
           <div>
             <p className="league-eyebrow">MORE THAN A PLACE ON THE BOARD</p>
             <h2>
@@ -1404,7 +1463,7 @@ export default function League({
             </a>
           </div>
         </section>
-        <section className="league-section league-rules" id="rules">
+        <section className="league-section league-rules" id="rules" hidden={hideOrganiserSection("rules")}>
           <p className="league-eyebrow">TRANSPARENT BY DESIGN</p>
           <h2>Pilot league rules</h2>
           <div className="league-rules-grid">
@@ -1442,6 +1501,7 @@ export default function League({
             </div>
           </div>
         </section>
+        </div>
       </main>
       {status && (
         <div className="league-toast" role="status">

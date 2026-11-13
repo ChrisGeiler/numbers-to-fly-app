@@ -102,6 +102,46 @@ button:disabled {
   max-width: 112rem;
   margin: auto;
 }
+.league [hidden] { display: none !important; }
+.league-organiser-account {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: .875rem;
+  overflow-wrap: anywhere;
+}
+.league-organiser-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 16px 5%;
+  border-bottom: 1px solid #ccd4c3;
+  background: #e9eddf;
+}
+.league-organiser-nav button {
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #18342d;
+  font-size: .875rem;
+}
+.league-organiser-nav button:hover { background: #dce5ce; }
+.league-organiser-nav button.active {
+  background: #18342d;
+  color: #f6f6ef;
+  font-weight: 700;
+}
+@media (max-width: 640px) {
+  .league-organiser-account { max-width: 60%; gap: 8px; }
+  .league-organiser-nav { gap: 4px; }
+  .league-organiser-nav button { padding: 10px 12px; }
+}
 .league-header {
   min-height: 106px;
   display: flex;

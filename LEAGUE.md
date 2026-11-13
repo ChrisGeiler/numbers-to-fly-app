@@ -1,5 +1,16 @@
 # Australian Wingsuit League — initial pilot
 
+## Organiser navigation trial — 13 November 2026
+
+The authenticated app-owner account flywithcruza@gmail.com has a compartmentalised
+workspace with top tabs: Overview, Scoreboard, Registrations, Review desk, Submit
+a jump, Round control, Coaching and Rules. Other accounts retain the existing
+page layout. The local Organiser preview also enables the trial for verification.
+The round selector stays available, default landing is Review desk, URL fragments
+and browser history select sections, and hidden sections retain unsaved form state.
+Tabs support keyboard arrows/Home/End and wrap on narrow screens. This changes
+presentation only; existing server organiser/registration permissions are retained.
+
 ## Competition categories — released 13 November 2026
 
 Beginner (suits smaller than an ATC/Strix), Intermediate (non-race/non-competition
