@@ -263,14 +263,14 @@ export default function League({
     Date.now() >= Date.parse(round.opens_at) &&
     Date.now() < Date.parse(round.closes_at);
   const canEnter = owner || registrationAccess === "approved";
-  function rememberHomeState(selected: string) {
+  const rememberHomeState = useCallback((selected: string) => {
     setHomeState(selected);
     try {
       window.localStorage.setItem(HOME_STATE_STORAGE_KEY, selected);
     } catch {
       /* Browser preference is optional. */
     }
-  }
+  }, []);
 
   useEffect(() => {
     void client.auth.getSession().then(({ data }) => setSession(data.session));

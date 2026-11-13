@@ -40,6 +40,9 @@ export default function LeagueRegistration({
   const [limit, setLimit] = useState(100);
   const requestVersion = useRef(0);
   const own = requests.find((row) => row.user_id === userId);
+  useEffect(() => {
+    if (own?.region && regions.includes(own.region)) onHomeStateChange(own.region);
+  }, [own?.region, regions, onHomeStateChange]);
   const refresh = useCallback(async () => {
     const version = ++requestVersion.current;
     let query = client
