@@ -23,6 +23,9 @@ or validated competition exit for high exits; ends at an interpolated 1,450 m AG
 crossing. Uses recorded relative timestamps, scoring-window reference lines,
 raw/corrected metrics, drag/pinch zoom and range measurement. Replay comparison
 checkboxes remain separate. The chart code loads only when the viewer opens.
+Vertical start/end lines mark the interpolated scoring-window crossings in time;
+the approved task score is displayed above the graph and is independent of the
+raw/corrected display switch. Exit-time explanatory copy is omitted from the view.
 
 Public league-flight returns only relative seconds, AGL altitude, horizontal and
 vertical speed and saved-wind airspeed for approved entries in published rounds.

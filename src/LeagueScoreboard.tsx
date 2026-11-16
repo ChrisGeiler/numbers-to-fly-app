@@ -18,7 +18,7 @@ export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }
   const [replay, setReplay] = useState<ReplayTrack[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [detail,setDetail]=useState<{id:string;name:string;task:string;attempt:number}|null>(null);
+  const [detail,setDetail]=useState<{id:string;name:string;task:string;attempt:number;score:number;unit:string}|null>(null);
   const sequence = useRef(0);
   const categoryRows = rows.filter(entry => (entry.category ?? "open") === category);
   const { leaders, rows: ranked } = rankLeagueScoreboard(rows, task, category);
@@ -100,7 +100,7 @@ export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }
               return <td key={i}><div className={`league-score-pick ${selected.includes(entry.id) ? "selected" : ""}`}>
                 <input type="checkbox" checked={selected.includes(entry.id)} disabled={!entry.replay_available || (selected.length >= 4 && !selected.includes(entry.id))}
                   onChange={() => toggle(entry.id)} aria-label={`Replay ${pilot.name}, ${d}, jump ${i + 1}`} />
-                <button type="button" className="league-comp-score" onClick={()=>setDetail({id:entry.id,name:pilot.name,task:d,attempt:i+1})}
+                <button type="button" className="league-comp-score" onClick={()=>setDetail({id:entry.id,name:pilot.name,task:d,attempt:i+1,score:value,unit:leagueTaskUnit(d)})}
                   aria-label={`View ${pilot.name}, ${d}, jump ${i+1} comp run`}><b>{value.toFixed(d === "time" ? 2 : 1)}</b><small>{percent.toFixed(1)}%{isBest ? " · Best" : ""}</small></button>
               </div></td>;
             })}<td className="league-best-score">{pilot.entries.some(e => e.discipline === d) ? pilot.points[d].toFixed(1) + "%" : "—"}</td></Fragment>)}

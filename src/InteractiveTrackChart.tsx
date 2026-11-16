@@ -25,6 +25,7 @@ export default function InteractiveTrackChart({
   onCancelExitSelection,
   correctedHorizontalSpeedsMps,
   hideAirspeedWithoutWinds = false,
+  competitionWindowTimes,
 }: {
   points: GpsTrackPoint[];
   playbackPosition?: number;
@@ -43,6 +44,7 @@ export default function InteractiveTrackChart({
   onCancelExitSelection?: () => void;
   correctedHorizontalSpeedsMps?: number[];
   hideAirspeedWithoutWinds?: boolean;
+  competitionWindowTimes?: {start:number;end:number};
 }) {
 const windsAvailable = winds.length > 0 || correctedHorizontalSpeedsMps !== undefined;
 const windAltitudes = winds.map((wind) => wind.altitudeM);
@@ -745,6 +747,12 @@ const diveAngleDeg =
             {playbackPosition !== undefined && (
               <ReferenceLine yAxisId="altitude" x={playbackPosition} stroke="#f97316" strokeWidth={2} />
             )}
+            {competitionWindowTimes && <>
+              <ReferenceLine yAxisId="altitude" x={competitionWindowTimes.start} stroke="#22c55e" strokeWidth={2} strokeDasharray="6 4"
+                label={{value:"Window start",position:"insideTopRight",fill:"#22c55e",fontSize:12}} />
+              <ReferenceLine yAxisId="altitude" x={competitionWindowTimes.end} stroke="#ef4444" strokeWidth={2} strokeDasharray="6 4"
+                label={{value:"Window end",position:"insideTopLeft",fill:"#ef4444",fontSize:12}} />
+            </>}
             {measuredRange && !exitSelectionMode && (
               <ReferenceArea yAxisId="altitude" x1={measuredRange[0]} x2={measuredRange[1]}
                 stroke="#22d3ee" fill="#22d3ee" fillOpacity={0.16} />

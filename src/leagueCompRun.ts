@@ -11,6 +11,20 @@ export type LeagueCompRun = {
   points: {seconds: number; altitudeM: number; horizontalSpeedMps: number; verticalSpeedMps: number; airspeedMps: number | null}[];
 };
 
+export function compRunWindow(run: LeagueCompRun) {
+  const crossing=(altitude:number, after:number)=>{
+    for(let index=1;index<run.points.length;index++) {
+      const a=run.points[index-1],b=run.points[index];
+      if(b.seconds>after && a.altitudeM>altitude && b.altitudeM<=altitude)
+        return a.seconds+(b.seconds-a.seconds)*(a.altitudeM-altitude)/(a.altitudeM-b.altitudeM);
+    }
+    return null;
+  };
+  const start=crossing(2500,-1);
+  const end=start===null?null:crossing(1500,start);
+  return start===null || end===null?undefined:{start,end};
+}
+
 // Public projection: relative time/AGL/flight metrics only, never GPS or UTC time.
 export function buildLeagueCompRun(csv: string, ground: number, winds: LeagueWindSnapshot): LeagueCompRun {
   if (!Number.isFinite(ground)) throw new Error("Invalid DZ elevation.");

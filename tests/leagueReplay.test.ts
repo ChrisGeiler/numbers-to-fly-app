@@ -4,7 +4,7 @@ import { buildLeagueReplay, replayPointAt } from "../src/leagueReplay.ts";
 import { leagueWindow, scoreLeagueWindow, LEAGUE_WIND_MODEL } from "../src/leagueScoring.ts";
 import { rankLeagueScoreboard } from "../src/leagueScoreboardModel.ts";
 import type { LeagueScoreboardEntry } from "../src/leagueScoreboardModel.ts";
-import { buildLeagueCompRun } from "../src/leagueCompRun.ts";
+import { buildLeagueCompRun, compRunWindow } from "../src/leagueCompRun.ts";
 import { getValidatedJumpTrack, parseFlySightCsv } from "../src/gpsAnalysis.ts";
 const base = Date.parse("2026-11-01T00:00:00Z");
 function csv() {
@@ -24,6 +24,10 @@ test("full comp run shares analyser exit detection, interpolates 1450 AGL and pu
   assert.equal(run.points.at(-1)!.altitudeM,1450);
   assert.ok(run.points.at(-1)!.seconds>scoreLeagueWindow(leagueWindow(csv(),100),winds).time_s);
   assert.equal(run.correctedAvailable,true);
+  const window=compRunWindow(run)!;
+  const score=scoreLeagueWindow(leagueWindow(csv(),100),winds);
+  assert.ok(window.start>0 && window.end<run.points.at(-1)!.seconds);
+  assert.ok(Math.abs(window.end-window.start-score.time_s)<0.000001);
   assert.ok(Math.abs(run.points[10].airspeedMps!-Math.hypot(20,45))<1e-8);
   assert.deepEqual(Object.keys(run.points[0]).sort(),["seconds","altitudeM","horizontalSpeedMps","verticalSpeedMps","airspeedMps"].sort());
   assert.ok(!JSON.stringify(run).includes("2026-11-01"));

@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import type { supabase } from "./supabase";
 import type { GpsTrackPoint } from "./gpsAnalysis";
 import type { LeagueCompRun } from "./leagueCompRun";
+import { compRunWindow } from "./leagueCompRun";
 import InteractiveTrackChart from "./InteractiveTrackChart";
 import "./LeagueCompRunViewer.css";
 
 export default function LeagueCompRunViewer({client, entry, onClose}: {
-  client:typeof supabase; entry:{id:string;name:string;task:string;attempt:number}; onClose:()=>void;
+  client:typeof supabase; entry:{id:string;name:string;task:string;attempt:number;score:number;unit:string}; onClose:()=>void;
 }) {
   const dialog=useRef<HTMLDialogElement>(null);
   const [run,setRun]=useState<LeagueCompRun|null>(null);
@@ -36,15 +37,16 @@ export default function LeagueCompRunViewer({client, entry, onClose}: {
   return <dialog ref={dialog} className="league-comp-run" aria-labelledby="comp-run-title" onClose={onClose}>
     <header><div><p>FULL COMP RUN</p><h2 id="comp-run-title">{entry.name} · {entry.task} · Jump {entry.attempt}</h2></div>
       <button type="button" onClick={()=>dialog.current?.close()}>Close graph</button></header>
+    <p className="league-comp-run-score"><strong>Approved {entry.task === "time"?"time":`wind-corrected ${entry.task}`} score: {entry.score.toFixed(entry.task==="time"?2:1)} {entry.unit}</strong></p>
     {!run && !error && <p role="status">Loading comp run…</p>}
     {error && <p role="alert">{error}</p>}
     {run && <>
-      <p>{run.adjustedExit?"Corrected competition exit":"Detected exit"}: {run.exitAltitudeM.toFixed(0)} m AGL → 1,450 m AGL. Time starts at exit.</p>
+      <p>{run.adjustedExit?"Corrected competition exit":"Detected exit"}: {run.exitAltitudeM.toFixed(0)} m AGL → 1,450 m AGL.</p>
       {!run.correctedAvailable && <p>Saved winds do not cover the entire comp run. Showing raw flight data; the approved score is unchanged.</p>}
       <InteractiveTrackChart points={points} recordedTimes={run.points.map(point=>point.seconds)} windowOffsetM={0}
         winds={[]} correctedHorizontalSpeedsMps={run.correctedAvailable?run.points.map(point=>point.airspeedMps!):undefined}
         graphView="comp" onGraphViewChange={()=>{}} scoreMode={mode} onScoreModeChange={setMode}
-        showViewControls={false} showScoreModeControl hideAirspeedWithoutWinds />
+        showViewControls={false} showScoreModeControl hideAirspeedWithoutWinds competitionWindowTimes={compRunWindow(run)} />
     </>}
   </dialog>;
 }

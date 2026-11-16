@@ -6,6 +6,7 @@
 .league-comp-run header { display:flex; justify-content:space-between; align-items:start; gap:20px; }
 .league-comp-run h2 { font-size:1.5rem; color:#22d3ee; margin: 0 0 16px; }
 .league-comp-run p { font-size:.9rem; line-height:1.6; }
+.league-comp-run .league-comp-run-score { font-size:1.2rem; color:#22d3ee; }
 .league-comp-run button { background:#079eb9; color:#001920; border:1px solid #22d3ee; border-radius:6px; padding:10px 14px; font-weight:600; }
 .league-comp-run button:disabled { opacity:.5; }
 .league-comp-run .card { border:1px solid #15586b; border-radius:12px; padding:18px; background:#0d1628; }
