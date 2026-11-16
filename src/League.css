@@ -750,6 +750,12 @@ button:disabled {
   border-bottom: 1px solid #d3dac9;
   padding-bottom: 12px;
 }
+.league-round-folders { display:grid; gap:16px; }
+.league-round-folder { border:1px solid #ccd4c3; border-radius:6px; background:#f0f3e8; }
+.league-round-folder > summary { cursor:pointer; padding:18px; margin:0 !important; font-size:1.125rem; }
+.league-round-folder > summary > .league-caption { display:block; margin:6px 0 0 24px; }
+.league-round-folder-contents { padding:0 clamp(12px, 2vw, 24px) 20px; }
+.league-round-folder-contents > .league-task-section { border:1px solid #d4dccb; background:#fafbf6; border-radius:4px; padding:0 16px 16px; }
 
 .league-task-section > summary {
   cursor: pointer;

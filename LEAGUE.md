@@ -1,5 +1,20 @@
 # Australian Wingsuit League — initial pilot
 
+## Round review folders — 17 November 2026
+
+The organiser Review desk lists expandable folders for all available rounds,
+including clearly labelled drafts. Each selected round contains Pending and
+Approved subfolders; Rejected / withdrawn appears when needed. Folder contents
+are live views of entry status, so review actions move the entry to the matching
+subfolder after refresh. New rounds automatically appear from the round list.
+Opening a different round updates the shared round selector, clears stale cards
+and loads that round's entries on demand. The existing Load more control remains.
+Original Storage paths and competitor task grouping are unchanged.
+
+Browser checks used isolated local fixtures on port 5176: a new December draft
+appeared with both empty subfolders; switching back restored 1 Pending and 4
+Approved entries. No live rounds or results were created by these checks.
+
 ## Score-click comp run graph — 17 November 2026
 
 Click an approved jump score to open its full comp run in a modal, using the same

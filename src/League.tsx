@@ -8,6 +8,7 @@ import LeagueGoogleSignIn from "./LeagueGoogleSignIn";
 import LeagueRegistration from "./LeagueRegistration";
 import LeagueEntryEditor from "./LeagueEntryEditor";
 import LeagueScoreboard from "./LeagueScoreboard";
+import LeagueRoundFolders from "./LeagueRoundFolders";
 import { leagueCategories, categoryLabel } from "./leagueCategories";
 import { stateCouncils, councilFromLegacyRegion } from "./leagueCouncils";
 import LeagueAppPromo from "./LeagueAppPromo";
@@ -1131,14 +1132,20 @@ export default function League({
               {owner ? "ORGANISER WORKSPACE" : "YOUR PROGRESS"}
             </p>
             <h2>{owner ? "Review desk" : "Your entries"}</h2>
+            {owner && <p className="league-caption">Open a round folder, then Pending or Approved. New rounds appear here automatically.</p>}
+            <LeagueRoundFolders enabled={owner} rounds={rounds} selectedRoundId={roundId} onSelect={id=>{
+              setEntries([]);
+              setRoundId(id);
+              setEntryLimit(200);
+            }}>
             {entries.length === 0 && <p className="league-caption">No entries to review for this round yet. Use Registrations to approve competitors or Round control to set up a round.</p>}
-            {(owner ? [null] : disciplines).map((task) => {
-              const taskEntries = task ? entries.filter(entry => entry.discipline === task) : entries;
-              const Section = task ? "details" : "div";
+            {(owner ? ["pending", "approved", ...(entries.some(entry=>entry.status==="rejected")?["rejected"]:[])] : disciplines).map((task) => {
+              const taskEntries = entries.filter(entry => owner ? entry.round_id===roundId && entry.status===task : entry.discipline===task);
+              const Section = "details";
               return (
               <Section key={task ?? "review"} className={task ? "league-task-section" : undefined}>
-                {task && <summary>{task[0].toUpperCase() + task.slice(1)} ({taskEntries.length})</summary>}
-                {task && taskEntries.length === 0 && <p className="league-caption">No {task} entries for this round.</p>}
+                <summary>{owner && <span aria-hidden="true">📁 </span>}{task === "rejected" ? "Rejected / withdrawn" : task[0].toUpperCase() + task.slice(1)} ({taskEntries.length})</summary>
+                {taskEntries.length === 0 && <p className="league-caption">No {task} entries for this round.</p>}
                 <div className="league-entry-list">
               {taskEntries.map((entry) => (
                 <article key={entry.id} className="league-review-card">
@@ -1375,6 +1382,7 @@ export default function League({
                 Load more entries
               </button>
             )}
+            </LeagueRoundFolders>
           </section>
         )}
         {owner && (
