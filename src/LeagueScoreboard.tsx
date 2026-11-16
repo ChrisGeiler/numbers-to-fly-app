@@ -6,6 +6,7 @@ import type { LeagueReplayData } from "./leagueReplay";
 import { leagueCategories } from "./leagueCategories";
 import type { LeagueCategory } from "./leagueCategories";
 const LeagueReplay = lazy(() => import("./LeagueTrackReplay"));
+const LeagueCompRunViewer = lazy(() => import("./LeagueCompRunViewer"));
 export type ReplayTrack = { id: string; public_name: string; discipline: LeagueTask; attempt: number; replay: LeagueReplayData };
 
 export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }: {
@@ -17,6 +18,7 @@ export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }
   const [replay, setReplay] = useState<ReplayTrack[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [detail,setDetail]=useState<{id:string;name:string;task:string;attempt:number}|null>(null);
   const sequence = useRef(0);
   const categoryRows = rows.filter(entry => (entry.category ?? "open") === category);
   const { leaders, rows: ranked } = rankLeagueScoreboard(rows, task, category);
@@ -32,6 +34,7 @@ export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }
   useEffect(() => {
     const allowed = new Set(rows.filter(e => e.replay_available).map(e => e.id));
     setSelected(current => current.every(id => allowed.has(id)) ? current : current.filter(id => allowed.has(id)));
+    setDetail(current => current && !rows.some(entry => entry.id === current.id) ? null : current);
   }, [rows]);
   useEffect(() => () => { sequence.current++; }, []);
   function toggle(id: string) {
@@ -61,7 +64,7 @@ export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }
     <div className="league-tabs league-category-tabs" role="tablist" aria-label="Competition category">
       {leagueCategories.map(value => <button key={value.value} role="tab" aria-selected={category === value.value}
         className={category === value.value ? "active" : ""} onClick={() => {
-          sequence.current++; setCategory(value.value); setSelected([]); setReplay([]); setLoading(false); setError("");
+          sequence.current++; setCategory(value.value); setSelected([]); setReplay([]); setDetail(null); setLoading(false); setError("");
         }}>{value.label}</button>)}
     </div>
     <p className="league-caption">{leagueCategories.find(value => value.value === category)!.description} Rankings and points are calculated within this category only.</p>
@@ -70,7 +73,7 @@ export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }
         className={task === value ? "active" : ""} onClick={() => setTask(value)}>{value === "overall" ? "Scoreboard" : value}</button>)}
     </div>
     <div className="league-replay-selection">
-      <div><strong>{selected.length} / 4 tracks selected</strong><p className="league-caption">Select a score to compare approved flights. Tracks load only when you open replay.</p></div>
+      <div><strong>{selected.length} / 4 tracks selected</strong><p className="league-caption">Click a jump score to view its full comp run. Use the checkboxes to select up to four flights for replay. Flight data loads only when opened.</p></div>
       <div className="league-review-actions">
         <button className="league-button" disabled={!selected.length || loading} onClick={() => void openReplay()}>{loading ? "Loading replay…" : `Replay selected (${selected.length}) ▶`}</button>
         <button className="league-secondary" disabled={!selected.length} onClick={() => setSelected([])}>Clear selection</button>
@@ -94,11 +97,12 @@ export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }
               const value = leagueTaskValue(entry);
               const percent = leaders[d] > 0 ? 100 * value / leaders[d] : 0;
               const isBest = Math.abs(value - pilot.best[d]) < 0.000001;
-              return <td key={i}><label className={`league-score-pick ${selected.includes(entry.id) ? "selected" : ""}`}>
+              return <td key={i}><div className={`league-score-pick ${selected.includes(entry.id) ? "selected" : ""}`}>
                 <input type="checkbox" checked={selected.includes(entry.id)} disabled={!entry.replay_available || (selected.length >= 4 && !selected.includes(entry.id))}
                   onChange={() => toggle(entry.id)} aria-label={`Replay ${pilot.name}, ${d}, jump ${i + 1}`} />
-                <span><b>{value.toFixed(d === "time" ? 2 : 1)}</b><small>{percent.toFixed(1)}%{isBest ? " · Best" : ""}</small></span>
-              </label></td>;
+                <button type="button" className="league-comp-score" onClick={()=>setDetail({id:entry.id,name:pilot.name,task:d,attempt:i+1})}
+                  aria-label={`View ${pilot.name}, ${d}, jump ${i+1} comp run`}><b>{value.toFixed(d === "time" ? 2 : 1)}</b><small>{percent.toFixed(1)}%{isBest ? " · Best" : ""}</small></button>
+              </div></td>;
             })}<td className="league-best-score">{pilot.entries.some(e => e.discipline === d) ? pilot.points[d].toFixed(1) + "%" : "—"}</td></Fragment>)}
             <td className="league-round-total">{(task === "overall" ? pilot.total : pilot.points[task]).toFixed(1)}</td>
           </tr>)}</tbody>
@@ -107,5 +111,6 @@ export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }
     <p className="league-caption">Best approved jump per task counts: up to 100 points per task and 300 per round. All attempts remain visible. Missing tasks score zero; equal scores share rank.</p>
     {error && <p className="league-notice" role="alert">{error}</p>}
     {replay.length > 0 && <Suspense fallback={<p>Opening replay…</p>}><LeagueReplay key={replay.map(r => r.id).join("|")} tracks={replay} /></Suspense>}
+    {detail && <Suspense fallback={<p role="status">Opening comp run…</p>}><LeagueCompRunViewer key={detail.id} client={client} entry={detail} onClose={()=>setDetail(null)} /></Suspense>}
   </>;
 }

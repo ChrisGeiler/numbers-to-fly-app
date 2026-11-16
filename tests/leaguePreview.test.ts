@@ -118,14 +118,36 @@ test("pending category changes require valid categories and organiser re-review"
   const client = createLeaguePreviewClient(store,"competitor");
   assert.ok((await client.rpc("league_edit_entry",{entry_id:id,expected_revision:0,changes:entryChanges(entry,{category:"elite"})})).error);
   assert.equal(entry.category,"open");
-  Object.assign(entry,{scoring_version:"pilot-v1",corrected_speed_kmh:200,replay_data:{version:1,points:[]}});
+  Object.assign(entry,{scoring_version:"pilot-v1",corrected_speed_kmh:200,replay_data:{version:1,points:[]},comp_run_data:{version:1,points:[]}});
   assert.equal((await client.rpc("league_edit_entry",{entry_id:id,expected_revision:0,changes:entryChanges(entry,{category:"beginner"})})).error,null);
   assert.equal(entry.category,"beginner");
   assert.equal(entry.scoring_version,null);
   assert.equal(entry.replay_data,null);
+  assert.equal(entry.comp_run_data,null);
   assert.equal(entry.status,"pending");
   entry.status="approved";
   assert.ok((await client.rpc("league_edit_entry",{entry_id:id,expected_revision:1,changes:entryChanges(entry,{category:"open"})})).error);
+});
+
+test("public comp run loads only on request for approved published entries and is blocked after withdrawal", async()=>{
+  const store=createPreviewStore();
+  const {id,entry}=await upload(store);
+  const organiser=createLeaguePreviewClient(store,"organiser",weatherFetcher());
+  const visitor=createLeaguePreviewClient(store,"visitor");
+  assert.ok((await visitor.functions.invoke("league-flight",{body:{entry_id:id}})).error);
+  assert.equal((await organiser.functions.invoke("league-score",{body:{entry_id:id}})).error,null);
+  assert.equal((await organiser.rpc("league_review_entry",{entry_id:id,decision:"approved",expected_revision:0})).error,null);
+  assert.equal(entry.comp_run_data,undefined);
+  const response=await visitor.functions.invoke("league-flight",{body:{entry_id:id}});
+  assert.equal(response.error,null);
+  assert.equal(response.data.points.at(-1).altitudeM,1450);
+  assert.ok(entry.comp_run_data);
+  assert.ok(!JSON.stringify(response.data).includes("file_path"));
+  store.rounds[0].published=false;
+  assert.ok((await visitor.functions.invoke("league-flight",{body:{entry_id:id}})).error);
+  store.rounds[0].published=true;
+  await organiser.rpc("league_review_entry",{entry_id:id,decision:"rejected",expected_revision:0});
+  assert.ok((await visitor.functions.invoke("league-flight",{body:{entry_id:id}})).error);
 });
 
 test("pending entry edits are owner-only, clear scores and require a fresh revision for approval", async () => {

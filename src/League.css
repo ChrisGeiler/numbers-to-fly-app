@@ -1076,6 +1076,8 @@ button:disabled {
 .league-scoreboard-table tbody .league-scoreboard-name { background: #fff; }
 .league-score-pick { display: flex; align-items: center; gap: 8px; cursor: pointer; border: 1px solid transparent; padding: 8px; min-width: 105px; }
 .league-score-pick.selected { background: #e9eedc; border-color: #839a5a; border-radius: 4px; }
+.league-comp-score { border:0; padding:4px; background:transparent; color:inherit; text-align:left; text-decoration:underline; text-underline-offset:3px; }
+.league-comp-score:hover { color:#47663a; }
 .league-score-pick input { accent-color: #557c30; width: 16px; height: 16px; }
 .league-score-pick b { font-size: 1rem; }
 .league-best-score { font-weight: 600; background: #f2f4ea; }

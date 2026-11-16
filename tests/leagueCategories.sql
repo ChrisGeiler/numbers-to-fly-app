@@ -16,6 +16,9 @@ values('league-tracks',current_setting('league.cat_user')||'/'||current_setting(
 insert into public.league_entries(id,user_id,round_id,public_name,region,discipline,location_name,ground_elevation_m,file_path,category)
 values(current_setting('league.cat_entry')::uuid,current_setting('league.cat_user')::uuid,current_setting('league.cat_round')::uuid,
 'Category test','NSWPC','speed','Moruya',5,current_setting('league.cat_user')||'/'||current_setting('league.cat_round')||'/'||current_setting('league.cat_entry')||'.csv','beginner');
+reset role;
+update public.league_entries set comp_run_data='{"version":1,"points":[]}' where id=current_setting('league.cat_entry')::uuid;
+set local role authenticated;
 do $$ declare changes jsonb; begin
   select jsonb_build_object('public_name',e.public_name,'region',e.region,'discipline',e.discipline,
     'location_name',e.location_name,'ground_elevation_m',e.ground_elevation_m,
@@ -27,7 +30,7 @@ do $$ declare changes jsonb; begin
   exception when raise_exception then if sqlerrm<>'Invalid entry changes' then raise; end if; end;
   perform public.league_edit_entry(current_setting('league.cat_entry')::uuid,0,changes||'{"category":"intermediate"}');
   if not exists(select 1 from public.league_entries where id=current_setting('league.cat_entry')::uuid
-    and category='intermediate' and revision=1 and status='pending' and scoring_version is null and replay_data is null)
+    and category='intermediate' and revision=1 and status='pending' and scoring_version is null and replay_data is null and comp_run_data is null)
   then raise exception 'Category edit did not invalidate the pending result'; end if;
 end $$;
 reset role;

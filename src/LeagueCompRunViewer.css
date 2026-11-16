@@ -1,0 +1,30 @@
+.league-comp-run {
+  width: min(1440px, 96vw); max-height: 94vh; padding: clamp(16px, 3vw, 32px);
+  border: 1px solid #146577; border-radius: 14px; background: #030718; color: #d7eef4;
+}
+.league-comp-run::backdrop { background: rgb(0 0 0 / 75%); }
+.league-comp-run header { display:flex; justify-content:space-between; align-items:start; gap:20px; }
+.league-comp-run h2 { font-size:1.5rem; color:#22d3ee; margin: 0 0 16px; }
+.league-comp-run p { font-size:.9rem; line-height:1.6; }
+.league-comp-run button { background:#079eb9; color:#001920; border:1px solid #22d3ee; border-radius:6px; padding:10px 14px; font-weight:600; }
+.league-comp-run button:disabled { opacity:.5; }
+.league-comp-run .card { border:1px solid #15586b; border-radius:12px; padding:18px; background:#0d1628; }
+.league-comp-run .interactive-chart-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; }
+.league-comp-run .interactive-chart-wrap { height:460px; width:100%; touch-action:pan-y; user-select:none; }
+.league-comp-run .chart-control-row,.league-comp-run .chart-measure-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.league-comp-run .chart-measure-controls { margin-block:12px; }
+.league-comp-run .chart-measure-controls button[aria-pressed="true"] { outline:2px solid #22d3ee; outline-offset:2px; }
+.league-comp-run .score-mode-switch { display:flex; align-items:center; gap:8px; color:#b4dce4; }
+.league-comp-run .score-mode-switch .active { color:#22d3ee; font-weight:700; }
+.league-comp-run .score-mode-switch input { width:22px; height:22px; accent-color:#22d3ee; }
+.league-comp-run .score-mode-track { display:none; }
+.league-comp-run .chart-measurement { border:1px solid #15586b; padding:16px; margin-block:16px; }
+.league-comp-run .chart-measurement dl { display:flex; flex-wrap:wrap; gap:12px 24px; }
+.league-comp-run .chart-measurement dd { margin:4px 0 0; font-weight:700; }
+.league-comp-run .chart-rotate-hint { display:none; }
+@media(max-width:640px) {
+  .league-comp-run header { flex-wrap:wrap; }
+  .league-comp-run .card { padding:8px; }
+  .league-comp-run .interactive-chart-wrap { height:400px; }
+  .league-comp-run .chart-rotate-hint { display:block; }
+}

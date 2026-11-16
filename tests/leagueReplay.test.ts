@@ -4,6 +4,8 @@ import { buildLeagueReplay, replayPointAt } from "../src/leagueReplay.ts";
 import { leagueWindow, scoreLeagueWindow, LEAGUE_WIND_MODEL } from "../src/leagueScoring.ts";
 import { rankLeagueScoreboard } from "../src/leagueScoreboardModel.ts";
 import type { LeagueScoreboardEntry } from "../src/leagueScoreboardModel.ts";
+import { buildLeagueCompRun } from "../src/leagueCompRun.ts";
+import { getValidatedJumpTrack, parseFlySightCsv } from "../src/gpsAnalysis.ts";
 const base = Date.parse("2026-11-01T00:00:00Z");
 function csv() {
   const rows = ["time,lat,lon,hMSL,velN,velE,velD,hAcc,vAcc,sAcc,numSV"];
@@ -12,6 +14,26 @@ function csv() {
 }
 const winds = { model: LEAGUE_WIND_MODEL, fetched_at: new Date(base).toISOString(),
   hours: [base,base+3600000].map(time => ({time,levels:[0,5000].map(height => ({height,north:10,east:-5}))})) };
+
+test("full comp run shares analyser exit detection, interpolates 1450 AGL and publishes no GPS/time identity",()=>{
+  const run=buildLeagueCompRun(csv(),100,winds);
+  const expected=getValidatedJumpTrack(parseFlySightCsv(csv()),100);
+  assert.equal(run.points[0].altitudeM,expected.exitPoint!.altitudeM-100);
+  assert.equal(run.points[0].seconds,0);
+  assert.ok(run.points[0].altitudeM>2500);
+  assert.equal(run.points.at(-1)!.altitudeM,1450);
+  assert.ok(run.points.at(-1)!.seconds>scoreLeagueWindow(leagueWindow(csv(),100),winds).time_s);
+  assert.equal(run.correctedAvailable,true);
+  assert.ok(Math.abs(run.points[10].airspeedMps!-Math.hypot(20,45))<1e-8);
+  assert.deepEqual(Object.keys(run.points[0]).sort(),["seconds","altitudeM","horizontalSpeedMps","verticalSpeedMps","airspeedMps"].sort());
+  assert.ok(!JSON.stringify(run).includes("2026-11-01"));
+  assert.ok(!JSON.stringify(run).includes('"lat"'));
+  const raw=buildLeagueCompRun(csv(),100,{...winds,hours:[]});
+  assert.equal(raw.correctedAvailable,false);
+  assert.ok(raw.points.every(point=>point.airspeedMps===null));
+  const incomplete=csv().split("\n").slice(0,420).join("\n");
+  assert.throws(()=>buildLeagueCompRun(incomplete,100,winds),/1,450/);
+});
 
 test("wind-corrected replay finishes at exactly the published displacement and elapsed time", () => {
   const replay = buildLeagueReplay(csv(), 100, winds);

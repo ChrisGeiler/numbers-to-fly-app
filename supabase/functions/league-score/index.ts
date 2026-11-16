@@ -5,6 +5,7 @@ import {
   scoreLeagueWindow,
 } from "../../../src/leagueScoring.ts";
 import { buildLeagueReplay } from "../../../src/leagueReplay.ts";
+import { buildLeagueCompRun } from "../../../src/leagueCompRun.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -98,9 +99,11 @@ Deno.serve(async (request) => {
       );
     const winds = await fetchLeagueWinds(points);
     const scores = scoreLeagueWindow(points, winds);
+    let comp_run_data=null;
+    try {comp_run_data=buildLeagueCompRun(new TextDecoder().decode(buffer),entry.ground_elevation_m,winds);} catch { /* A valid score can lack the longer exit-to-1450 run. */ }
     const update = await admin
       .from("league_entries")
-      .update({ ...scores, wind_snapshot: winds, file_hash,
+      .update({ ...scores, wind_snapshot: winds, file_hash, comp_run_data,
         replay_data: buildLeagueReplay(new TextDecoder().decode(buffer), entry.ground_elevation_m, winds) })
       .eq("id", entry.id)
       .eq("status", "pending")

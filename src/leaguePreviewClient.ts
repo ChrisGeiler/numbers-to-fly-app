@@ -3,6 +3,7 @@
 import type { supabase } from "./supabase";
 import { measureLeagueUploadWindow } from "./leagueUploadScore.ts";
 import { buildLeagueReplay } from "./leagueReplay.ts";
+import { buildLeagueCompRun } from "./leagueCompRun.ts";
 import { stateCouncils, councilFromLegacyRegion } from "./leagueCouncils.ts";
 import type { LeagueWindSnapshot } from "./leagueScoring.ts";
 import {
@@ -359,7 +360,7 @@ export function createLeaguePreviewClient(
         if (entry.status !== "pending" || Number(entry.revision ?? 0) !== revision) return fail("This entry changed while saving. Refresh before editing again.");
         Object.assign(entry, changes, { revision: revision + 1, submitted_at: new Date().toISOString(),
           time_s:null,raw_speed_kmh:null,raw_distance_m:null,corrected_speed_kmh:null,corrected_distance_m:null,
-          scoring_version:null,wind_snapshot:null,replay_data:null,file_hash:null,jump_at:null,round_eligible:false });
+          scoring_version:null,wind_snapshot:null,replay_data:null,comp_run_data:null,file_hash:null,jump_at:null,round_eligible:false });
         await store.persist?.();
         return ok();
       }
@@ -465,6 +466,22 @@ export function createLeaguePreviewClient(
         _name: string,
         options: { body: { entry_id: string } },
       ) => {
+        if (_name === "league-flight") {
+          const entry=store.entries.find(row=>row.id===options.body.entry_id && row.status==="approved" && store.rounds.some(round=>round.id===row.round_id && round.published));
+          if(!entry)return fail("This approved comp run is unavailable.");
+          const revision=entry.revision??0;
+          try {
+            if(!entry.comp_run_data) {
+              const original=store.files.get(String(entry.file_path));
+              if(!original) return fail("The original track is unavailable.");
+              const data=buildLeagueCompRun(await original.text(),Number(entry.ground_elevation_m),entry.wind_snapshot as LeagueWindSnapshot);
+              if(entry.status!=="approved" || (entry.revision??0)!==revision || !store.rounds.some(round=>round.id===entry.round_id && round.published))return fail("This result is no longer public.");
+              entry.comp_run_data=data;
+              await store.persist?.();
+            }
+            return ok(entry.comp_run_data);
+          }catch(error){return fail(error instanceof Error?error.message:"Comp run could not load.");}
+        }
         if (!signedIn || !organiser)
           return fail(
             "Choose the organiser test view to calculate wind-corrected scores.",

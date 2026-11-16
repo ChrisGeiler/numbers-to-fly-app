@@ -1,5 +1,30 @@
 # Australian Wingsuit League — initial pilot
 
+## Score-click comp run graph — 17 November 2026
+
+Click an approved jump score to open its full comp run in a modal, using the same
+InteractiveTrackChart component as the app analyser. Starts at the detected exit
+or validated competition exit for high exits; ends at an interpolated 1,450 m AGL
+crossing. Uses recorded relative timestamps, scoring-window reference lines,
+raw/corrected metrics, drag/pinch zoom and range measurement. Replay comparison
+checkboxes remain separate. The chart code loads only when the viewer opens.
+
+Public league-flight returns only relative seconds, AGL altitude, horizontal and
+vertical speed and saved-wind airspeed for approved entries in published rounds.
+No original file, GPS location, UTC time or account data is returned. The endpoint
+checks approval/publication before reading the private original; checks revision
+and approval again before caching newly derived data. Cached projections stay on
+RLS-protected entries and are invalidated on pending edits. Existing approved
+entries are generated lazily from the original and saved winds, without a new
+weather lookup. Incomplete runs show an error; incomplete wind coverage permits
+raw-only viewing with a notice. This does not alter the approved score or the
+four-track 2,500–1,500 m replay.
+
+The cache migration and league-flight/league-score functions are deployed.
+Checks: 36 league tests, 8 chart/GPS tests, TypeScript/build, browser graph
+open/close, raw/corrected switching, zoom and measurement. Live endpoint verified
+an approved flight from 3,309 m to exactly 1,450 m; SQL fixtures rolled back.
+
 ## State councils — 13 November 2026
 
 League affiliations now use NSWPC, SQPC, VTPC, SAPC, WAPC, NTPC and NQPC.
