@@ -13,8 +13,11 @@ export default function LeagueAppPromo({ appAccess }: { appAccess: boolean }) {
   return (
     <section className="league-section league-app-promo" aria-labelledby="league-app-promo-title">
       <p className="league-eyebrow">FLY THE NUMBERS</p>
-      <h2 id="league-app-promo-title">Find your numbers.<br />Take them into your next jump.</h2>
-      <p>Analyse your flights, find your target numbers to fly, understand the effects of winds while flying your lane and create FlySight config files for your next training jump.</p>
+      <h2 id="league-app-promo-title">Do you need help getting started..?<br />There's an app for that!</h2>
+      <p>Drawing on 12 years of performance flying, three World Championship titles and years of coaching, Chris Geiler has brought his knowledge together in Fly the Numbers: a step-by-step introduction to performance flying.</p>
+      <p>Understand each task and how to fly it, with starting targets tailored to your weight, height and suit type. Explore how wind conditions affect your flight and your lane, then use that information to plan your approach.</p>
+      <p>Keep your GPS tracks in a logbook, sort them by task and review automatically calculated metrics to assess and improve your flying. Explore each jump in an interactive analyser with wind-corrected information, or compare flights side by side with synchronised playback. Choose a competition reference point to see how your track fits within the lane and check for estimated lane penalties.</p>
+      <p>Create task-specific FlySight configuration files to download or copy, and preview the tones and alarms alongside a recorded flight. A searchable FAI rules reference keeps the competition requirements close at hand—from planning your jump to reviewing the result.</p>
       <div className="league-promo-grid">
         {features.map(feature => (
           <article key={feature.title}>
