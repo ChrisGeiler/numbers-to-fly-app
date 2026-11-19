@@ -34,7 +34,7 @@ export default function LeagueAppPromo({ appAccess }: { appAccess: boolean }) {
           </article>
         ))}
       </div>
-      <p>Fly the Numbers is a private tool that requires activation. Activation includes a one-to-one video call with Chris to walk you through the app, answer your questions and help you get started with confidence.</p>
+      <p>Fly the Numbers is a private tool that requires activation. Activation includes a video call with Chris to walk you through the app, answer your questions and help you get started with confidence.</p>
       <div className="league-promo-action">
         <a className="league-button" href={appAccess ? "/" : "mailto:flywithcruza@gmail.com?subject=Fly%20the%20Numbers%20access%20request"}>
           {appAccess ? "Open Fly the Numbers" : "Request access to Fly the Numbers"}
