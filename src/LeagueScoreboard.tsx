@@ -79,7 +79,7 @@ export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }
         <button className="league-secondary" disabled={!selected.length} onClick={() => setSelected([])}>Clear selection</button>
       </div>
     </div>
-    {!categoryRows.length ? <div className="league-empty"><h3>A fresh scoreboard.</h3><p>Approved {leagueCategories.find(value => value.value === category)!.label} scores will appear here for this round.</p></div> :
+    {!categoryRows.length ? <div className="league-empty"><h3>A fresh scoreboard.</h3><p>Approved scores will appear here for this round.</p></div> :
       <div className="league-table-scroll" tabIndex={0} role="region" aria-label="Round scores, scroll horizontally for all attempts">
         <table className="league-scoreboard-table">
           <caption className="league-caption">Wind-corrected speed and distance · measured time · approved entries only</caption>

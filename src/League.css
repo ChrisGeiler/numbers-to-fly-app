@@ -736,13 +736,9 @@ button:disabled {
 .league-promo-dialog > img { display: block; width: 100%; height: auto; }
 @media (max-width: 700px) {
   .league-promo-grid {
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
+    grid-template-columns: minmax(0, 1fr);
     gap: 16px;
-    padding-bottom: 12px;
   }
-  .league-promo-grid > article { flex: 0 0 88%; scroll-snap-align: start; }
 }
 
 .league-task-section {
