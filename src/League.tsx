@@ -711,9 +711,9 @@ export default function League({
             </svg>
             <div className="league-art-bottom">
               <span>
-                FLY LOCAL.
+                Fly locally
                 <br />
-                <b>COMPETE NATIONWIDE.</b>
+                <b>Compete nationally</b>
               </span>
               <span>
                 2500 → 1500
@@ -1525,7 +1525,7 @@ export default function League({
       )}
       <footer className="league-footer">
         <b>AUSTRALIAN WINGSUIT LEAGUE</b>
-        <span>Fly local. Compete nationwide.</span>
+        <span>Fly locally. Compete nationally.</span>
         <a href="#rules">Scoring & privacy</a>
       </footer>
     </div>
