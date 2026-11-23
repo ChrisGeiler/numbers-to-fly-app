@@ -711,9 +711,9 @@ export default function League({
             </svg>
             <div className="league-art-bottom">
               <span>
-                Fly locally
+                FLY LOCALLY
                 <br />
-                <b>Compete nationally</b>
+                <b>COMPETE NATIONALLY</b>
               </span>
               <span>
                 2500 → 1500
