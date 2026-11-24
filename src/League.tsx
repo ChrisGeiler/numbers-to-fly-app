@@ -30,6 +30,7 @@ type Round = {
 type Result = {
   competitor_key: string;
   public_name: string;
+  suit_name?: string | null;
   region: string;
   discipline: string;
   category?: string;
@@ -149,6 +150,7 @@ export default function League({
   const [otp, setOtp] = useState("");
   const [authStatus, setAuthStatus] = useState("");
   const [note, setNote] = useState<Record<string, string>>({});
+  const [reviewSuit, setReviewSuit] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<Record<string, string>>({});
   const formRef = useRef<HTMLFormElement>(null);
   const epoch = useRef(0);
@@ -352,7 +354,7 @@ export default function League({
       let query = client
         .from("league_entries")
         .select(
-          "id,round_id,public_name,region,discipline,category,status,location_name,ground_elevation_m,file_path,submitted_at,coaching_requested,coaching_note,review_note,time_s,corrected_speed_kmh,corrected_distance_m,raw_speed_kmh,raw_distance_m,scoring_version,jump_at,file_hash,wind_snapshot,revision",
+          "id,round_id,public_name,suit_name,region,discipline,category,status,location_name,ground_elevation_m,file_path,submitted_at,coaching_requested,coaching_note,review_note,time_s,corrected_speed_kmh,corrected_distance_m,raw_speed_kmh,raw_distance_m,scoring_version,jump_at,file_hash,wind_snapshot,revision",
         )
         .eq("round_id", roundId)
         .order("submitted_at", { ascending: false })
@@ -462,6 +464,7 @@ export default function League({
         user_id: session.user.id,
         round_id: round.id,
         public_name: String(form.get("name")).trim(),
+        suit_name: String(form.get("suit_name")).trim(),
         region: form.get("region"),
         discipline: form.get("discipline"),
         category: form.get("category"),
@@ -958,6 +961,10 @@ export default function League({
                           />
                         </label>
                         <label>
+                          Suit name
+                          <input name="suit_name" required maxLength={60} placeholder="e.g. ATC" />
+                        </label>
+                        <label>
                           State council
                           <select
                             name="region"
@@ -1104,7 +1111,7 @@ export default function League({
                       </label>
                       <p className="league-caption">
                         Track location and time are required for automatic wind correction using Open-Meteo, or Meteomatics when configured.
-                        {!preview && " Submitting an entry accepts the pilot rules and publication of your name, state council, approved scores and relative replay. Original GPS files stay private to you and the organiser."}
+                        {!preview && " Submitting an entry accepts the pilot rules and publication of your name, suit, state council, approved scores and relative replay. Original GPS files stay private to you and the organiser."}
                       </p>
                       <button
                         className="league-button"
@@ -1158,7 +1165,7 @@ export default function League({
                     </span>
                   </div>
                   <p>
-                    {categoryLabel(entry.category)} · {entry.location_name} · {entry.region} ·{" "}
+                    {entry.suit_name ? `${entry.suit_name} · ` : ""}{categoryLabel(entry.category)} · {entry.location_name} · {entry.region} ·{" "}
                     {date(entry.submitted_at)}
                     {entry.coaching_requested ? " · Coaching requested" : ""}
                   </p>
@@ -1283,6 +1290,12 @@ export default function League({
                         </button>
                       </div>
                       <label>
+                        Suit name
+                        <input maxLength={60} value={reviewSuit[reviewKey(entry)] ?? entry.suit_name ?? ""}
+                          onChange={e => setReviewSuit({ ...reviewSuit, [reviewKey(entry)]: e.target.value })} />
+                        <small>Corrections are saved when you approve the result.</small>
+                      </label>
+                      <label>
                         Review note
                         <textarea
                           maxLength={2000}
@@ -1294,13 +1307,14 @@ export default function League({
                       </label>
                       <div className="league-review-actions">
                         <button
-                          disabled={busy || !entry.scoring_version}
+                          disabled={busy || !entry.scoring_version || !(reviewSuit[reviewKey(entry)] ?? entry.suit_name ?? "").trim()}
                           onClick={() =>
                             void act(
                               async () =>
                                 await client.rpc("league_review_entry", {
                                   entry_id: entry.id,
                                   decision: "approved",
+                                  suit_name: (reviewSuit[reviewKey(entry)] ?? entry.suit_name ?? "").trim(),
                                   expected_revision: entry.revision ?? 0,
                                   note: note[entry.id] ?? "",
                                 }),

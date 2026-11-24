@@ -90,7 +90,7 @@ export default function LeagueScoreboard({ client, rows, roundTitle, onRefresh }
             <tr>{tasks.map(d => <Fragment key={d}>{Array.from({length: counts[d]}, (_, i) => <th scope="col" key={i}>Jump {i + 1}</th>)}<th scope="col">Best / %</th></Fragment>)}</tr>
           </thead>
           <tbody>{ranked.map(pilot => <tr key={pilot.id}>
-            <td>{pilot.rank}</td><th scope="row" className="league-scoreboard-name">{pilot.name}<small>{pilot.region}</small></th>
+            <td>{pilot.rank}</td><th scope="row" className="league-scoreboard-name">{pilot.name}<small>{[...new Set(pilot.entries.map(entry => entry.suit_name).filter(Boolean))].join(" / ")}</small><small>{pilot.region}</small></th>
             {tasks.map(d => <Fragment key={d}>{Array.from({length: counts[d]}, (_, i) => {
               const entry = pilot.entries.find(e => e.discipline === d && e.attempt === i + 1);
               if (!entry) return <td key={i} className="league-no-score">—</td>;

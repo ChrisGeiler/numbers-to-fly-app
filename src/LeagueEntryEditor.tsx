@@ -10,6 +10,7 @@ export type EditableLeagueEntry = {
   id: string; round_id: string; file_path: string; public_name: string; region: string;
   discipline: string; location_name: string; ground_elevation_m: number;
   category?: string;
+  suit_name?: string | null;
   coaching_requested: boolean; revision?: number;
 };
 export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCancel }: {
@@ -47,6 +48,7 @@ export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCa
       const response = await client.rpc("league_edit_entry", {
         entry_id: entry.id, expected_revision: entry.revision ?? 0,
         changes: { public_name: String(form.get("name")).trim(), region: form.get("region"),
+          suit_name: String(form.get("suit_name")).trim(),
           discipline: form.get("discipline"), category: form.get("category"), location_name: location,
           ground_elevation_m: Number(ground), coaching_requested: form.get("coaching") === "on",
           file_path: uploaded || entry.file_path },
@@ -65,6 +67,7 @@ export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCa
     <h4>Edit pending entry</h4>
     <fieldset disabled={busy}>
       <div className="league-fields">
+        <label>Suit name<input name="suit_name" required maxLength={60} defaultValue={entry.suit_name ?? ""} placeholder="e.g. ATC" /></label>
         <label>Public competitor name<input name="name" required minLength={2} maxLength={60} defaultValue={entry.public_name} /></label>
         <label>State council<select name="region" required defaultValue={councilFromLegacyRegion(entry.region)}><option value="" disabled>Select state council</option>{stateCouncils.map(r => <option key={r}>{r}</option>)}</select></label>
         <label>Task<select name="discipline" defaultValue={entry.discipline}>{["speed","time","distance"].map(d => <option key={d}>{d}</option>)}</select></label>

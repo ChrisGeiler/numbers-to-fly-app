@@ -157,6 +157,8 @@ export function createLeaguePreviewClient(
             return fail("Enter your name and state council.");
         }
         if (this.table === "league_entries") {
+          if (this.payload.suit_name !== undefined && (typeof this.payload.suit_name !== "string" || !this.payload.suit_name.trim() || this.payload.suit_name.length > 60))
+            return fail("Enter a suit name between 1 and 60 characters.");
           if (!stateCouncils.includes(String(this.payload.region))) return fail("Choose a valid state council.");
           if (this.payload.category !== undefined && !["beginner", "intermediate", "open"].includes(String(this.payload.category)))
             return fail("Choose a valid competition category.");
@@ -276,6 +278,7 @@ export function createLeaguePreviewClient(
           const attempt = (attempts.get(key) ?? 0) + 1;
           attempts.set(key, attempt);
           return { id: row.id, competitor_key: row.user_id, public_name: row.public_name,
+            suit_name: row.suit_name ?? null,
             region: row.region, discipline: row.discipline, category: row.category ?? "open", attempt,
             replay_available: !!row.replay_data || (!!row.wind_snapshot && store.files.has(String(row.file_path))),
             time_s: row.time_s, corrected_speed_kmh: row.corrected_speed_kmh,
@@ -343,8 +346,9 @@ export function createLeaguePreviewClient(
         if (!round?.published || Date.now() < Date.parse(String(round.opens_at)) || Date.now() >= Date.parse(String(round.closes_at)))
           return fail("Entries can only be edited while the round is open.");
         const changes = args.changes as Row;
-        const allowed = ["public_name","region","discipline","location_name","ground_elevation_m","coaching_requested","file_path","category"];
-        if (!changes || typeof changes !== "object" || ![7,8].includes(Object.keys(changes).length) || Object.keys(changes).some(key=>!allowed.includes(key)) ||
+        const allowed = ["public_name","region","discipline","location_name","ground_elevation_m","coaching_requested","file_path","category","suit_name"];
+        if (!changes || typeof changes !== "object" || ![7,8,9].includes(Object.keys(changes).length) || Object.keys(changes).some(key=>!allowed.includes(key)) ||
+          (changes.suit_name !== undefined && (typeof changes.suit_name !== "string" || !changes.suit_name.trim() || changes.suit_name.trim().length > 60)) ||
           (changes.category !== undefined && !["beginner","intermediate","open"].includes(String(changes.category))) ||
           typeof changes.public_name !== "string" || changes.public_name.trim().length < 2 || changes.public_name.trim().length > 60 ||
           !stateCouncils.includes(String(changes.region)) ||
@@ -386,6 +390,8 @@ export function createLeaguePreviewClient(
       const entry = store.entries.find((row) => row.id === args.entry_id);
       if (!entry) return fail("Preview entry not found.");
       if (name === "league_review_entry") {
+        if (args.suit_name != null && (typeof args.suit_name !== "string" || !args.suit_name.trim() || args.suit_name.trim().length > 60))
+          return fail("Enter a suit name between 1 and 60 characters.");
         if (args.expected_revision !== undefined && args.expected_revision !== Number(entry.revision ?? 0))
           return fail("This entry changed. Refresh and review its latest scores before deciding.");
         if (!["approved", "rejected"].includes(String(args.decision)))
@@ -403,6 +409,7 @@ export function createLeaguePreviewClient(
         // Local testing permits historical tracks; hosted review still enforces
         // the GPS jump date against the round dates on the server.
         entry.status = args.decision;
+        if (args.decision === "approved" && args.suit_name != null) entry.suit_name = String(args.suit_name).trim();
         entry.review_note = args.note;
         await store.persist?.();
         return ok();

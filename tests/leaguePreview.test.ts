@@ -112,6 +112,29 @@ function entryChanges(entry: Record<string, unknown>, overrides: Record<string,u
     coaching_requested:Boolean(entry.coaching_requested),file_path:entry.file_path,...overrides };
 }
 
+test("suit names stay private until approval and only the organiser can publish a correction", async () => {
+  const store = createPreviewStore(), { id, entry } = await upload(store);
+  const competitor = createLeaguePreviewClient(store, "competitor");
+  const organiser = createLeaguePreviewClient(store, "organiser", weatherFetcher());
+  const visitor = createLeaguePreviewClient(store, "visitor");
+  const board = () => visitor.rpc("league_round_scoreboard", { selected_round: store.rounds[0].id });
+  assert.equal((await competitor.rpc("league_edit_entry", {entry_id:id,expected_revision:0,changes:entryChanges(entry,{suit_name:"Funny suit"})})).error,null);
+  assert.deepEqual((await board()).data, []);
+  assert.equal(entry.suit_name,"Funny suit");
+  await organiser.functions.invoke("league-score", {body:{entry_id:id}});
+  assert.ok((await competitor.rpc("league_review_entry", {entry_id:id,decision:"approved",expected_revision:1,suit_name:"ATC"})).error);
+  assert.ok((await organiser.rpc("league_review_entry", {entry_id:id,decision:"approved",expected_revision:0,suit_name:"ATC"})).error);
+  for (const suit_name of ["", "   ", "x".repeat(61)]) {
+    assert.ok((await organiser.rpc("league_review_entry", {entry_id:id,decision:"approved",expected_revision:1,suit_name})).error);
+  }
+  assert.equal(entry.status,"pending");
+  assert.equal((await organiser.rpc("league_review_entry", {entry_id:id,decision:"approved",expected_revision:1,suit_name:" ATC "})).error,null);
+  assert.equal(entry.suit_name,"ATC");
+  assert.equal((await board()).data[0].suit_name,"ATC");
+  assert.ok((await competitor.rpc("league_edit_entry", {entry_id:id,expected_revision:1,changes:entryChanges(entry,{suit_name:"Changed after approval"})})).error);
+  assert.equal(entry.suit_name,"ATC");
+});
+
 test("pending category changes require valid categories and organiser re-review", async () => {
   const store = createPreviewStore();
   const {id,entry} = await upload(store);

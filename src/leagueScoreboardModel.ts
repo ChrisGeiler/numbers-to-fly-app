@@ -5,6 +5,7 @@ export type LeagueScoreboardEntry = {
   id: string;
   competitor_key: string;
   public_name: string;
+  suit_name?: string | null;
   region: string;
   discipline: LeagueTask;
   category?: LeagueCategory;
