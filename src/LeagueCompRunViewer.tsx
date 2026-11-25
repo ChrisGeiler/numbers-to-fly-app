@@ -11,6 +11,7 @@ export default function LeagueCompRunViewer({client, entry, onClose}: {
   client:typeof supabase; entry:{id:string;name:string;task:string;attempt:number;score:number;unit:string}; onClose:()=>void;
 }) {
   const dialog=useRef<HTMLDialogElement>(null);
+  const startedOnBackdrop=useRef(false);
   const [run,setRun]=useState<LeagueCompRun|null>(null);
   const [error,setError]=useState("");
   const [mode,setMode]=useState<"raw"|"corrected">("raw");
@@ -35,7 +36,14 @@ export default function LeagueCompRunViewer({client, entry, onClose}: {
     horizontalSpeedMps:point.horizontalSpeedMps,verticalSpeedMps:point.verticalSpeedMps,
     totalSpeedMps:Math.hypot(point.horizontalSpeedMps,point.verticalSpeedMps),
     glideRatio:point.verticalSpeedMps>0?point.horizontalSpeedMps/point.verticalSpeedMps:null}))??[];
-  return <dialog ref={dialog} className="league-comp-run" aria-labelledby="comp-run-title" onClose={onClose}>
+  const isBackdrop = (event: {target:EventTarget;currentTarget:HTMLDialogElement;clientX:number;clientY:number}) => {
+    const bounds=event.currentTarget.getBoundingClientRect();
+    return event.target===event.currentTarget &&
+      (event.clientX<bounds.left || event.clientX>bounds.right || event.clientY<bounds.top || event.clientY>bounds.bottom);
+  };
+  return <dialog ref={dialog} className="league-comp-run" aria-labelledby="comp-run-title" onClose={onClose}
+    onPointerDown={event=>{startedOnBackdrop.current=isBackdrop(event);}}
+    onClick={event=>{if(startedOnBackdrop.current && isBackdrop(event))event.currentTarget.close();}}>
     <header><div><p>FULL COMP RUN</p><h2 id="comp-run-title">{entry.name} · {entry.task} · Jump {entry.attempt}</h2></div>
       <button type="button" onClick={()=>dialog.current?.close()}>Close graph</button></header>
     <p className="league-comp-run-score"><strong>Approved {entry.task === "time"?"time":`wind-corrected ${entry.task}`} score: {entry.score.toFixed(entry.task==="time"?2:1)} {entry.unit}</strong></p>
