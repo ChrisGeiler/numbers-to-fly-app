@@ -1117,7 +1117,7 @@ export default function League({
                           )}
                       </div>
                       <Suspense fallback={<p>Loading reference point picker…</p>}>
-                        <LeagueReferencePicker key={uploadFile ? `${uploadFile.name}:${uploadFile.lastModified}` : "no-file"} file={uploadFile} ground={Number(groundElevation)} value={referencePoint} onChange={setReferencePoint} />
+                        <LeagueReferencePicker key={uploadFile ? `${uploadFile.name}:${uploadFile.lastModified}` : "no-file"} userId={preview ? undefined : session.user.id} file={uploadFile} ground={Number(groundElevation)} value={referencePoint} onChange={setReferencePoint} />
                       </Suspense>
                       <label className="league-checkbox">
                         <input name="coaching" type="checkbox" /> I’d like
@@ -1249,7 +1249,7 @@ export default function League({
                   )}
                   {!owner && entry.status === "pending" && accepting && canEnter && (
                     editingEntry === entry.id ? <LeagueEntryEditor key={`${entry.id}:${entry.revision ?? 0}`}
-                      client={client} entry={entry} userId={session.user.id}
+                      client={client} entry={entry} userId={session.user.id} referenceUserId={preview ? undefined : session.user.id}
                       onCancel={() => setEditingEntry(null)} onSaved={async () => {
                         setEditingEntry(null); setStatus("Entry updated. Scores will be recalculated before organiser approval."); await refresh();
                       }} /> : <button className="league-secondary" onClick={() => setEditingEntry(entry.id)}>Edit submitted track</button>
@@ -1257,7 +1257,7 @@ export default function League({
                   {owner && (
                     <>
                       <Suspense fallback={<p>Loading reference controls…</p>}>
-                        <LeagueReviewReference key={`${entry.id}:${entry.revision ?? 0}`} client={client} entry={entry} onSaved={refresh} />
+                        <LeagueReviewReference key={`${entry.id}:${entry.revision ?? 0}`} userId={preview ? undefined : session.user.id} client={client} entry={entry} onSaved={refresh} />
                       </Suspense>
                       <p className="league-caption">
                         Elevation: {entry.ground_elevation_m} m MSL ·{" "}

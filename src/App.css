@@ -284,19 +284,9 @@ tr:last-child td {
   background: #020617;
 }
 
-.lane-view-map {
-  width: 100%;
-  height: 75vh;
-  min-height: 520px;
-  overflow: hidden;
-  border: 1px solid rgba(34, 211, 238, 0.5);
-  border-radius: 16px;
-}
 
-.lane-view-map .leaflet-container {
-  width: 100%;
-  height: 100%;
-}
+
+
 
 .reference-point-marker div {
   width: 24px;
@@ -865,83 +855,19 @@ button:disabled {
   }
 }
 
-.lane-wind-marker {
-  display: grid;
-  grid-template-columns: 70px 46px;
-  align-items: center;
-  gap: 0;
-  background: rgba(0, 0, 0, 0.38);
-  border-radius: 10px;
-  padding: 5px 8px;
-  color: rgba(255, 255, 255, 0.94);
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    Arial,
-    sans-serif;
-  font-size: 24px;
-  font-weight: 750;
-  letter-spacing: 0.2px;
-  line-height: 1;
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.9),
-    0 0 6px rgba(0, 0, 0, 0.65);
-  pointer-events: none;
-  white-space: nowrap;
-}
 
-.lane-wind-speed {
-  text-align: right;
-  color: rgba(255, 255, 255, 0.95);
-  font-variant-numeric: tabular-nums;
-}
 
-.lane-wind-arrow {
-  width: 46px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    Arial,
-    sans-serif;
-  font-size: 34px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.82);
-  transform-origin: center;
-}
 
-.lane-wind-speed {
-  text-align: left;
-  opacity: 0.9;
-}
 
-.lane-view-map .maplibregl-ctrl-attrib {
-  background: rgba(255, 255, 255, 0.1) !important;
-  color: rgba(0, 0, 0, 0.55) !important;
-  border-radius: 10px;
-  backdrop-filter: blur(3px);
-}
 
-.lane-view-map .maplibregl-ctrl-attrib a {
-  color: rgba(0, 0, 0, 0.3) !important;
-}
 
-.lane-view-map .maplibregl-ctrl-attrib button {
-  color: rgba(0, 0, 0, 0.3) !important;
-}
+
+
+
+
+
+
+
 
 .rule-result-image {
   width: 100%;
@@ -1118,18 +1044,9 @@ button:disabled {
   font-size: 1.1rem;
 }
 
-.analysis-lane-wind {
-  grid-template-columns: auto 30px;
-  font-size: 12px;
-  gap: 4px;
-  background: rgba(2, 6, 23, 0.5);
-  border: 1px solid rgba(34, 211, 238, 0.7);
-}
 
-.analysis-lane-wind .lane-wind-arrow {
-  width: 30px;
-  font-size: 25px;
-}
+
+
 
 .wind-correction-source-control {
   display: flex;
@@ -3379,149 +3296,49 @@ button {
   box-sizing: border-box;
 }
 
-.analyzer-reference-suggestions {
-  margin: 16px 0;
-  padding: 14px;
-  border: 1px solid rgba(34, 211, 238, 0.45);
-  border-radius: 16px;
-  background: rgba(8, 47, 73, 0.35);
-}
 
-.analyzer-reference-suggestions h3 {
-  margin: 0 0 8px;
-  color: #67e8f9;
-  text-align: center;
-}
 
-.analyzer-reference-suggestions > p {
-  margin: 0 auto 14px;
-  max-width: 660px;
-  color: #a5f3fc;
-  line-height: 1.4;
-  text-align: center;
-}
 
-.analyzer-reference-group {
-  padding: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.32);
-  border-radius: 13px;
-  background: rgba(2, 6, 23, 0.62);
-}
 
-.analyzer-reference-group + .analyzer-reference-group {
-  margin-top: 12px;
-}
 
-.analyzer-reference-group.is-selected {
-  border-color: rgba(250, 204, 21, 0.8);
-  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.16);
-}
 
-.analyzer-reference-group-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
 
-.analyzer-reference-group-title strong {
-  color: #ecfeff;
-}
 
-.analyzer-reference-group-title span {
-  color: #a5f3fc;
-  font-size: 0.82rem;
-  text-align: right;
-}
 
-.analyzer-reference-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
 
-.analyzer-reference-options button {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: 100%;
-  min-width: 0;
-  margin: 0;
-  text-align: left;
-}
 
-.analyzer-reference-options button.is-selected {
-  border-color: #fef08a;
-  background: #ca8a04;
-  color: #fff;
-  box-shadow:
-    0 0 0 2px rgba(250, 204, 21, 0.25),
-    0 8px 20px rgba(202, 138, 4, 0.25);
-}
 
-.analyzer-reference-options button small {
-  margin-top: 3px;
-  font-weight: 700;
-  opacity: 0.78;
-}
 
-.lane-penalty-estimate {
-  margin-top: 14px;
-  padding: 15px;
-  border: 1px solid rgba(148, 163, 184, 0.4);
-  border-radius: 15px;
-  text-align: center;
-}
 
-.lane-penalty-estimate > span,
-.lane-penalty-estimate > strong {
-  display: block;
-}
 
-.lane-penalty-estimate > span {
-  margin-bottom: 5px;
-  color: #cbd5e1;
-  font-size: 0.82rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 
-.lane-penalty-estimate > strong {
-  font-size: 1.08rem;
-}
 
-.lane-penalty-estimate p {
-  margin: 9px 0;
-  color: #e2e8f0;
-  line-height: 1.4;
-}
 
-.lane-penalty-estimate small {
-  display: block;
-  color: #cbd5e1;
-  line-height: 1.35;
-}
 
-.lane-penalty-none {
-  border-color: rgba(74, 222, 128, 0.72);
-  background: rgba(20, 83, 45, 0.42);
-  color: #bbf7d0;
-}
 
-.lane-penalty-ten {
-  border-color: rgba(250, 204, 21, 0.78);
-  background: rgba(113, 63, 18, 0.42);
-  color: #fef08a;
-}
 
-.lane-penalty-twenty,
-.lane-penalty-major {
-  border-color: rgba(248, 113, 113, 0.8);
-  background: rgba(127, 29, 29, 0.42);
-  color: #fecaca;
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 .graph-view-button {
   position: static;

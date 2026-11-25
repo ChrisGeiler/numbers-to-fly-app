@@ -5,6 +5,8 @@ import { leagueWindow, scoreLeagueWindow, LEAGUE_WIND_MODEL } from "../src/leagu
 import { rankLeagueScoreboard } from "../src/leagueScoreboardModel.ts";
 import type { LeagueScoreboardEntry } from "../src/leagueScoreboardModel.ts";
 import { buildLeagueCompRun, compRunWindow } from "../src/leagueCompRun.ts";
+import {competitionLaneGeometry} from "../src/competitionLaneFlight.ts";
+import {estimateLanePenalty} from "../src/competitionLaneMath.ts";
 import { getValidatedJumpTrack, parseFlySightCsv } from "../src/gpsAnalysis.ts";
 const base = Date.parse("2026-11-01T00:00:00Z");
 function csv() {
@@ -116,4 +118,35 @@ test("reference map contains only the clipped ground flight and never changes gr
   assert.deepEqual(mapped.map!.reference,ref);
   assert.deepEqual(Object.keys(mapped.map!.points[0]).sort(),["altitudeM","lat","lon"]);
   assert.ok(!JSON.stringify(mapped).includes("2026-11-01"));
+});
+
+
+test("league map uses the analyser Point A, evaluation interval and lane estimate",()=>{
+  const source=csv(),ref={name:"Finish",lat:-32.97,lon:151.03};
+  const validated=getValidatedJumpTrack(parseFlySightCsv(source),100);
+  const geometry=competitionLaneGeometry(validated.jumpPoints.map(p=>({...p,altitudeM:p.altitudeM-100})));
+  const mapped=buildLeagueCompRun(source,100,winds,ref).map!;
+  assert.equal(mapped.lane!.version,1);
+  assert.deepEqual(mapped.lane!.pointA,{lat:geometry.pointA!.lat,lon:geometry.pointA!.lon});
+  assert.deepEqual(mapped.lane!.penalty,estimateLanePenalty(geometry.evaluationPoints,geometry.pointA!,ref));
+  assert.ok(mapped.lane!.evaluationPoints[0].altitudeM < mapped.points[0].altitudeM);
+  assert.equal(mapped.lane!.evaluationPoints[0].altitudeM,geometry.evaluationPoints[0].altitudeM);
+  assert.equal(mapped.lane!.windowPoints[0].altitudeM,2500);
+  assert.equal(mapped.lane!.windowPoints.at(-1)!.altitudeM,1500);
+  assert.equal(mapped.lane!.winds.length,5);
+  assert.ok(mapped.lane!.winds.every(w=>Math.abs(Number(w.speedKt)-Math.hypot(10,-5)/0.514444)<1e-8));
+  assert.ok(!JSON.stringify(mapped).includes("timestampMs"));
+});
+
+test("shared lane estimate retains the app's 600 m lane and penalty bands",()=>{
+  const a={lat:0,lon:0},b={lat:0.1,lon:0};
+  const metresPerDegreeLon=Math.PI/180*6371000*Math.cos(0.05*Math.PI/180);
+  const result=(distance:number)=>estimateLanePenalty([{lat:0.05,lon:distance/metresPerDegreeLon}],a,b)!;
+  assert.equal(result(299).severity,"none");
+  assert.equal(result(301).severity,"ten");
+  assert.equal(result(449).severity,"ten");
+  assert.equal(result(451).severity,"twenty");
+  assert.equal(result(599).severity,"twenty");
+  assert.equal(result(601).severity,"major");
+  assert.equal(estimateLanePenalty([a],a,a),null);
 });

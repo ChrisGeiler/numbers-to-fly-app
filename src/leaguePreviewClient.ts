@@ -488,7 +488,7 @@ export function createLeaguePreviewClient(
           if(!entry)return fail("This approved comp run is unavailable.");
           const revision=entry.revision??0;
           try {
-            if(!entry.comp_run_data || (entry.reference_point && !(entry.comp_run_data as {map?:unknown}).map)) {
+            if(!entry.comp_run_data || (entry.reference_point && (entry.comp_run_data as {map?:{lane?:{version:number}}}).map?.lane?.version !== 1)) {
               const original=store.files.get(String(entry.file_path));
               if(!original) return fail("The original track is unavailable.");
               const data=buildLeagueCompRun(await original.text(),Number(entry.ground_elevation_m),entry.wind_snapshot as LeagueWindSnapshot,entry.reference_point as LeagueReferencePoint);

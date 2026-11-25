@@ -1,5 +1,24 @@
 # Australian Wingsuit League — initial pilot
 
+## Shared analyser lane map and reference selection — 25 November 2026
+
+The league and training app now share LaneViewMap, reference-point controls,
+Point A geometry, penalty estimation and styling. Both use the same north-up
+Esri satellite imagery, cyan flight trace, 600 m lane and coloured penalty bands.
+The league picker uses the same nearby saved-location suggestions (own account
+where available, or browser-saved points), latitude/longitude inputs, Choose
+Reference Point on map, Hide map and Clear Reference Point controls. A separate
+reference-name field is no longer needed. Existing named selections remain valid.
+
+The scoreboard map uses server-generated lane data from the original recorded
+samples and saved winds. Estimated lane penalties are educational analysis only;
+they do not change approved league scores. Prior map caches rebuild lazily without
+changing approval, reference point, submission time or scoring winds. No schema
+or scoring-rule changes are required.
+
+Validation: 41 league tests, 9 reference sync tests, TypeScript/build, and mobile
+satellite map / saved-reference / analyser checks using synthetic flight fixtures.
+
 ## Flight reference points and scoreboard maps — 25 November 2026
 
 New submissions and pending-entry edits require a named reference point selected

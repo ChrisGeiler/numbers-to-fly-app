@@ -24,7 +24,7 @@ Deno.serve(async request=>{
       return !!data;
     };
     if(!await published())return reply(404,{error:"This round is not published."});
-    if(entry.comp_run_data && (!entry.reference_point || entry.comp_run_data.map))return reply(200,entry.comp_run_data);
+    if(entry.comp_run_data && (!entry.reference_point || entry.comp_run_data.map?.lane?.version === 1))return reply(200,entry.comp_run_data);
     const prefix=`${entry.user_id}/${entry.round_id}/`;
     if(!entry.file_path.startsWith(prefix) || !/^[0-9a-f-]{36}[.]csv$/.test(entry.file_path.slice(prefix.length)))throw new Error("Invalid original file path.");
     const file=await admin.storage.from("league-tracks").download(entry.file_path);

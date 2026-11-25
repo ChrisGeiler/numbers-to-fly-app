@@ -18,8 +18,8 @@ export type EditableLeagueEntry = {
   suit_name?: string | null;
   coaching_requested: boolean; revision?: number;
 };
-export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCancel }: {
-  client: typeof supabase; entry: EditableLeagueEntry; userId: string;
+export default function LeagueEntryEditor({ client, entry, userId, referenceUserId, onSaved, onCancel }: {
+  client: typeof supabase; entry: EditableLeagueEntry; userId: string; referenceUserId?: string;
   onSaved: () => Promise<void>; onCancel: () => void;
 }) {
   const [reference, setReference] = useState(entry.reference_point ?? null);
@@ -87,7 +87,7 @@ export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCa
         <label>Elevation / metres<input type="number" required min={-100} max={3000} step="0.1" value={ground} onChange={e=>setGround(e.target.value)} /></label>
       </div>
       <label>Replacement FlySight CSV (optional)<input type="file" accept=".csv,text/csv,text/plain" onChange={e=>{setReplacement(e.target.files?.[0]??null);setReference(null);}} /><small>Leave blank to keep the saved track.</small></label>
-      <Suspense fallback={<p>Loading reference picker…</p>}><LeagueReferencePicker key={replacement ? `${replacement.name}:${replacement.lastModified}` : "original"} file={replacement ?? original} ground={Number(ground)} value={reference} onChange={setReference} /></Suspense>
+      <Suspense fallback={<p>Loading reference picker…</p>}><LeagueReferencePicker key={replacement ? `${replacement.name}:${replacement.lastModified}` : "original"} userId={referenceUserId} file={replacement ?? original} ground={Number(ground)} value={reference} onChange={setReference} /></Suspense>
       <label className="league-checkbox"><input name="coaching" type="checkbox" defaultChecked={entry.coaching_requested} /> Request remote coaching — A$20 per track</label>
       <p className="league-caption">Saving clears the previous scores and replay. The revised entry stays pending for recalculation and organiser approval.</p>
       {status && <p className="league-notice" role="status">{status}</p>}

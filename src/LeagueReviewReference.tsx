@@ -4,8 +4,8 @@ import type { LeagueReferencePoint } from "./leagueReference";
 import { validLeagueReference } from "./leagueReference";
 import LeagueReferencePicker from "./LeagueReferencePicker";
 
-export default function LeagueReviewReference({client, entry, onSaved}: {
-  client: typeof supabase;
+export default function LeagueReviewReference({client, entry, onSaved, userId}: {
+  client: typeof supabase; userId?:string;
   entry: {id:string; file_path:string; ground_elevation_m:number; revision?:number; reference_point?:LeagueReferencePoint|null};
   onSaved: () => Promise<void>;
 }) {
@@ -36,7 +36,7 @@ export default function LeagueReviewReference({client, entry, onSaved}: {
     finally {setBusy(false);}
   }}>
     <fieldset disabled={busy}>
-      <LeagueReferencePicker file={file} ground={entry.ground_elevation_m} value={point} onChange={setPoint} />
+      <LeagueReferencePicker userId={userId} file={file} ground={entry.ground_elevation_m} value={point} onChange={setPoint} />
       <p>Saving preserves the score and approval. For approved entries, this publishes the flight location and reference point on the scoreboard.</p>
       {status && <p role="status">{status}</p>}
       <button disabled={!validLeagueReference(point) || busy} className="league-secondary">Save reference point</button>{" "}

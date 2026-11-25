@@ -2,6 +2,9 @@ import { getDetectedJumpTrack, getValidatedJumpTrack, parseFlySightCsv } from ".
 import type { GpsTrackPoint } from "./gpsAnalysis.ts";
 import { leagueWindAtPoint } from "./leagueScoring.ts";
 import type { LeagueWindSnapshot } from "./leagueScoring.ts";
+import {competitionLaneGeometry} from "./competitionLaneFlight.ts";
+import {estimateLanePenalty} from "./competitionLaneMath.ts";
+import type {LanePenaltyEstimate} from "./competitionLaneMath.ts";
 import { validLeagueReference } from "./leagueReference.ts";
 import type { LeagueReferencePoint } from "./leagueReference.ts";
 
@@ -10,7 +13,10 @@ export type LeagueCompRun = {
   exitAltitudeM: number;
   adjustedExit: boolean;
   correctedAvailable: boolean;
-  map?: { reference: LeagueReferencePoint; points: {lat: number; lon: number; altitudeM: number}[] };
+  map?: { reference: LeagueReferencePoint; points: {lat:number;lon:number;altitudeM:number}[];
+    lane?: {version:1;pointA:{lat:number;lon:number}|null;evaluationPoints:{lat:number;lon:number;altitudeM:number}[];
+      windowPoints:{lat:number;lon:number;altitudeM:number}[];penalty:LanePenaltyEstimate|null;
+      winds:{altitudeM:number;speedKt:string;directionFromDeg:string}[]}; };
   points: {seconds: number; altitudeM: number; horizontalSpeedMps: number; verticalSpeedMps: number; airspeedMps: number | null}[];
 };
 
@@ -59,8 +65,27 @@ export function buildLeagueCompRun(csv: string, ground: number, winds: LeagueWin
     return {seconds:(point.timestampMs-origin)/1000,altitudeM:point.altitudeM-ground,
       horizontalSpeedMps:point.horizontalSpeedMps,verticalSpeedMps:point.verticalSpeedMps,airspeedMps};
   });
+  const agl=clipped.map(point=>({...point,altitudeM:point.altitudeM-ground}));
+  const geometry=competitionLaneGeometry(agl);
+  const project=(source:GpsTrackPoint[])=>{
+    const step=Math.max(1,Math.ceil(source.length/2000));
+    return source.filter((_,i)=>i%step===0 || i===source.length-1).map(point=>({lat:point.lat,lon:point.lon,altitudeM:point.altitudeM}));
+  };
+  const laneWinds:{altitudeM:number;speedKt:string;directionFromDeg:string}[]=[];
+  if(reference)for(const altitudeM of [2500,2250,2000,1750,1500]) {
+    const index=clipped.findIndex((p,i)=>i>0 && clipped[i-1].altitudeM-ground>altitudeM && p.altitudeM-ground<=altitudeM);
+    if(index<1)continue;
+    const a=clipped[index-1],b=clipped[index];const fraction=(a.altitudeM-ground-altitudeM)/(a.altitudeM-b.altitudeM);
+    const point={...a,altitudeM:ground+altitudeM,timestampMs:a.timestampMs!+(b.timestampMs!-a.timestampMs!)*fraction};
+    try {const wind=leagueWindAtPoint(point,winds);laneWinds.push({altitudeM,
+      speedKt:String(Math.hypot(wind.north,wind.east)/0.514444),
+      directionFromDeg:String((Math.atan2(-wind.east,-wind.north)*180/Math.PI+360)%360)});}catch { /* Never invent missing winds. */ }
+  }
   const step = Math.max(1, Math.ceil(clipped.length / 2000));
-  const map = validLeagueReference(reference) ? {reference, points: clipped
+  const map = validLeagueReference(reference) ? {reference, lane:{version:1 as const,
+    pointA:geometry.pointA?{lat:geometry.pointA.lat,lon:geometry.pointA.lon}:null,
+    evaluationPoints:project(geometry.evaluationPoints),windowPoints:project(geometry.windowPoints),
+    penalty:geometry.pointA?estimateLanePenalty(geometry.evaluationPoints,geometry.pointA,reference):null,winds:laneWinds}, points: clipped
     .filter((_, index) => index % step === 0 || index === clipped.length - 1)
     .map(point => {
       if (!Number.isFinite(point.lat) || !Number.isFinite(point.lon) || Math.abs(point.lat)>90 || Math.abs(point.lon)>180) throw new Error("Invalid flight coordinates.");

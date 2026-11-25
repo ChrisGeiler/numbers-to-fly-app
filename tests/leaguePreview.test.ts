@@ -640,6 +640,11 @@ test("reference points are required; organiser backfill preserves approved score
   const updated=await visitor.functions.invoke("league-flight",{body:{entry_id:item.id}});
   assert.equal(updated.error,null); assert.deepEqual(updated.data.map.reference,reference);
   assert.equal(updated.data.map.points.at(-1).altitudeM,1450);
+  assert.equal(updated.data.map.lane.version,1);
+  delete (item.entry.comp_run_data as {map:{lane?:unknown}}).map.lane;
+  const refreshed=await visitor.functions.invoke("league-flight",{body:{entry_id:item.id}});
+  assert.equal(refreshed.error,null); assert.equal(refreshed.data.map.lane.version,1);
+  assert.equal(item.entry.corrected_speed_kmh,originalScore);
   assert.ok(updated.data.map.points.length <= 2001);
   assert.ok(!JSON.stringify(updated.data).includes("file_path"));
   assert.ok(!JSON.stringify(updated.data).includes("2026-11-01"));

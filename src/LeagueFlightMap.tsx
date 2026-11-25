@@ -1,43 +1,20 @@
-import { useEffect } from "react";
-import { CircleMarker, MapContainer, Polyline, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet";
-import type { LeagueReferencePoint } from "./leagueReference";
-import "leaflet/dist/leaflet.css";
-import "./LeagueFlightMap.css";
-
-export type FlightMapPoint = { lat: number; lon: number; altitudeM: number };
-function MapBehaviour({ points, reference, onPick }: {
-  points: FlightMapPoint[]; reference: LeagueReferencePoint | null;
-  onPick?: (point: LeagueReferencePoint) => void;
-}) {
-  const map = useMap();
-  useMapEvents({ click: event => onPick?.({name: reference?.name || "Reference point", lat: event.latlng.lat, lon: event.latlng.lng}) });
-  useEffect(() => {
-    const bounds: [number, number][] = points.map(p => [p.lat, p.lon]);
-    if (reference) bounds.push([reference.lat, reference.lon]);
-    if (bounds.length) map.fitBounds(bounds, {padding: [32, 32], maxZoom: 15});
-    const timer = setTimeout(() => map.invalidateSize(), 100);
-    return () => clearTimeout(timer);
-  }, [map, points, reference]);
-  return null;
-}
-export default function LeagueFlightMap({points, reference, onPick}: {
-  points: FlightMapPoint[]; reference: LeagueReferencePoint | null;
-  onPick?: (point: LeagueReferencePoint) => void;
-}) {
-  const path = points.map(p => [p.lat, p.lon] as [number, number]);
-  const scoringPath = points.filter(p => p.altitudeM <= 2500 && p.altitudeM >= 1500)
-    .map(p => [p.lat, p.lon] as [number, number]);
-  return <div className="league-flight-map" aria-label={onPick ? "Select your flight reference point on the map" : "Flight track and selected reference point"}>
-    <MapContainer center={path[0] ?? [-25, 134]} zoom={path.length ? 12 : 4} scrollWheelZoom={false}>
-      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution={'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'} />
-      <MapBehaviour points={points} reference={reference} onPick={onPick} />
-      {path.length > 1 && <Polyline positions={path} pathOptions={{color: "#0e7490", weight: 4}} />}
-      {scoringPath.length > 1 && <Polyline positions={scoringPath} pathOptions={{color: "#e87912", weight: 5}} />}
-      {path[0] && <CircleMarker center={path[0]} radius={6} pathOptions={{color: "#14532d", fillOpacity: 1}}><Popup>Exit / start of displayed flight</Popup></CircleMarker>}
-      {reference && <>
-        {path[0] && <Polyline positions={[path[0], [reference.lat, reference.lon]]} pathOptions={{color: "#6750a4", dashArray: "6 6", weight: 2}} />}
-        <CircleMarker center={[reference.lat, reference.lon]} radius={9} pathOptions={{color: "#6750a4", fillOpacity: 1}}><Popup>{reference.name}</Popup></CircleMarker>
-      </>}
-    </MapContainer>
-  </div>;
+import {bearingBetweenPointsDeg} from "./flight/geo";
+import type {LeagueCompRun} from "./leagueCompRun";
+import LaneViewMap from "./LaneViewMap";
+import LanePenaltyReadout from "./LanePenaltyReadout";
+export default function LeagueFlightMap({map}:{map:NonNullable<LeagueCompRun["map"]>}) {
+  const lane=map.lane,pointA=lane?.pointA;
+  return <section className="competition-lane-ui" aria-label="Competition lane map">
+    <h3>Competition Lane</h3><p>Point A is detected 9 seconds after the scoring run reaches 10 m/s vertical speed.</p>
+    {pointA && lane ? <>
+      <div className="competition-lane-point-readout"><span>Point A</span><strong>{pointA.lat.toFixed(6)+", "+pointA.lon.toFixed(6)}</strong></div>
+      <LaneViewMap referenceLat={String(map.reference.lat)} referenceLon={String(map.reference.lon)}
+        dropPoint={pointA} runHeadingDeg={String(bearingBetweenPointsDeg(pointA.lat,pointA.lon,map.reference.lat,map.reference.lon))}
+        dropDistanceNm="0" trackPoints={lane.evaluationPoints} windowPoints={lane.windowPoints} winds={lane.winds}/>
+      <p>North is always up. The cyan track and 600 m lane use the recorded ground flight, in both graph modes.</p>
+      <div className="competition-lane-point-readout"><span>Reference Point · {map.reference.name}</span><strong>{map.reference.lat.toFixed(6)+", "+map.reference.lon.toFixed(6)}</strong></div>
+      <LanePenaltyReadout estimate={lane.penalty}/>
+      <p>This estimate is an analysis aid and does not alter the approved league score.</p>
+    </> : <p>A valid Point A could not be detected for this flight. No lane penalty is estimated.</p>}
+  </section>;
 }
