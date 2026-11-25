@@ -13,16 +13,16 @@ select set_config('request.jwt.claims',json_build_object('sub',current_setting('
 set local role authenticated;
 insert into storage.objects(bucket_id,name,owner_id)
 values('league-tracks',current_setting('league.cat_user')||'/'||current_setting('league.cat_round')||'/'||current_setting('league.cat_entry')||'.csv',current_setting('league.cat_user'));
-insert into public.league_entries(id,user_id,round_id,public_name,region,discipline,location_name,ground_elevation_m,file_path,category)
+insert into public.league_entries(id,user_id,round_id,public_name,region,discipline,location_name,ground_elevation_m,file_path,category,reference_point)
 values(current_setting('league.cat_entry')::uuid,current_setting('league.cat_user')::uuid,current_setting('league.cat_round')::uuid,
-'Category test','NSWPC','speed','Moruya',5,current_setting('league.cat_user')||'/'||current_setting('league.cat_round')||'/'||current_setting('league.cat_entry')||'.csv','beginner');
+'Category test','NSWPC','speed','Moruya',5,current_setting('league.cat_user')||'/'||current_setting('league.cat_round')||'/'||current_setting('league.cat_entry')||'.csv','beginner','{"name":"Runway","lat":-33,"lon":151}');
 reset role;
 update public.league_entries set comp_run_data='{"version":1,"points":[]}' where id=current_setting('league.cat_entry')::uuid;
 set local role authenticated;
 do $$ declare changes jsonb; begin
   select jsonb_build_object('public_name',e.public_name,'region',e.region,'discipline',e.discipline,
     'location_name',e.location_name,'ground_elevation_m',e.ground_elevation_m,
-    'coaching_requested',false,'file_path',e.file_path,'category','invalid') into changes
+    'coaching_requested',false,'file_path',e.file_path,'category','invalid','reference_point',e.reference_point) into changes
   from public.league_entries e where e.id=current_setting('league.cat_entry')::uuid;
   begin
     perform public.league_edit_entry(current_setting('league.cat_entry')::uuid,0,changes);
@@ -37,15 +37,15 @@ reset role;
 update public.league_entries set status='approved',time_s=50,raw_speed_kmh=150,raw_distance_m=2000,
   corrected_speed_kmh=150,corrected_distance_m=2000,replay_data='{"version":1,"points":[]}'
 where id=current_setting('league.cat_entry')::uuid;
-insert into public.league_entries(user_id,round_id,public_name,region,discipline,location_name,ground_elevation_m,file_path,category,status,time_s,corrected_speed_kmh,corrected_distance_m,replay_data)
+insert into public.league_entries(user_id,round_id,public_name,region,discipline,location_name,ground_elevation_m,file_path,category,status,time_s,corrected_speed_kmh,corrected_distance_m,replay_data,reference_point)
 select current_setting('league.cat_user')::uuid,current_setting('league.cat_round')::uuid,'Category test','NSWPC','speed','Moruya',5,
-  current_setting('league.cat_user')||'/'||current_setting('league.cat_round')||'/'||gen_random_uuid()||'.csv',category,'approved',50,200,2500,'{"version":1,"points":[]}'
+  current_setting('league.cat_user')||'/'||current_setting('league.cat_round')||'/'||gen_random_uuid()||'.csv',category,'approved',50,200,2500,'{"version":1,"points":[]}','{"name":"Runway","lat":-33,"lon":151}'
 from unnest(array['beginner','open']) category;
 set local role authenticated;
 do $$ declare changes jsonb; begin
   select jsonb_build_object('public_name',e.public_name,'region',e.region,'discipline',e.discipline,
     'location_name',e.location_name,'ground_elevation_m',e.ground_elevation_m,
-    'coaching_requested',false,'file_path',e.file_path,'category','open') into changes
+    'coaching_requested',false,'file_path',e.file_path,'category','open','reference_point',e.reference_point) into changes
   from public.league_entries e where e.id=current_setting('league.cat_entry')::uuid;
   begin
     perform public.league_edit_entry(current_setting('league.cat_entry')::uuid,1,changes);

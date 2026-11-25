@@ -1,5 +1,39 @@
 # Australian Wingsuit League — initial pilot
 
+## Flight reference points and scoreboard maps — 25 November 2026
+
+New submissions and pending-entry edits require a named reference point selected
+on the flight map or entered as latitude/longitude. The submission notice states
+that approved flight locations and reference points appear publicly. The original
+CSV, absolute timestamps, account details and saved weather payloads stay private.
+
+The organiser can Add / Edit reference point on any review card, including an
+approved result. This preserves the score, approval, saved winds and submission
+timestamp, increments the entry revision and clears only the comp-run cache.
+No deletion, resubmission or reapproval is needed for the six existing entries.
+New approvals require a valid reference point; legacy approved results remain
+visible while awaiting backfill.
+
+Opening a scoreboard score shows the recorded ground track on an OpenStreetMap
+map, with the selected reference and the scoring-window segment, alongside the
+existing analyser. The public projection contains only the displayed exit-to-
+1,450 m AGL flight location; landing/ground portions and UTC timestamps are omitted.
+The map remains ground-relative when the graph switches raw/corrected modes.
+Map traces are capped at approximately 2,000 points; analyser metrics are unchanged.
+
+The migration and league-flight / league-score updates are deployed. Local
+checks: 39 league tests, 9 reference-point sync tests, TypeScript and build.
+Database access, category and reference-point SQL checks passed with all fixtures
+rolled back. Mobile picker/map/graph rendering checked with synthetic flights.
+
+## Test round extension — 20 November 2026
+
+At the organiser's request, the published Test round now closes on 30 November
+2026 at 23:59:59 Australia/Sydney (12:59:59 UTC), extended from 22 November.
+The one-time production migration preserves the opening date, publication and
+all six existing entries. The published-round lock remains enabled; Round
+control currently creates/publishes rounds but does not edit published dates.
+
 ## Round review folders — 17 November 2026
 
 The organiser Review desk lists expandable folders for all available rounds,

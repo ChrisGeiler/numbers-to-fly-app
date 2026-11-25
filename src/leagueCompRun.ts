@@ -2,12 +2,15 @@ import { getDetectedJumpTrack, getValidatedJumpTrack, parseFlySightCsv } from ".
 import type { GpsTrackPoint } from "./gpsAnalysis.ts";
 import { leagueWindAtPoint } from "./leagueScoring.ts";
 import type { LeagueWindSnapshot } from "./leagueScoring.ts";
+import { validLeagueReference } from "./leagueReference.ts";
+import type { LeagueReferencePoint } from "./leagueReference.ts";
 
 export type LeagueCompRun = {
   version: 1;
   exitAltitudeM: number;
   adjustedExit: boolean;
   correctedAvailable: boolean;
+  map?: { reference: LeagueReferencePoint; points: {lat: number; lon: number; altitudeM: number}[] };
   points: {seconds: number; altitudeM: number; horizontalSpeedMps: number; verticalSpeedMps: number; airspeedMps: number | null}[];
 };
 
@@ -25,8 +28,9 @@ export function compRunWindow(run: LeagueCompRun) {
   return start===null || end===null?undefined:{start,end};
 }
 
-// Public projection: relative time/AGL/flight metrics only, never GPS or UTC time.
-export function buildLeagueCompRun(csv: string, ground: number, winds: LeagueWindSnapshot): LeagueCompRun {
+// Relative time/AGL metrics; optional approved-location map is clipped to this run.
+// Never expose absolute timestamps, originals, account details or weather payloads.
+export function buildLeagueCompRun(csv: string, ground: number, winds: LeagueWindSnapshot, reference?: LeagueReferencePoint | null): LeagueCompRun {
   if (!Number.isFinite(ground)) throw new Error("Invalid DZ elevation.");
   const all = parseFlySightCsv(csv);
   const validated = getValidatedJumpTrack(all, ground);
@@ -55,7 +59,15 @@ export function buildLeagueCompRun(csv: string, ground: number, winds: LeagueWin
     return {seconds:(point.timestampMs-origin)/1000,altitudeM:point.altitudeM-ground,
       horizontalSpeedMps:point.horizontalSpeedMps,verticalSpeedMps:point.verticalSpeedMps,airspeedMps};
   });
+  const step = Math.max(1, Math.ceil(clipped.length / 2000));
+  const map = validLeagueReference(reference) ? {reference, points: clipped
+    .filter((_, index) => index % step === 0 || index === clipped.length - 1)
+    .map(point => {
+      if (!Number.isFinite(point.lat) || !Number.isFinite(point.lon) || Math.abs(point.lat)>90 || Math.abs(point.lon)>180) throw new Error("Invalid flight coordinates.");
+      return {lat:point.lat,lon:point.lon,altitudeM:point.altitudeM-ground};
+    })} : undefined;
   return {version:1,exitAltitudeM:points[0].altitudeM,
+    ...(map ? {map} : {}),
     adjustedExit:validated.isValidJump && validated.exitPoint!==validated.aircraftExitPoint,
     correctedAvailable:points.every(point=>point.airspeedMps!==null),points};
 }

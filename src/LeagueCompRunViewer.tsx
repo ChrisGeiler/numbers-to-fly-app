@@ -4,6 +4,7 @@ import type { GpsTrackPoint } from "./gpsAnalysis";
 import type { LeagueCompRun } from "./leagueCompRun";
 import { compRunWindow } from "./leagueCompRun";
 import InteractiveTrackChart from "./InteractiveTrackChart";
+import LeagueFlightMap from "./LeagueFlightMap";
 import "./LeagueCompRunViewer.css";
 
 export default function LeagueCompRunViewer({client, entry, onClose}: {
@@ -43,6 +44,11 @@ export default function LeagueCompRunViewer({client, entry, onClose}: {
     {run && <>
       <p>{run.adjustedExit?"Corrected competition exit":"Detected exit"}: {run.exitAltitudeM.toFixed(0)} m AGL → 1,450 m AGL.</p>
       {!run.correctedAvailable && <p>Saved winds do not cover the entire comp run. Showing raw flight data; the approved score is unchanged.</p>}
+      {run.map ? <section aria-label="Flight location">
+        <h3>Flight towards {run.map.reference.name}</h3>
+        <LeagueFlightMap points={run.map.points} reference={run.map.reference} />
+        <p>Recorded ground track: orange shows 2,500–1,500 m AGL. Purple marks the selected reference point. The map stays ground-relative in both graph modes.</p>
+      </section> : <p>A flight map will appear once the organiser adds this jump’s reference point.</p>}
       <InteractiveTrackChart points={points} recordedTimes={run.points.map(point=>point.seconds)} windowOffsetM={0}
         winds={[]} correctedHorizontalSpeedsMps={run.correctedAvailable?run.points.map(point=>point.airspeedMps!):undefined}
         graphView="comp" onGraphViewChange={()=>{}} scoreMode={mode} onScoreModeChange={setMode}

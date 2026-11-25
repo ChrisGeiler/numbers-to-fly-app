@@ -105,3 +105,15 @@ test("category leaders and round points stay independent even for the same compe
     assert.ok(rankLeagueScoreboard([...rows,...complete],"overall",category).rows.every(row=>row.total<=300));
   }
 });
+
+
+test("reference map contains only the clipped ground flight and never changes graph metrics", () => {
+  const source=csv(), ref={name:"Finish",lat:-32.97,lon:151.03};
+  const legacy=buildLeagueCompRun(source,100,winds);
+  const mapped=buildLeagueCompRun(source,100,winds,ref);
+  assert.deepEqual(mapped.points,legacy.points);
+  assert.equal(mapped.map!.points.at(-1)!.altitudeM,1450);
+  assert.deepEqual(mapped.map!.reference,ref);
+  assert.deepEqual(Object.keys(mapped.map!.points[0]).sort(),["altitudeM","lat","lon"]);
+  assert.ok(!JSON.stringify(mapped).includes("2026-11-01"));
+});

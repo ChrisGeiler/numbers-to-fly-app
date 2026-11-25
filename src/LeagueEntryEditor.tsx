@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { supabase } from "./supabase";
 import { dropZoneReferences } from "./leagueDropZones";
@@ -6,10 +6,15 @@ import { leagueWindow } from "./leagueScoring";
 import { leagueCategories } from "./leagueCategories";
 import { stateCouncils, councilFromLegacyRegion } from "./leagueCouncils";
 
+import { validLeagueReference } from "./leagueReference";
+import type { LeagueReferencePoint } from "./leagueReference";
+const LeagueReferencePicker = lazy(() => import("./LeagueReferencePicker"));
+
 export type EditableLeagueEntry = {
   id: string; round_id: string; file_path: string; public_name: string; region: string;
   discipline: string; location_name: string; ground_elevation_m: number;
   category?: string;
+  reference_point?: LeagueReferencePoint | null;
   suit_name?: string | null;
   coaching_requested: boolean; revision?: number;
 };
@@ -17,6 +22,7 @@ export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCa
   client: typeof supabase; entry: EditableLeagueEntry; userId: string;
   onSaved: () => Promise<void>; onCancel: () => void;
 }) {
+  const [reference, setReference] = useState(entry.reference_point ?? null);
   const [location, setLocation] = useState(entry.location_name);
   const [ground, setGround] = useState(String(entry.ground_elevation_m));
   const [original, setOriginal] = useState<Blob | null>(null);
@@ -37,6 +43,7 @@ export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCa
     const form = new FormData(event.currentTarget);
     let uploaded = "", saved = false;
     try {
+      if (!validLeagueReference(reference)) throw new Error("Select the reference point you were flying towards.");
       const file = replacement ?? original;
       if (!file || !file.size || file.size > 8 * 1024 * 1024) throw new Error("Choose a FlySight CSV smaller than 8 MB.");
       leagueWindow(await file.text(), Number(ground));
@@ -48,7 +55,7 @@ export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCa
       const response = await client.rpc("league_edit_entry", {
         entry_id: entry.id, expected_revision: entry.revision ?? 0,
         changes: { public_name: String(form.get("name")).trim(), region: form.get("region"),
-          suit_name: String(form.get("suit_name")).trim(),
+          suit_name: String(form.get("suit_name")).trim(), reference_point: reference,
           discipline: form.get("discipline"), category: form.get("category"), location_name: location,
           ground_elevation_m: Number(ground), coaching_requested: form.get("coaching") === "on",
           file_path: uploaded || entry.file_path },
@@ -79,7 +86,8 @@ export default function LeagueEntryEditor({ client, entry, userId, onSaved, onCa
         }}>{!dropZoneReferences.some(d => d.name === location) && <option>{location}</option>}{dropZoneReferences.map(d => <option key={d.name}>{d.name}</option>)}</select></label>
         <label>Elevation / metres<input type="number" required min={-100} max={3000} step="0.1" value={ground} onChange={e=>setGround(e.target.value)} /></label>
       </div>
-      <label>Replacement FlySight CSV (optional)<input type="file" accept=".csv,text/csv,text/plain" onChange={e=>setReplacement(e.target.files?.[0]??null)} /><small>Leave blank to keep the saved track.</small></label>
+      <label>Replacement FlySight CSV (optional)<input type="file" accept=".csv,text/csv,text/plain" onChange={e=>{setReplacement(e.target.files?.[0]??null);setReference(null);}} /><small>Leave blank to keep the saved track.</small></label>
+      <Suspense fallback={<p>Loading reference picker…</p>}><LeagueReferencePicker key={replacement ? `${replacement.name}:${replacement.lastModified}` : "original"} file={replacement ?? original} ground={Number(ground)} value={reference} onChange={setReference} /></Suspense>
       <label className="league-checkbox"><input name="coaching" type="checkbox" defaultChecked={entry.coaching_requested} /> Request remote coaching — A$20 per track</label>
       <p className="league-caption">Saving clears the previous scores and replay. The revised entry stays pending for recalculation and organiser approval.</p>
       {status && <p className="league-notice" role="status">{status}</p>}

@@ -3,6 +3,8 @@
 import type { supabase } from "./supabase";
 import { measureLeagueUploadWindow } from "./leagueUploadScore.ts";
 import { buildLeagueReplay } from "./leagueReplay.ts";
+import { validLeagueReference } from "./leagueReference.ts";
+import type { LeagueReferencePoint } from "./leagueReference.ts";
 import { buildLeagueCompRun } from "./leagueCompRun.ts";
 import { stateCouncils, councilFromLegacyRegion } from "./leagueCouncils.ts";
 import type { LeagueWindSnapshot } from "./leagueScoring.ts";
@@ -157,6 +159,7 @@ export function createLeaguePreviewClient(
             return fail("Enter your name and state council.");
         }
         if (this.table === "league_entries") {
+          if (!validLeagueReference(this.payload.reference_point)) return fail("Select the reference point flown towards.");
           if (this.payload.suit_name !== undefined && (typeof this.payload.suit_name !== "string" || !this.payload.suit_name.trim() || this.payload.suit_name.length > 60))
             return fail("Enter a suit name between 1 and 60 characters.");
           if (!stateCouncils.includes(String(this.payload.region))) return fail("Choose a valid state council.");
@@ -346,8 +349,8 @@ export function createLeaguePreviewClient(
         if (!round?.published || Date.now() < Date.parse(String(round.opens_at)) || Date.now() >= Date.parse(String(round.closes_at)))
           return fail("Entries can only be edited while the round is open.");
         const changes = args.changes as Row;
-        const allowed = ["public_name","region","discipline","location_name","ground_elevation_m","coaching_requested","file_path","category","suit_name"];
-        if (!changes || typeof changes !== "object" || ![7,8,9].includes(Object.keys(changes).length) || Object.keys(changes).some(key=>!allowed.includes(key)) ||
+        const allowed = ["public_name","region","discipline","location_name","ground_elevation_m","coaching_requested","file_path","category","suit_name","reference_point"];
+        if (!changes || typeof changes !== "object" || ![8,9,10].includes(Object.keys(changes).length) || !validLeagueReference(changes.reference_point) || Object.keys(changes).some(key=>!allowed.includes(key)) ||
           (changes.suit_name !== undefined && (typeof changes.suit_name !== "string" || !changes.suit_name.trim() || changes.suit_name.trim().length > 60)) ||
           (changes.category !== undefined && !["beginner","intermediate","open"].includes(String(changes.category))) ||
           typeof changes.public_name !== "string" || changes.public_name.trim().length < 2 || changes.public_name.trim().length > 60 ||
@@ -389,7 +392,14 @@ export function createLeaguePreviewClient(
       }
       const entry = store.entries.find((row) => row.id === args.entry_id);
       if (!entry) return fail("Preview entry not found.");
+      if (name === "league_set_reference_point") {
+        if (args.expected_revision !== Number(entry.revision ?? 0)) return fail("Entry changed. Refresh before saving the reference point.");
+        if (!validLeagueReference(args.reference_point)) return fail("Select a valid flight reference point.");
+        entry.reference_point = args.reference_point; entry.revision = Number(entry.revision ?? 0) + 1; entry.comp_run_data = null;
+        await store.persist?.(); return ok();
+      }
       if (name === "league_review_entry") {
+        if (args.decision === "approved" && !validLeagueReference(entry.reference_point)) return fail("Select a reference point before approving.");
         if (args.suit_name != null && (typeof args.suit_name !== "string" || !args.suit_name.trim() || args.suit_name.trim().length > 60))
           return fail("Enter a suit name between 1 and 60 characters.");
         if (args.expected_revision !== undefined && args.expected_revision !== Number(entry.revision ?? 0))
@@ -478,10 +488,10 @@ export function createLeaguePreviewClient(
           if(!entry)return fail("This approved comp run is unavailable.");
           const revision=entry.revision??0;
           try {
-            if(!entry.comp_run_data) {
+            if(!entry.comp_run_data || (entry.reference_point && !(entry.comp_run_data as {map?:unknown}).map)) {
               const original=store.files.get(String(entry.file_path));
               if(!original) return fail("The original track is unavailable.");
-              const data=buildLeagueCompRun(await original.text(),Number(entry.ground_elevation_m),entry.wind_snapshot as LeagueWindSnapshot);
+              const data=buildLeagueCompRun(await original.text(),Number(entry.ground_elevation_m),entry.wind_snapshot as LeagueWindSnapshot,entry.reference_point as LeagueReferencePoint);
               if(entry.status!=="approved" || (entry.revision??0)!==revision || !store.rounds.some(round=>round.id===entry.round_id && round.published))return fail("This result is no longer public.");
               entry.comp_run_data=data;
               await store.persist?.();

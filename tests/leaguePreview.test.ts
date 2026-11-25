@@ -7,6 +7,7 @@ import {
   PREVIEW_USER_ID,
 } from "../src/leaguePreviewClient.ts";
 
+const reference = {name:"Runway",lat:-32.98,lon:151.02};
 const base = Date.parse("2026-11-01T00:00:00Z");
 test("registration accepts all state councils and does not guess a Queensland council", async () => {
   for (const council of stateCouncils) {
@@ -97,7 +98,7 @@ async function upload(
         region: "NSWPC",
         discipline: "speed",
         location_name: "Moruya",
-        ground_elevation_m: 100,
+        ground_elevation_m: 100, reference_point:reference,
         file_path: path,
       })
     ).error,
@@ -108,7 +109,7 @@ async function upload(
 
 function entryChanges(entry: Record<string, unknown>, overrides: Record<string,unknown> = {}) {
   return { public_name:entry.public_name,region:entry.region,discipline:entry.discipline,
-    location_name:entry.location_name,ground_elevation_m:entry.ground_elevation_m,
+    location_name:entry.location_name,ground_elevation_m:entry.ground_elevation_m,reference_point:entry.reference_point,
     coaching_requested:Boolean(entry.coaching_requested),file_path:entry.file_path,...overrides };
 }
 
@@ -260,7 +261,7 @@ test("four local competitors have independent registration, files and scoreboard
     assert.ok((await client.storage.from("league-tracks").upload(path,new Blob([trackCsv()]))).error);
     await organiser.rpc("league_review_registration",{applicant_id:profile.id,decision:"approved"});
     assert.equal((await client.storage.from("league-tracks").upload(path,new Blob([trackCsv()]))).error,null);
-    assert.equal((await client.from("league_entries").insert({id,user_id:profile.id,round_id:round,public_name:profile.name,region:"NSWPC",discipline:"speed",location_name:"Moruya",ground_elevation_m:100,file_path:path})).error,null);
+    assert.equal((await client.from("league_entries").insert({id,user_id:profile.id,round_id:round,public_name:profile.name,region:"NSWPC",discipline:"speed",location_name:"Moruya",ground_elevation_m:100,reference_point:reference,file_path:path})).error,null);
     assert.equal((await organiser.functions.invoke("league-score",{body:{entry_id:id}})).error,null);
     assert.equal((await organiser.rpc("league_review_entry",{entry_id:id,decision:"approved"})).error,null);
     paths.push(path);
@@ -610,4 +611,40 @@ test("registration must be approved before uploads or round entries, including d
       .review_note,
     "Entry access paused",
   );
+});
+
+
+test("reference points are required; organiser backfill preserves approved scores and refreshes maps", async () => {
+  const store=createPreviewStore(); const item=await upload(store);
+  const competitor=createLeaguePreviewClient(store,"competitor");
+  const organiser=createLeaguePreviewClient(store,"organiser",weatherFetcher());
+  const visitor=createLeaguePreviewClient(store,"visitor");
+  const noReference={...item.entry,id:crypto.randomUUID(),reference_point:null};
+  assert.ok((await competitor.from("league_entries").insert(noReference)).error);
+  for(const bad of [null,{name:"",lat:-33,lon:151},{name:"test",lat:NaN,lon:151},{name:"test",lat:-91,lon:151},{name:"test",lat:-33,lon:181},{...reference,extra:true}]) {
+    assert.ok((await organiser.rpc("league_set_reference_point",{entry_id:item.id,expected_revision:0,reference_point:bad})).error);
+  }
+  await organiser.functions.invoke("league-score",{body:{entry_id:item.id}});
+  // Existing entries can remain on the board without a reference, until backfilled.
+  item.entry.reference_point=null; item.entry.status="approved";
+  const legacy=await visitor.functions.invoke("league-flight",{body:{entry_id:item.id}});
+  assert.equal(legacy.error,null); assert.equal(legacy.data.map,undefined);
+  const originalScore=item.entry.corrected_speed_kmh;
+  const originalTime=item.entry.submitted_at;
+  assert.ok((await competitor.rpc("league_set_reference_point",{entry_id:item.id,expected_revision:0,reference_point:reference})).error);
+  assert.equal((await organiser.rpc("league_set_reference_point",{entry_id:item.id,expected_revision:0,reference_point:reference})).error,null);
+  assert.equal(item.entry.status,"approved"); assert.equal(item.entry.corrected_speed_kmh,originalScore);
+  assert.equal(item.entry.submitted_at,originalTime); assert.equal(item.entry.revision,1);
+  assert.equal(item.entry.comp_run_data,null);
+  assert.ok((await organiser.rpc("league_set_reference_point",{entry_id:item.id,expected_revision:0,reference_point:reference})).error);
+  const updated=await visitor.functions.invoke("league-flight",{body:{entry_id:item.id}});
+  assert.equal(updated.error,null); assert.deepEqual(updated.data.map.reference,reference);
+  assert.equal(updated.data.map.points.at(-1).altitudeM,1450);
+  assert.ok(updated.data.map.points.length <= 2001);
+  assert.ok(!JSON.stringify(updated.data).includes("file_path"));
+  assert.ok(!JSON.stringify(updated.data).includes("2026-11-01"));
+  const board=(await visitor.rpc("league_round_scoreboard",{selected_round:store.rounds[0].id})).data;
+  assert.ok(!JSON.stringify(board).includes("reference_point"));
+  await organiser.rpc("league_review_entry",{entry_id:item.id,decision:"rejected",expected_revision:1});
+  assert.ok((await visitor.functions.invoke("league-flight",{body:{entry_id:item.id}})).error);
 });

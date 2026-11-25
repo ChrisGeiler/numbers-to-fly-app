@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
@@ -19,6 +19,11 @@ import {
   calculateLeagueUploadScores,
   measureLeagueUploadWindow,
 } from "./leagueUploadScore";
+
+import { validLeagueReference } from "./leagueReference";
+import type { LeagueReferencePoint } from "./leagueReference";
+const LeagueReferencePicker = lazy(() => import("./LeagueReferencePicker"));
+const LeagueReviewReference = lazy(() => import("./LeagueReviewReference"));
 
 type Round = {
   id: string;
@@ -41,6 +46,7 @@ type Result = {
   raw_distance_m: number;
 };
 type Entry = Result & {
+  reference_point?: LeagueReferencePoint | null;
   id: string;
   round_id: string;
   status: string;
@@ -125,6 +131,7 @@ export default function League({
   const [selectedTask, setSelectedTask] = useState<Discipline>("speed");
   const [groundElevation, setGroundElevation] = useState("");
   const [selectedDropZone, setSelectedDropZone] = useState("");
+  const [referencePoint, setReferencePoint] = useState<LeagueReferencePoint | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadMetrics, setUploadMetrics] = useState<UploadMetrics | null>(
     null,
@@ -354,7 +361,7 @@ export default function League({
       let query = client
         .from("league_entries")
         .select(
-          "id,round_id,public_name,suit_name,region,discipline,category,status,location_name,ground_elevation_m,file_path,submitted_at,coaching_requested,coaching_note,review_note,time_s,corrected_speed_kmh,corrected_distance_m,raw_speed_kmh,raw_distance_m,scoring_version,jump_at,file_hash,wind_snapshot,revision",
+          "id,round_id,reference_point,public_name,suit_name,region,discipline,category,status,location_name,ground_elevation_m,file_path,submitted_at,coaching_requested,coaching_note,review_note,time_s,corrected_speed_kmh,corrected_distance_m,raw_speed_kmh,raw_distance_m,scoring_version,jump_at,file_hash,wind_snapshot,revision",
         )
         .eq("round_id", roundId)
         .order("submitted_at", { ascending: false })
@@ -442,6 +449,7 @@ export default function League({
     let path = "";
     let submitted = false;
     try {
+      if (!validLeagueReference(referencePoint)) throw new Error("Select the reference point you were flying towards.");
       if (!file?.size || file.size > 8 * 1024 * 1024)
         throw new Error("Choose a FlySight CSV smaller than 8 MB.");
       const ground = Number(form.get("ground"));
@@ -465,6 +473,7 @@ export default function League({
         round_id: round.id,
         public_name: String(form.get("name")).trim(),
         suit_name: String(form.get("suit_name")).trim(),
+        reference_point: referencePoint,
         region: form.get("region"),
         discipline: form.get("discipline"),
         category: form.get("category"),
@@ -477,6 +486,7 @@ export default function League({
       submitted = true;
       formRef.current?.reset();
       setUploadFile(null);
+      setReferencePoint(null);
       setUploadMetrics(null);
       setCorrectedUpload(null);
       setUploadScoreStatus("");
@@ -852,7 +862,8 @@ export default function League({
             </ol>
             <p className="league-caption">
               League entry is separate from access to the training app. Your
-              original track stays private to you and the organiser.
+              original CSV stays private to you and the organiser. Approved flight
+              locations and reference points appear on the scoreboard map.
             </p>
           </div>
           <div className="league-form-card">
@@ -1050,7 +1061,7 @@ export default function League({
                           accept=".csv,text/csv,text/plain"
                           required
                           onChange={(event) =>
-                            setUploadFile(event.target.files?.[0] ?? null)
+                            { setUploadFile(event.target.files?.[0] ?? null); setReferencePoint(null); }
                           }
                         />
                         <small>
@@ -1105,17 +1116,20 @@ export default function League({
                             </section>
                           )}
                       </div>
+                      <Suspense fallback={<p>Loading reference point picker…</p>}>
+                        <LeagueReferencePicker key={uploadFile ? `${uploadFile.name}:${uploadFile.lastModified}` : "no-file"} file={uploadFile} ground={Number(groundElevation)} value={referencePoint} onChange={setReferencePoint} />
+                      </Suspense>
                       <label className="league-checkbox">
                         <input name="coaching" type="checkbox" /> I’d like
                         remote coaching on this entry — A$20 per track.
                       </label>
                       <p className="league-caption">
                         Track location and time are required for automatic wind correction using Open-Meteo, or Meteomatics when configured.
-                        {!preview && " Submitting an entry accepts the pilot rules and publication of your name, suit, state council, approved scores and relative replay. Original GPS files stay private to you and the organiser."}
+                        {!preview && " Submitting an entry accepts the pilot rules and publication of your name, suit, state council, approved scores, flight location, selected reference point and replay. Original GPS files stay private to you and the organiser."}
                       </p>
                       <button
                         className="league-button"
-                        disabled={busy || !accepting}
+                        disabled={busy || !accepting || !validLeagueReference(referencePoint)}
                       >
                         {busy ? "Working…" : "Submit for review ↗"}
                       </button>
@@ -1242,6 +1256,9 @@ export default function League({
                   )}
                   {owner && (
                     <>
+                      <Suspense fallback={<p>Loading reference controls…</p>}>
+                        <LeagueReviewReference key={`${entry.id}:${entry.revision ?? 0}`} client={client} entry={entry} onSaved={refresh} />
+                      </Suspense>
                       <p className="league-caption">
                         Elevation: {entry.ground_elevation_m} m MSL ·{" "}
                         {entry.scoring_version ?? "Not calculated"}. Verify the
@@ -1307,7 +1324,7 @@ export default function League({
                       </label>
                       <div className="league-review-actions">
                         <button
-                          disabled={busy || !entry.scoring_version || !(reviewSuit[reviewKey(entry)] ?? entry.suit_name ?? "").trim()}
+                          disabled={busy || !entry.reference_point || !entry.scoring_version || !(reviewSuit[reviewKey(entry)] ?? entry.suit_name ?? "").trim()}
                           onClick={() =>
                             void act(
                               async () =>
@@ -1512,7 +1529,8 @@ export default function League({
                 Upload your FlySight tracks from within the round
                 dates at an Australian DZ. Scores are calculated on the server, then reviewed by the
                 organiser. Missing winds, incomplete windows and poor GPS
-                samples remain unapproved. Original tracks are not public.
+                samples remain unapproved. Original CSV files are not public;
+                approved comp-run locations and reference points are shown on the scoreboard map.
               </p>
               <p>
                 This is an independent pilot league, not an official

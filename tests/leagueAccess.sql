@@ -33,9 +33,9 @@ select set_config('request.jwt.claims',json_build_object('sub',current_setting('
 set local role authenticated;
 insert into storage.objects(bucket_id,name,owner_id) values
   ('league-tracks',current_setting('league.test_user') || '/' || current_setting('league.test_round') || '/' || current_setting('league.test_entry') || '.csv',current_setting('league.test_user'));
-insert into public.league_entries(id,user_id,round_id,public_name,region,discipline,location_name,ground_elevation_m,file_path)
+insert into public.league_entries(id,user_id,round_id,public_name,region,discipline,location_name,ground_elevation_m,file_path,reference_point)
 values(current_setting('league.test_entry')::uuid,current_setting('league.test_user')::uuid,current_setting('league.test_round')::uuid,
-  'Test competitor','NSWPC','speed','Test drop zone',100,current_setting('league.test_user') || '/' || current_setting('league.test_round') || '/' || current_setting('league.test_entry') || '.csv');
+  'Test competitor','NSWPC','speed','Test drop zone',100,current_setting('league.test_user') || '/' || current_setting('league.test_round') || '/' || current_setting('league.test_entry') || '.csv','{"name":"Runway","lat":-33,"lon":151}');
 do $$ begin
   if public.current_user_has_app_access() then raise exception 'League membership granted app access'; end if;
   if not exists(select 1 from public.league_entries where id=current_setting('league.test_entry')::uuid) then raise exception 'Own entry inaccessible'; end if;
